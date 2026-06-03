@@ -20,5 +20,9 @@ jobs:
         run: |
           uv run black --check src tests
           uv run ruff check src tests
+      - name: Schema drift guard
+        run: |
+          uv run python -m sleap_roots_contracts.schema
+          git diff --exit-code schema/
       - name: Test
         run: uv run pytest --cov=src/sleap_roots_contracts --cov-report=term-missing -v
