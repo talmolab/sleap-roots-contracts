@@ -4,139 +4,104 @@ description: Comprehensive pre-merge verification workflow
 
 # Pre-Merge Check
 
-Comprehensive pre-merge verification for pull requests, including local CI, Copilot comment analysis, and test coverage.
+Full pre-merge verification: local CI, a pre-PR subagent self-review, OpenSpec + schema
+checks, PR creation, and Copilot-comment triage. Run before opening a PR and before merging.
 
-## Purpose
-
-This command performs a full pre-merge check by:
-
-1. Running local CI checks (lint + tests)
-2. Fetching and categorizing GitHub Copilot review comments
-3. Verifying GitHub Actions CI status
-4. Creating a prioritized action plan for remaining issues
-
-## Step 1: Local CI Checks
-
-Run CI-equivalent checks from `.github/workflows/ci.yml`:
+## Phase 1: Code quality
 
 ```bash
-# Lint: Black formatting check
-uv run black --check src/sleap_roots_contracts tests
+uv run black --check src tests
+uv run ruff check src tests
+```
+If either fails, fix with `/fix-formatting`, then re-run.
 
-# Lint: Ruff linting
-uv run ruff check src/sleap_roots_contracts
+## Phase 2: Tests, coverage, schema, OpenSpec
 
-# Tests: Full test suite
+```bash
+uv run pytest --cov=src/sleap_roots_contracts --cov-report=term-missing tests/
+
+# Schema drift guard (regenerate must equal committed)
+uv run python -m sleap_roots_contracts.schema && git diff --exit-code schema/
+
+# If an OpenSpec change is in flight:
+openspec list
+openspec validate <change-id> --strict
+```
+
+## Phase 3: Documentation
+
+- Docstrings current for all changed code (google convention).
+- README updated if the public API changed.
+- OpenSpec tasks checked off (`openspec list`).
+
+## Phase 3.5: Pre-PR self-review (do this BEFORE creating the PR)
+
+Run `/review-pr` on the **local branch diff** (pass the branch name, not a PR number — the PR
+doesn't exist yet). This launches the critical-review subagent team against the change the
+same way they'd review an external PR.
+
+**Rationale:** Copilot reliably flags exactly what this team would catch (e.g. a test that
+bypasses the path it was meant to regression-test). Running our own review pre-PR fixes those
+in one iteration instead of two, and avoids burning a Copilot review cycle. If any BLOCKING /
+IMPORTANT findings come back, fix them and restart from Phase 1.
+
+## Phase 4: Create / update the PR
+
+```bash
+gh pr create --title "<title>" --body "<summary, test results, OpenSpec link if any>"
+```
+
+## Phase 5: CI monitoring
+
+```bash
+gh pr checks
+```
+CI runs lint + the schema drift guard + pytest on Ubuntu (Python 3.11 / 3.12). Investigate any
+failure before proceeding.
+
+## Phase 6: Copilot + review feedback triage
+
+Fetch Copilot's comments with `/copilot-review`, then categorize:
+
+- **CRITICAL** — broken functionality, incorrect results, data/contract inconsistencies, security
+- **HIGH** — type-safety violations, missing tests, real bugs, maintainability
+- **MEDIUM** — code quality, performance, style
+- **LOW** — docs, minor refactors, nice-to-haves
+- **NO ACTION** — working as designed / false positive / already fixed
+
+Fix CRITICAL + HIGH now (re-run tests after each); file issues for MEDIUM/LOW. Evaluate each
+suggestion on its merits and note why if you decline (see superpowers:receiving-code-review).
+
+## Phase 7: Changelog
+
+Run `/update-changelog` to add a `[Unreleased]` entry. (If `docs/CHANGELOG.md` doesn't exist
+yet, create it in Keep-a-Changelog format first.)
+
+## Phase 8: Final verification
+
+```bash
+uv run black --check src tests && uv run ruff check src tests
+uv run python -m sleap_roots_contracts.schema && git diff --exit-code schema/
 uv run pytest tests/
-
-# Coverage: Test coverage report (CI uses --cov-report=xml)
-uv run pytest --cov=src/sleap_roots_contracts --cov-report=xml --cov-report=term-missing --durations=-1 tests/
-```
-
-If any check fails, fix the issue before proceeding.
-
-## Step 2: Check GitHub CI Status
-
-```bash
-# Get current PR number
-gh pr view --json number --jq .number
-
-# Check CI status
+git push
 gh pr checks
+git fetch origin main && git merge-base --is-ancestor origin/main HEAD   # branch up to date with main
 ```
 
-If CI is failing, investigate and fix before continuing.
+## Output
 
-## Step 3: Fetch Copilot Review Comments
-
-```bash
-# Get the PR number
-PR_NUMBER=$(gh pr view --json number --jq .number)
-
-# Get inline code review comments
-gh api repos/talmolab/sleap-roots-contracts/pulls/$PR_NUMBER/comments --jq '.[] | {path: .path, line: .line, body: .body}'
-
-# Get review summaries
-gh api repos/talmolab/sleap-roots-contracts/pulls/$PR_NUMBER/reviews --jq '.[].body'
-```
-
-## Step 4: Categorize and Prioritize
-
-Categorize all comments by priority:
-
-- **CRITICAL**: Data consistency issues, incorrect statistical calculations, broken functionality, security vulnerabilities
-- **HIGH**: Type safety violations, missing tests, significant bugs, code maintainability issues
-- **MEDIUM**: Code quality issues, performance concerns, style inconsistencies
-- **LOW**: Documentation improvements, minor refactoring, nice-to-haves
-- **NO ACTION**: Working as designed, false positives, already fixed
-
-## Step 5: Generate Action Plan
-
-```
-## Pre-Merge Analysis
-
-### Summary
-- Total comments: X
-- Already fixed: Y
-- Requiring action: Z
-
-### CRITICAL Issues (Must Fix)
-1. [file.py:line] Description
-   - Impact: ...
-   - Fix: ...
-
-### HIGH Issues (Should Fix)
-...
-
-### MEDIUM Issues (Consider)
-...
-
-### LOW Issues (Optional)
-...
-
-### NO ACTION (Working as Designed)
-...
-
-## Recommended Action Plan
-
-Phase 1 (Blocking): Fix CRITICAL issues → Run tests → Commit
-Phase 2 (Pre-merge): Fix HIGH issues → Run tests → Commit
-Phase 3 (Future work): Create issues for MEDIUM/LOW items
-```
-
-## Step 6: Execute Fixes
-
-1. Implement CRITICAL and HIGH priority fixes immediately
-2. Run tests after each fix
-3. Commit changes with clear descriptions
-4. Mark MEDIUM and LOW priority items for future work or accept as-is
-
-## Step 7: Final Verification
-
-After all fixes:
-
-```bash
-# Run full CI locally one more time
-uv run black --check src/sleap_roots_contracts tests && uv run ruff check src/sleap_roots_contracts && uv run pytest tests/
-
-# Verify GitHub CI passes
-gh pr checks
-
-# Check coverage
-uv run pytest --cov=src/sleap_roots_contracts --cov-report=xml --cov-report=term-missing --durations=-1 tests/
+```markdown
+# Pre-Merge Check Results
+## Code Quality:  [x] black  [x] ruff
+## Tests:         [x] pytest (X passed)  [x] coverage  [x] schema drift guard
+## OpenSpec:      [x] validated (or N/A)
+## Self-review:   [x] /review-pr clean (or findings fixed)
+## PR:            [x] #X created, checks green
+## Copilot:       [x] CRITICAL/HIGH addressed; MEDIUM/LOW filed
+## Changelog:     [x] entry added (or N/A)
+## Status: READY TO MERGE
 ```
 
 ## Integration
-
-- `/lint` - Quick formatting and linting check
-- `/coverage` - Detailed test coverage analysis
-- `/review-pr` - Manual review of PR comments
-- `/run-ci-locally` - Run exact CI checks locally
-- `/update-changelog` - Update CHANGELOG before merge
-
-## When to Use
-
-- After receiving Copilot review comments
-- Before requesting final review from maintainers
-- Before merging to main
-- After making significant changes to a PR
+`/lint` · `/fix-formatting` · `/coverage` · `/run-ci-locally` · `/review-pr` · `/copilot-review`
+· `/update-changelog`
