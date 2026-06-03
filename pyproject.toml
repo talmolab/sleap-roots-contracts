@@ -1,0 +1,55 @@
+[project]
+name = "sleap-roots-contracts"
+version = "0.1.0a0"
+description = "Shared result + provenance contract for the sleap-roots <-> Bloom pipeline."
+readme = "README.md"
+license = "GPL-3.0-or-later"
+authors = [{ name = "eberrigan", email = "eberrigan@salk.edu" }]
+requires-python = ">=3.11"
+keywords = ["sleap", "roots", "phenotyping", "provenance", "contract"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Scientific/Engineering",
+    "Intended Audience :: Science/Research",
+]
+dependencies = [
+    "pydantic>=2.7",
+    "pyyaml>=6.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/talmolab/sleap-roots-contracts"
+Repository = "https://github.com/talmolab/sleap-roots-contracts"
+Issues = "https://github.com/talmolab/sleap-roots-contracts/issues"
+
+[build-system]
+requires = ["uv_build>=0.8.11,<0.9.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.4.1",
+    "pytest-cov>=6.2.1",
+    "ruff>=0.12.11",
+    "black>=25.1.0",
+    "jsonschema>=4.23",
+    "build>=1.3.0",
+]
+
+[tool.black]
+line-length = 88
+
+[tool.ruff.lint]
+select = ["D"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["D"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
