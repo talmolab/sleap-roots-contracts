@@ -118,3 +118,11 @@ class BlobRef(BaseModel):
         if self.s3_location is None and self.box_link is None:
             raise ValueError("BlobRef requires at least one of s3_location or box_link")
         return self
+
+
+class ResultEnvelope(BaseModel):
+    """One per-scan result: 1 envelope : 1 source row : 1 scan."""
+
+    provenance: Provenance
+    traits: list[TraitValue]
+    blobs: list[BlobRef] = []
