@@ -1,7 +1,8 @@
 """Pydantic contract models — the canonical source of truth."""
 
+import math
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, model_validator
 
@@ -79,4 +80,41 @@ class Provenance(BaseModel):
             traits_code_sha=self.traits_code_sha,
         )
         object.__setattr__(self, "idempotency_key", key)
+        return self
+
+
+class TraitValue(BaseModel):
+    """One long-format trait row. NaN/inf normalize to None (-> SQL NULL)."""
+
+    name: str
+    value: float | None = None
+    grain: Literal["scan", "image"] = "scan"
+    scan_key: str
+
+    @model_validator(mode="after")
+    def _normalize_nonfinite(self) -> "TraitValue":
+        if self.value is not None and (
+            math.isnan(self.value) or math.isinf(self.value)
+        ):
+            object.__setattr__(self, "value", None)
+        return self
+
+
+BlobKind = Literal["predictions_slp", "labels", "h5", "qc_image"]
+
+
+class BlobRef(BaseModel):
+    """Pointer to an intermediate artifact (rows in the #2 intermediates table)."""
+
+    kind: BlobKind
+    scan_key: str
+    s3_location: str | None = None
+    box_link: str | None = None
+    checksum: str | None = None
+    file_size: int | None = None
+
+    @model_validator(mode="after")
+    def _require_location(self) -> "BlobRef":
+        if self.s3_location is None and self.box_link is None:
+            raise ValueError("BlobRef requires at least one of s3_location or box_link")
         return self
