@@ -4,7 +4,7 @@ import math
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, ConfigDict, model_validator
 
 from .hashing import compute_param_hash
 from .identity import compute_idempotency_key
@@ -116,6 +116,23 @@ BlobKind = Literal["predictions_slp", "labels", "h5", "qc_image"]
 
 class BlobRef(BaseModel):
     """Pointer to an intermediate artifact (rows in the #2 intermediates table)."""
+
+    # Encode the "at least one location" rule in the emitted JSON Schema so
+    # consumers (Bloom codegen) reject the same objects Pydantic does.
+    model_config = ConfigDict(
+        json_schema_extra={
+            "anyOf": [
+                {
+                    "required": ["s3_location"],
+                    "properties": {"s3_location": {"type": "string"}},
+                },
+                {
+                    "required": ["box_link"],
+                    "properties": {"box_link": {"type": "string"}},
+                },
+            ]
+        }
+    )
 
     kind: BlobKind
     scan_key: str

@@ -3,6 +3,7 @@
 import json
 
 import jsonschema
+import pytest
 
 from sleap_roots_contracts.schema import MODELS, SCHEMA_DIR, render
 
@@ -24,10 +25,30 @@ def test_emitted_schema_is_valid_jsonschema():
         jsonschema.Draft202012Validator.check_schema(schema)
 
 
+def test_emitted_schema_declares_draft_2020_12():
+    """Each schema is self-describing as Draft 2020-12 via $schema."""
+    for name in MODELS:
+        schema = json.loads(render(name))
+        assert schema["$schema"] == "https://json-schema.org/draft/2020-12/schema"
+
+
 def test_example_envelope_validates_against_schema():
     """A representative envelope validates against the emitted schema."""
     from tests.fixtures.examples import example_envelope
 
     schema = json.loads(render("result_envelope"))
     instance = json.loads(example_envelope().model_dump_json())
-    jsonschema.validate(instance=instance, schema=schema)
+    jsonschema.Draft202012Validator(schema).validate(instance)
+
+
+def test_schema_rejects_blobref_without_location():
+    """The emitted schema encodes BlobRef's at-least-one-location constraint."""
+    from tests.fixtures.examples import example_envelope
+
+    schema = json.loads(render("result_envelope"))
+    instance = json.loads(example_envelope().model_dump_json())
+    # Null out both blob locations -> Pydantic would reject; the schema must too.
+    instance["blobs"][0]["s3_location"] = None
+    instance["blobs"][0]["box_link"] = None
+    with pytest.raises(jsonschema.ValidationError):
+        jsonschema.Draft202012Validator(schema).validate(instance)

@@ -1,6 +1,28 @@
 {
   "$defs": {
     "BlobRef": {
+      "anyOf": [
+        {
+          "properties": {
+            "s3_location": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "s3_location"
+          ]
+        },
+        {
+          "properties": {
+            "box_link": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "box_link"
+          ]
+        }
+      ],
       "description": "Pointer to an intermediate artifact (rows in the #2 intermediates table).",
       "properties": {
         "box_link": {
@@ -331,6 +353,7 @@
     }
   },
   "$id": "https://github.com/talmolab/sleap-roots-contracts/schema/v0.1.0a0/result_envelope.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "description": "One per-scan result: 1 envelope : 1 source row : 1 scan.",
   "properties": {
     "blobs": {

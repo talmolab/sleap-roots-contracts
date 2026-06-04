@@ -13,6 +13,9 @@ MODELS = {"result_envelope": ResultEnvelope}
 def render(name: str) -> str:
     """Render one schema as a deterministic JSON string."""
     schema = MODELS[name].model_json_schema()
+    # Make the artifact self-describing so consumers (and jsonschema.validate)
+    # select the intended dialect instead of defaulting to Draft 7.
+    schema["$schema"] = "https://json-schema.org/draft/2020-12/schema"
     # Carry the package version as a path segment (not a URI fragment): JSON Schema
     # Draft 2020-12 forbids a non-empty fragment in "$id".
     schema["$id"] = (
