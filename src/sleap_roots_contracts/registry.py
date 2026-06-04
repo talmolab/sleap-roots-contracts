@@ -44,7 +44,8 @@ def validate_trait(
         on_unknown: Behavior for names absent from the registry ("warn" or "error").
 
     Raises:
-        ValueError: unknown name (when on_unknown="error") or out-of-range value.
+        ValueError: unknown name (when on_unknown="error"), a non-numeric value, a
+            value that violates the definition's dtype, or an out-of-range value.
     """
     definition = registry.get(name)
     if definition is None:
@@ -56,6 +57,11 @@ def validate_trait(
         return
     if value is None:
         return
+    # bool is an int subclass; reject it alongside other non-numeric types.
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"{name}={value!r} is not numeric")
+    if definition.dtype == "int" and float(value) != int(value):
+        raise ValueError(f"{name}={value} is not an integer (dtype int)")
     if definition.min is not None and value < definition.min:
         raise ValueError(f"{name}={value} below min {definition.min}")
     if definition.max is not None and value > definition.max:

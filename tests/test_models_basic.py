@@ -42,3 +42,18 @@ def test_resolvedparams_hash_matches_values():
 
     vals = {"species": "rice", "scale": 2}
     assert ResolvedParams(values=vals).param_hash == compute_param_hash(vals)
+
+
+def test_resolvedparams_accepts_matching_explicit_hash():
+    """A correct explicit param_hash (e.g. on round-trip) is accepted."""
+    from sleap_roots_contracts.hashing import compute_param_hash
+
+    vals = {"species": "rice"}
+    h = compute_param_hash(vals)
+    assert ResolvedParams(values=vals, param_hash=h).param_hash == h
+
+
+def test_resolvedparams_rejects_mismatched_explicit_hash():
+    """A wrong explicit param_hash raises rather than being silently overwritten."""
+    with pytest.raises(ValidationError):
+        ResolvedParams(values={"species": "rice"}, param_hash="deadbeef")

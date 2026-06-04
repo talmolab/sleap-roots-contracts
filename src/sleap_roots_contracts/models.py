@@ -35,7 +35,13 @@ class ResolvedParams(BaseModel):
 
     @model_validator(mode="after")
     def _fill_hash(self) -> "ResolvedParams":
-        object.__setattr__(self, "param_hash", compute_param_hash(self.values))
+        computed = compute_param_hash(self.values)
+        if self.param_hash and self.param_hash != computed:
+            raise ValueError(
+                f"param_hash {self.param_hash!r} does not match values "
+                f"(computed {computed!r})"
+            )
+        object.__setattr__(self, "param_hash", computed)
         return self
 
 
@@ -79,6 +85,11 @@ class Provenance(BaseModel):
             predict_code_sha=self.predict_code_sha,
             traits_code_sha=self.traits_code_sha,
         )
+        if self.idempotency_key and self.idempotency_key != key:
+            raise ValueError(
+                f"idempotency_key {self.idempotency_key!r} does not match derived "
+                f"value (computed {key!r})"
+            )
         object.__setattr__(self, "idempotency_key", key)
         return self
 

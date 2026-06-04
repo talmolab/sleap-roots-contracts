@@ -47,3 +47,23 @@ def test_none_value_skips_range_check():
     """A None value skips range checks."""
     reg = load_registry()
     validate_trait("lateral_count", None, reg)  # no raise
+
+
+def test_int_dtype_rejects_non_integer_value():
+    """A trait declared dtype=int rejects a non-integer value."""
+    reg = load_registry()
+    with pytest.raises(ValueError):
+        validate_trait("lateral_count", 1.5, reg)  # lateral_count is dtype int
+
+
+def test_int_dtype_accepts_integer_valued_float():
+    """A dtype=int trait accepts an integer-valued float (e.g. 3.0)."""
+    reg = load_registry()
+    validate_trait("lateral_count", 3.0, reg)  # no raise
+
+
+def test_non_numeric_value_rejected():
+    """A non-numeric value raises rather than a TypeError during comparison."""
+    reg = load_registry()
+    with pytest.raises(ValueError):
+        validate_trait("primary_length", "not-a-number", reg)

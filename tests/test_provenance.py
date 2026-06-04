@@ -67,3 +67,18 @@ def test_orchestration_fields_optional():
     """Orchestration and warm-worker handles default to None."""
     p = make_provenance()
     assert p.argo_workflow_uid is None and p.worker_request_id is None
+
+
+def test_provenance_accepts_matching_explicit_key():
+    """A correct explicit idempotency_key (e.g. on round-trip) is accepted."""
+    key = make_provenance().idempotency_key
+    assert make_provenance(idempotency_key=key).idempotency_key == key
+
+
+def test_provenance_rejects_mismatched_explicit_key():
+    """A wrong explicit idempotency_key raises rather than being overwritten."""
+    import pytest
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        make_provenance(idempotency_key="deadbeef")
