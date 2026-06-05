@@ -1,5 +1,6 @@
 """Trait definitions registry: name/dtype/range validation for trait values."""
 
+import math
 import warnings
 from importlib import resources
 from typing import Literal
@@ -44,8 +45,9 @@ def validate_trait(
         on_unknown: Behavior for names absent from the registry ("warn" or "error").
 
     Raises:
-        ValueError: unknown name (when on_unknown="error"), a non-numeric value, a
-            value that violates the definition's dtype, or an out-of-range value.
+        ValueError: unknown name (when on_unknown="error"), a non-numeric or
+            non-finite value, a value that violates the definition's dtype, or an
+            out-of-range value.
     """
     definition = registry.get(name)
     if definition is None:
@@ -60,6 +62,9 @@ def validate_trait(
     # bool is an int subclass; reject it alongside other non-numeric types.
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise ValueError(f"{name}={value!r} is not numeric")
+    # Reject NaN/inf: they slip past min/max comparisons (all comparisons False).
+    if not math.isfinite(value):
+        raise ValueError(f"{name}={value} is not finite")
     if definition.dtype == "int" and float(value) != int(value):
         raise ValueError(f"{name}={value} is not an integer (dtype int)")
     if definition.min is not None and value < definition.min:

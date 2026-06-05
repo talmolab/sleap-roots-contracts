@@ -67,3 +67,35 @@ def test_non_numeric_value_rejected():
     reg = load_registry()
     with pytest.raises(ValueError):
         validate_trait("primary_length", "not-a-number", reg)
+
+
+def test_nan_value_rejected():
+    """A NaN value is rejected rather than silently passing range checks."""
+    import math
+
+    reg = load_registry()
+    with pytest.raises(ValueError):
+        validate_trait("primary_length", math.nan, reg)
+
+
+def test_inf_value_rejected():
+    """An inf value is rejected rather than silently passing range checks."""
+    import math
+
+    reg = load_registry()
+    with pytest.raises(ValueError):
+        validate_trait("primary_length", math.inf, reg)
+
+
+def test_above_max_value_rejected():
+    """A value above the definition max raises."""
+    reg = load_registry()
+    with pytest.raises(ValueError):
+        validate_trait("crown_angle", 361.0, reg)  # max is 360
+
+
+def test_exact_boundary_values_accepted():
+    """Values exactly at min and max are accepted (inclusive bounds)."""
+    reg = load_registry()
+    validate_trait("crown_angle", 0.0, reg)  # min
+    validate_trait("crown_angle", 360.0, reg)  # max
