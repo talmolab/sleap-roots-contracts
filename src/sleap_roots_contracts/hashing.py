@@ -10,26 +10,34 @@ class NonCanonicalizableError(ValueError):
     """Raised when a value cannot be canonicalized (e.g. NaN/inf)."""
 
 
-def _check_finite(obj: Any) -> None:
-    """Recursively reject NaN/inf floats."""
+def _normalize(obj: Any) -> Any:
+    """Recursively reject NaN/inf and normalize numbers to a fixed representation.
+
+    Integer-valued floats collapse to int (``1.0`` -> ``1``, ``-0.0`` -> ``0``) so
+    that type-variant params (int vs float) hash identically; ``bool`` is left
+    untouched. The walk is byte-stable within a CPython version.
+    """
+    if isinstance(obj, bool):
+        return obj
     if isinstance(obj, float):
-        if math.isnan(obj) or math.isinf(obj):
+        if not math.isfinite(obj):
             raise NonCanonicalizableError(
                 f"NaN/inf not allowed in hashed values: {obj}"
             )
-    elif isinstance(obj, dict):
-        for value in obj.values():
-            _check_finite(value)
-    elif isinstance(obj, (list, tuple)):
-        for value in obj:
-            _check_finite(value)
+        if obj == int(obj):
+            return int(obj)
+        return obj
+    if isinstance(obj, dict):
+        return {key: _normalize(value) for key, value in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_normalize(value) for value in obj]
+    return obj
 
 
 def canonical_json(values: Any) -> str:
     """Serialize any JSON value to deterministic JSON: sorted keys, compact, no NaN/inf."""
-    _check_finite(values)
     return json.dumps(
-        values,
+        _normalize(values),
         sort_keys=True,
         separators=(",", ":"),
         ensure_ascii=False,
@@ -43,5 +51,10 @@ def sha256_hex(text: str) -> str:
 
 
 def compute_param_hash(values: dict[str, Any]) -> str:
-    """Compute the canonical, deterministic hash of a resolved-params dict."""
+    """Compute the canonical, deterministic hash of a resolved-params dict.
+
+    Raises:
+        NonCanonicalizableError: a value is NaN/inf.
+        TypeError: a value is not JSON-serializable.
+    """
     return sha256_hex(canonical_json(values))
