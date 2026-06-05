@@ -36,9 +36,10 @@ openspec validate <change-id> --strict
 
 ## Phase 3.5: Pre-PR self-review (do this BEFORE creating the PR)
 
-Run `/review-pr` on the **local branch diff** (pass the branch name, not a PR number — the PR
-doesn't exist yet). This launches the critical-review subagent team against the change the
-same way they'd review an external PR.
+Run `/review-pr` with no PR number (**local mode**) — it reviews the local branch diff
+(`git diff merge-base..HEAD`) with the critical-review subagent team and **reports only** (posts
+nothing to GitHub), the same way they'd review an external PR. The full posting review runs in
+Phase 6 once the PR exists.
 
 **Rationale:** Copilot reliably flags exactly what this team would catch (e.g. a test that
 bypasses the path it was meant to regression-test). Running our own review pre-PR fixes those
