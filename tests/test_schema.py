@@ -5,7 +5,7 @@ import json
 import jsonschema
 import pytest
 
-from sleap_roots_contracts.schema import MODELS, SCHEMA_DIR, render
+from sleap_roots_contracts.schema import MODELS, SCHEMA_DIR, emit_schema, render
 
 
 def test_committed_schema_matches_models():
@@ -39,6 +39,14 @@ def test_example_envelope_validates_against_schema():
     schema = json.loads(render("result_envelope"))
     instance = json.loads(example_envelope().model_dump_json())
     jsonschema.Draft202012Validator(schema).validate(instance)
+
+
+def test_emit_schema_accepts_explicit_dir(tmp_path):
+    """emit_schema writes to a given directory, matching render() output."""
+    emit_schema(tmp_path)
+    for name in MODELS:
+        written = (tmp_path / f"{name}.schema.json").read_text(encoding="utf-8")
+        assert written == render(name)
 
 
 def test_schema_rejects_blobref_without_location():

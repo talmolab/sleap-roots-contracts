@@ -6,7 +6,23 @@ from pathlib import Path
 from . import __version__
 from .models import ResultEnvelope
 
-SCHEMA_DIR = Path(__file__).resolve().parents[2] / "schema"
+
+def _default_schema_dir() -> Path:
+    """Locate the repo's ``schema/`` dir for the producer-side emitter.
+
+    Walks up from this file for the directory containing ``pyproject.toml`` (the
+    repo root in a source checkout / CI); falls back to the current working
+    directory when none is found (e.g. when the package is pip-installed, where a
+    ``parents[2]`` guess would land on an unwritable site-packages path).
+    """
+    here = Path(__file__).resolve()
+    for parent in here.parents:
+        if (parent / "pyproject.toml").is_file():
+            return parent / "schema"
+    return Path.cwd() / "schema"
+
+
+SCHEMA_DIR = _default_schema_dir()
 MODELS = {"result_envelope": ResultEnvelope}
 
 
@@ -25,11 +41,12 @@ def render(name: str) -> str:
     return json.dumps(schema, indent=2, sort_keys=True) + "\n"
 
 
-def emit_schema() -> None:
-    """Write all schemas to the schema/ directory."""
-    SCHEMA_DIR.mkdir(exist_ok=True)
+def emit_schema(schema_dir: Path | None = None) -> None:
+    """Write all schemas to ``schema_dir`` (defaults to the repo's ``schema/``)."""
+    target = schema_dir if schema_dir is not None else SCHEMA_DIR
+    target.mkdir(parents=True, exist_ok=True)
     for name in MODELS:
-        (SCHEMA_DIR / f"{name}.schema.json").write_text(render(name), encoding="utf-8")
+        (target / f"{name}.schema.json").write_text(render(name), encoding="utf-8")
 
 
 if __name__ == "__main__":
