@@ -25,8 +25,8 @@ def _check_finite(obj: Any) -> None:
             _check_finite(value)
 
 
-def canonical_json(values: dict[str, Any]) -> str:
-    """Serialize to deterministic JSON: sorted keys, compact, no NaN/inf."""
+def canonical_json(values: Any) -> str:
+    """Serialize any JSON value to deterministic JSON: sorted keys, compact, no NaN/inf."""
     _check_finite(values)
     return json.dumps(
         values,

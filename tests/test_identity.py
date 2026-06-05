@@ -26,8 +26,45 @@ def test_idempotency_model_order_independent():
 
 
 def test_idempotency_handles_none_weights_checksum():
-    """A None weights_checksum must not raise when sorting models."""
-    compute_idempotency_key(**BASE)
+    """A None weights_checksum must not raise and stays deterministic."""
+    assert compute_idempotency_key(**BASE) == compute_idempotency_key(**BASE)
+
+
+def test_idempotency_sensitive_to_weights_checksum():
+    """Changing only a model's weights_checksum changes the key."""
+    changed = {
+        **BASE,
+        "models": [("reg-primary", "v1", "DIFFERENT"), ("reg-lateral", "v2", None)],
+    }
+    assert compute_idempotency_key(**changed) != compute_idempotency_key(**BASE)
+
+
+def test_idempotency_no_delimiter_collision():
+    """Distinct model tuples must not collide via the field separator."""
+    common = dict(
+        scan_key="s",
+        images_checksum="i",
+        param_hash="p",
+        predict_code_sha="pc",
+        traits_code_sha="tc",
+    )
+    k1 = compute_idempotency_key(models=[("a::b", "c", "x")], **common)
+    k2 = compute_idempotency_key(models=[("a", "b::c", "x")], **common)
+    assert k1 != k2
+
+
+def test_idempotency_distinguishes_none_and_empty_weights():
+    """A None weights_checksum is distinct from an empty-string one."""
+    common = dict(
+        scan_key="s",
+        images_checksum="i",
+        param_hash="p",
+        predict_code_sha="pc",
+        traits_code_sha="tc",
+    )
+    k1 = compute_idempotency_key(models=[("a", "v", None)], **common)
+    k2 = compute_idempotency_key(models=[("a", "v", "")], **common)
+    assert k1 != k2
 
 
 @pytest.mark.parametrize(

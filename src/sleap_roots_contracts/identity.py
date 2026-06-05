@@ -25,14 +25,20 @@ def compute_idempotency_key(
     Returns:
         Hex sha256 identity string.
     """
-    model_keys = sorted(
-        f"{registry_id}::{version}::{weights_checksum or ''}"
-        for registry_id, version, weights_checksum in models
+    # Encode each model as a structured triple and order them by their canonical
+    # JSON, so the key is order-independent yet injective: no delimiter ambiguity
+    # and None (unpinned) stays distinct from "" (empty checksum).
+    model_entries = sorted(
+        (
+            [registry_id, version, weights_checksum]
+            for registry_id, version, weights_checksum in models
+        ),
+        key=canonical_json,
     )
     payload = {
         "scan_key": scan_key,
         "images_checksum": images_checksum,
-        "models": model_keys,
+        "models": model_entries,
         "param_hash": param_hash,
         "predict_code_sha": predict_code_sha,
         "traits_code_sha": traits_code_sha,
