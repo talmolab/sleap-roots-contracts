@@ -57,3 +57,10 @@ def test_resolvedparams_rejects_mismatched_explicit_hash():
     """A wrong explicit param_hash raises rather than being silently overwritten."""
     with pytest.raises(ValidationError):
         ResolvedParams(values={"species": "rice"}, param_hash="deadbeef")
+
+
+def test_resolvedparams_is_frozen():
+    """A derived field cannot be tampered with after construction."""
+    p = ResolvedParams(values={"species": "rice"})
+    with pytest.raises(ValidationError):
+        p.param_hash = "deadbeef"

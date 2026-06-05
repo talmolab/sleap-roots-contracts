@@ -45,3 +45,10 @@ def test_blobref_rejects_unknown_kind():
     """A BlobRef with an out-of-vocabulary kind is rejected."""
     with pytest.raises(ValidationError):
         BlobRef(kind="not_a_kind", scan_key="s1", s3_location="s3://b/k")
+
+
+def test_traitvalue_is_frozen():
+    """A TraitValue cannot be mutated after construction (integrity holds)."""
+    t = TraitValue(name="x", value=1.0, scan_key="s1")
+    with pytest.raises(ValidationError):
+        t.value = float("nan")

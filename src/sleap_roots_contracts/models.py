@@ -9,9 +9,16 @@ from pydantic import BaseModel, ConfigDict, model_validator
 from .hashing import compute_param_hash
 from .identity import compute_idempotency_key
 
+# Contract models are immutable: derived fields (param_hash, idempotency_key) and
+# normalized values are guaranteed correct for the life of the instance, so the
+# validators below use object.__setattr__ to set them past the frozen guard.
+_FROZEN = ConfigDict(frozen=True)
+
 
 class ModelRef(BaseModel):
     """Identity of one model used in a run (FK-able to a future Bloom models table)."""
+
+    model_config = _FROZEN
 
     registry_id: str
     version: str
@@ -23,12 +30,16 @@ class ModelRef(BaseModel):
 class InputRef(BaseModel):
     """Pins the input data a run consumed, for reproducibility."""
 
+    model_config = _FROZEN
+
     image_ids: list[str]
     images_checksum: str
 
 
 class ResolvedParams(BaseModel):
     """Fully-resolved run params plus their canonical hash."""
+
+    model_config = _FROZEN
 
     values: dict[str, Any]
     param_hash: str = ""
@@ -47,6 +58,8 @@ class ResolvedParams(BaseModel):
 
 class Provenance(BaseModel):
     """Run provenance; serializes to cyl_trait_sources.metadata jsonb (sub-project #2)."""
+
+    model_config = _FROZEN
 
     contract_version: str
     scan_key: str
@@ -97,6 +110,8 @@ class Provenance(BaseModel):
 class TraitValue(BaseModel):
     """One long-format trait row. NaN/inf normalize to None (-> SQL NULL)."""
 
+    model_config = _FROZEN
+
     name: str
     value: float | None = None
     grain: Literal["scan", "image"] = "scan"
@@ -120,6 +135,7 @@ class BlobRef(BaseModel):
     # Encode the "at least one location" rule in the emitted JSON Schema so
     # consumers (Bloom codegen) reject the same objects Pydantic does.
     model_config = ConfigDict(
+        frozen=True,
         json_schema_extra={
             "anyOf": [
                 {
@@ -131,7 +147,7 @@ class BlobRef(BaseModel):
                     "properties": {"box_link": {"type": "string"}},
                 },
             ]
-        }
+        },
     )
 
     kind: BlobKind
@@ -150,6 +166,8 @@ class BlobRef(BaseModel):
 
 class ResultEnvelope(BaseModel):
     """One per-scan result: 1 envelope : 1 source row : 1 scan."""
+
+    model_config = _FROZEN
 
     provenance: Provenance
     traits: list[TraitValue]
