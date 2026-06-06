@@ -1,0 +1,18 @@
+# Seed trait definitions. Source of truth for full population: the traits computed by
+# `sleap_roots` (expand by enumerating its trait outputs). on_unknown defaults to "warn".
+primary_length:
+  unit: px
+  dtype: float
+  min: 0.0
+  description: Length of the primary root.
+lateral_count:
+  unit: count
+  dtype: int
+  min: 0.0
+  description: Number of lateral roots detected.
+crown_angle:
+  unit: deg
+  dtype: float
+  min: 0.0
+  max: 360.0
+  description: Crown root angle.
