@@ -32,7 +32,7 @@ def load_registry() -> dict[str, TraitDefinition]:
 
 def validate_trait(
     name: str,
-    value: float | None,
+    value: object,
     registry: dict[str, TraitDefinition],
     on_unknown: Literal["warn", "error"] = "warn",
 ) -> None:
@@ -40,7 +40,9 @@ def validate_trait(
 
     Args:
         name: Trait name to look up.
-        value: Trait value (None skips range checks).
+        value: Trait value to validate. ``None`` skips the numeric checks;
+            otherwise it must be a finite, non-bool number (any other type is
+            rejected) so this guards untrusted producer input, not just floats.
         registry: The loaded trait-definitions registry.
         on_unknown: Behavior for names absent from the registry ("warn" or "error").
 
