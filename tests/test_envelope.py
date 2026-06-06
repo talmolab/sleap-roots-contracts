@@ -45,3 +45,24 @@ def test_envelope_round_trips():
 def test_public_exports_importable():
     """All core symbols are importable from the package root."""
     assert ResultEnvelope and Provenance and TraitValue and BlobRef
+
+
+def test_producer_hashing_helpers_exported():
+    """compute_param_hash and its failure type are importable from the root."""
+    import math
+
+    import pytest
+
+    from sleap_roots_contracts import NonCanonicalizableError, compute_param_hash
+
+    assert compute_param_hash({"a": 1})  # callable from the root
+    with pytest.raises(NonCanonicalizableError):
+        compute_param_hash({"a": math.nan})
+
+
+def test_all_lists_exported_symbols():
+    """Every name in __all__ is actually present on the package."""
+    import sleap_roots_contracts as src
+
+    for name in src.__all__:
+        assert hasattr(src, name), name

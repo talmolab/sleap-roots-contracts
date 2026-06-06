@@ -1,5 +1,6 @@
 """Shared result + provenance contract for the sleap-roots <-> Bloom pipeline."""
 
+from .hashing import NonCanonicalizableError, compute_param_hash
 from .models import (
     BlobRef,
     InputRef,
@@ -23,5 +24,9 @@ __all__ = [
     "TraitDefinition",
     "load_registry",
     "validate_trait",
+    # Producer-side hashing surface (Python consumers of this package are the
+    # producers; Bloom consumes only the emitted JSON Schema).
+    "compute_param_hash",
+    "NonCanonicalizableError",
     "__version__",
 ]
