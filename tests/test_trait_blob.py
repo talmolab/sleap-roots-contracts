@@ -52,3 +52,16 @@ def test_traitvalue_is_frozen():
     t = TraitValue(name="x", value=1.0, scan_key="s1")
     with pytest.raises(ValidationError):
         t.value = float("nan")
+
+
+def test_blobref_location_constraint_derives_from_fields():
+    """The emitted anyOf is built from real model fields (no rename drift)."""
+    from sleap_roots_contracts.models import BlobRef, _BLOB_LOCATION_FIELDS
+
+    # The single source of truth must be real fields on the model.
+    assert set(_BLOB_LOCATION_FIELDS) <= set(BlobRef.model_fields)
+
+    # The emitted schema's anyOf must require exactly those fields.
+    schema = BlobRef.model_json_schema()
+    required = {req for branch in schema["anyOf"] for req in branch["required"]}
+    assert required == set(_BLOB_LOCATION_FIELDS)

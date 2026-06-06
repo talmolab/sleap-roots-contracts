@@ -7,6 +7,9 @@
 - [x] 2.2 `Provenance` (auto-derived `idempotency_key`)
 - [x] 2.3 `TraitValue` (NaN/inf → None) + `BlobRef` (controlled-vocab `kind`, ≥1 location)
 - [x] 2.4 `ResultEnvelope` + public package exports
+- [x] 2.5 Export producer-side `compute_param_hash` + `NonCanonicalizableError` from the root
+- [x] 2.6 Derive `BlobRef`'s at-least-one-location schema constraint from its field names (single
+  source of truth) + drift-guard test
 
 ## 3. Trait definitions registry
 - [x] 3.1 `TraitDefinition` + `load_registry` + `validate_trait` + seed `trait_definitions.yaml`

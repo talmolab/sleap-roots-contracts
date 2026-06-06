@@ -27,7 +27,9 @@ orchestration handles. It SHALL derive a deterministic `idempotency_key` from th
 ### Requirement: Producer-Side Param Hashing
 The library SHALL compute `param_hash` via a canonical-JSON encoding (recursively sorted keys,
 compact separators, fixed float representation) and SHALL reject non-finite (`NaN`/`inf`)
-values. Hashes are produced producer-side only; consumers treat them as opaque strings.
+values. Hashes are produced producer-side only; consumers treat them as opaque strings. The
+producer-facing helper `compute_param_hash` and its dedicated failure type
+`NonCanonicalizableError` SHALL be importable from the package root.
 
 #### Scenario: Hash is key-order independent
 - **WHEN** two param dicts contain the same keys and values in different orders
@@ -36,6 +38,11 @@ values. Hashes are produced producer-side only; consumers treat them as opaque s
 #### Scenario: Non-finite values are rejected
 - **WHEN** a param dict contains `NaN` or `inf`
 - **THEN** `compute_param_hash` raises an error
+
+#### Scenario: The non-finite failure type is importable and catchable
+- **WHEN** a producer imports `NonCanonicalizableError` and `compute_param_hash` from the
+  package root and calls the helper with a `NaN` value
+- **THEN** the call raises `NonCanonicalizableError`
 
 ### Requirement: Trait Value Representation
 `TraitValue` SHALL represent one long-format trait row (`name`, `value`, `grain`, `scan_key`)
@@ -61,11 +68,18 @@ values and warning (default) or erroring (when strict) on unknown trait names.
 
 ### Requirement: Blob References
 `BlobRef` SHALL identify an intermediate artifact with a controlled-vocabulary `kind` and
-SHALL require at least one of `s3_location` or `box_link`.
+SHALL require at least one of `s3_location` or `box_link`. The at-least-one-location rule
+SHALL be encoded in the emitted JSON Schema, derived from the model's own location field
+names so the model validator and the schema constraint cannot drift apart.
 
 #### Scenario: Blob with no location is rejected
 - **WHEN** a `BlobRef` is created without an `s3_location` or `box_link`
 - **THEN** validation raises an error
+
+#### Scenario: The emitted schema encodes the location constraint
+- **WHEN** the JSON Schema is generated from `BlobRef`
+- **THEN** it requires at least one location field, and the constrained field names are a
+  subset of the model's actual fields
 
 ### Requirement: Versioned JSON Schema Artifact
 The library SHALL emit a versioned JSON Schema (`schema/*.json`) generated from the Pydantic

@@ -128,27 +128,33 @@ class TraitValue(BaseModel):
 
 BlobKind = Literal["predictions_slp", "labels", "h5", "qc_image"]
 
+# Single source of truth for BlobRef's "at least one location" rule: both the
+# emitted JSON Schema constraint and the runtime validator derive from this, so a
+# field rename can't leave the schema and the model out of sync.
+_BLOB_LOCATION_FIELDS = ("s3_location", "box_link")
+
+
+def _blob_location_anyof() -> dict:
+    """Build the at-least-one-location ``anyOf`` from the location field names.
+
+    Each branch requires one location field and constrains it to a (non-null)
+    string, so an all-null object is rejected by the schema exactly as the model
+    validator rejects it.
+    """
+    return {
+        "anyOf": [
+            {"required": [field], "properties": {field: {"type": "string"}}}
+            for field in _BLOB_LOCATION_FIELDS
+        ]
+    }
+
 
 class BlobRef(BaseModel):
     """Pointer to an intermediate artifact (rows in the #2 intermediates table)."""
 
     # Encode the "at least one location" rule in the emitted JSON Schema so
     # consumers (Bloom codegen) reject the same objects Pydantic does.
-    model_config = ConfigDict(
-        frozen=True,
-        json_schema_extra={
-            "anyOf": [
-                {
-                    "required": ["s3_location"],
-                    "properties": {"s3_location": {"type": "string"}},
-                },
-                {
-                    "required": ["box_link"],
-                    "properties": {"box_link": {"type": "string"}},
-                },
-            ]
-        },
-    )
+    model_config = ConfigDict(frozen=True, json_schema_extra=_blob_location_anyof())
 
     kind: BlobKind
     scan_key: str
@@ -159,8 +165,10 @@ class BlobRef(BaseModel):
 
     @model_validator(mode="after")
     def _require_location(self) -> "BlobRef":
-        if self.s3_location is None and self.box_link is None:
-            raise ValueError("BlobRef requires at least one of s3_location or box_link")
+        if all(getattr(self, field) is None for field in _BLOB_LOCATION_FIELDS):
+            raise ValueError(
+                "BlobRef requires at least one of " + " or ".join(_BLOB_LOCATION_FIELDS)
+            )
         return self
 
 
