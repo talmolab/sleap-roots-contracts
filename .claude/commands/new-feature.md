@@ -24,16 +24,20 @@ as the single entry point so every feature starts the same way.
    openspec validate <feature> --strict
    ```
 
-4. **Plan the work.** For small changes, `tasks.md` is the plan. For larger ones, expand each
+4. **Review the proposal.** Run `/review-openspec` to have the proposal critically reviewed by a
+   team of specialized subagents. Fix any blocking findings and re-run until the verdict is clear,
+   then respect the approval gate — do not start implementing until the proposal is approved.
+
+5. **Plan the work.** For small changes, `tasks.md` is the plan. For larger ones, expand each
    task into bite-sized TDD steps (one failing test → minimal code → commit).
 
-5. **Implement task-by-task with `/tdd`.** Red → green → refactor → commit, one task at a time.
+6. **Implement task-by-task with `/tdd`.** Red → green → refactor → commit, one task at a time.
    Keep `tasks.md` in sync as you go via `/openspec:apply`.
 
-6. **Pre-merge.** Run `/pre-merge-check` (black + ruff + full pytest + coverage). Regenerate
+7. **Pre-merge.** Run `/pre-merge-check` (black + ruff + full pytest + coverage). Regenerate
    `schema/*.json` and confirm the drift guard is green. Then `/pr-description` and open the PR.
 
-7. **Archive after merge.** Run `/openspec:archive <feature>` to fold the change into the specs.
+8. **Archive after merge.** Run `/openspec:archive <feature>` to fold the change into the specs.
 
 ## Conventions (this repo)
 
