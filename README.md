@@ -7,6 +7,15 @@ per-scan pipeline result and its provenance (Pydantic v2 models), emits a versio
 Schema artifact, and ships a trait-definitions registry. The Python producers
 (`sleap-roots-predict`, `sleap-roots-traits`) import it; Bloom consumes the emitted schema.
 
+It also defines the **analysis-input contract** — the canonical shape of the wide trait
+table that crosses the `sleap-roots-analyze` ↔ Bloom boundary.
+`validate_analysis_input(df, *, strict=False)` structurally validates that table against
+fixed canonical role names (`genotype` + optional `sample_id` / `replicate` /
+`image_path`) plus an open set of opaque numeric trait columns, returning a structured
+`ValidationResult`. It operates on a pandas DataFrame, so pandas is an optional install
+extra — `pip install sleap-roots-contracts[pandas]` — while the runtime core stays
+pydantic + pyyaml.
+
 It is sub-project #1 of the sleap-roots ↔ Bloom integration program. Design and plan:
 `docs/01-contract-library-design.md` and `docs/02-contract-library-plan.md`.
 

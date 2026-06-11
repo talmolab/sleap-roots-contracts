@@ -8,6 +8,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`analysis-input-contract` capability** — a second contract for the wide
+  analysis-input table that crosses the `sleap-roots-analyze` ↔ Bloom boundary:
+  - `AnalysisInputRow` (Pydantic v2 row model) with fixed canonical role names
+    (required `genotype`; optional `sample_id` / `replicate` / `image_path`) plus
+    an open set of opaque numeric trait columns.
+  - `validate_analysis_input(df, *, strict=False) -> ValidationResult` — a
+    **structural** validator (role columns, dtypes, NaN policy, ≥1 numeric trait;
+    trait names are opaque — no trait-name registry and no value-range checks). A
+    three-tier severity model: hard errors / warnings that escalate under
+    `strict=True` / NaN allowed in traits. `ValidationResult` carries `ok`,
+    `errors`, `warnings`, and `raise_for_status()`; each issue names its column.
+  - Emitted `schema/analysis_input.schema.json`, drift-guarded in CI.
+  - pandas is an optional `[pandas]` install extra (lazy import + guided
+    `ImportError`); the runtime core stays pydantic + pyyaml.
+
 ## [0.1.0a0] - 2026-06-08 (Pre-release)
 
 First release of the result + provenance contract — sub-project #1 of the
