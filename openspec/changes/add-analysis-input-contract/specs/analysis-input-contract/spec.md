@@ -120,6 +120,21 @@ contract SHALL NOT attempt to distinguish phenotypic traits from numeric metadat
 - **THEN** column-presence and dtype checks still apply (e.g. a missing `genotype` column is still an
   error) and no per-row `NaN` issues are raised for the absent rows
 
+### Requirement: Role-Dtype Canonicalization Helper
+The library SHALL provide `canonicalize_role_dtypes(df)`, importable from the package root, that
+returns a copy of the table with the canonical role columns present in it cast to string dtype,
+leaving trait columns untouched and not mutating the input. This is the role-dtype half of
+canonicalization a consumer applies after renaming its columns to the canonical names and before
+`validate_analysis_input` (which is a pure validator and does not coerce). It SHALL be the single
+shared implementation reused by `sleap-roots-analyze` (`talmolab/sleap-roots-analyze#144`), the
+bloom-mcp adapter, and the packaged example accessor.
+
+#### Scenario: Role columns are cast to string, trait columns untouched
+- **WHEN** a table with an integer `replicate` column and numeric trait columns is passed to
+  `canonicalize_role_dtypes`
+- **THEN** the returned frame's `replicate` is string-typed, the trait columns keep their numeric
+  dtype, the input frame is not mutated, and the result passes `validate_analysis_input`
+
 ### Requirement: Pandas Is An Optional Dependency
 The validator SHALL operate on a pandas DataFrame, and pandas SHALL be an optional install extra so
 the library's runtime core depends only on pydantic and pyyaml. When `validate_analysis_input` is

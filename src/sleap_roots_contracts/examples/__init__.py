@@ -17,6 +17,8 @@ from importlib import resources
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from ..analysis_input import canonicalize_role_dtypes
+
 if TYPE_CHECKING:  # pragma: no cover - typing only
     import pandas as pd
 
@@ -31,7 +33,6 @@ ANALYSIS_INPUT_EXAMPLES = (
     "turface",
     "genotype_means",
 )
-_ROLE_COLUMNS = ("genotype", "sample_id", "replicate", "image_path")
 
 __all__ = [
     "ANALYSIS_INPUT_EXAMPLES",
@@ -97,5 +98,5 @@ def load_analysis_input_example(name: str) -> "pd.DataFrame":
     source = resources.files(__name__).joinpath(f"{name}.csv")
     with resources.as_file(source) as path:
         df = pd.read_csv(path)
-    role_cols = {col: "string" for col in _ROLE_COLUMNS if col in df.columns}
-    return df.astype(role_cols)
+    # Reuse the contract's single role-dtype canonicalization (and its ROLE_COLUMNS).
+    return canonicalize_role_dtypes(df)

@@ -4,6 +4,7 @@ from .analysis_input import (
     AnalysisInputRow,
     ValidationIssue,
     ValidationResult,
+    canonicalize_role_dtypes,
     validate_analysis_input,
 )
 from .hashing import NonCanonicalizableError, compute_param_hash
@@ -35,6 +36,7 @@ __all__ = [
     "ValidationIssue",
     "ValidationResult",
     "validate_analysis_input",
+    "canonicalize_role_dtypes",
     # Producer-side hashing surface (Python consumers of this package are the
     # producers; Bloom consumes only the emitted JSON Schema).
     "compute_param_hash",

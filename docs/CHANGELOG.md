@@ -20,6 +20,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     three-tier severity model: hard errors / warnings that escalate under
     `strict=True` / NaN allowed in traits. `ValidationResult` carries `ok`,
     `errors`, `warnings`, and `raise_for_status()`; each issue names its column.
+  - `canonicalize_role_dtypes(df)` — the shared role-dtype canonicalization (cast
+    canonical role columns to string) that consumers apply before validating, since
+    the validator is pure and does not coerce.
   - Emitted `schema/analysis_input.schema.json`, drift-guarded in CI.
   - pandas is an optional `[pandas]` install extra (lazy import + guided
     `ImportError`); the runtime core stays pydantic + pyyaml.

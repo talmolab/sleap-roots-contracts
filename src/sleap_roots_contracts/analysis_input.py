@@ -55,6 +55,22 @@ ROLE_COLUMNS = (REQUIRED_ROLE, *OPTIONAL_ROLES)
 Severity = Literal["error", "warning"]
 
 
+def canonicalize_role_dtypes(df: "pd.DataFrame") -> "pd.DataFrame":
+    """Return a copy of ``df`` with the canonical role columns cast to string dtype.
+
+    The contract requires role columns (``genotype`` / ``sample_id`` / ``replicate`` /
+    ``image_path``) to be string-typed, but a CSV often stores ``replicate`` as
+    integers. ``validate_analysis_input`` is a pure validator and does **not** coerce —
+    so this is the role-dtype half of canonicalization a consumer applies **after**
+    renaming its columns to the canonical names and **before** validating. Only role
+    columns present in ``df`` are cast; trait columns are left untouched and the input
+    frame is not mutated. Shared so ``sleap-roots-analyze`` (analyze#144), the bloom-mcp
+    adapter, and the packaged example accessor all use one implementation.
+    """
+    role_cols = {col: "string" for col in ROLE_COLUMNS if col in df.columns}
+    return df.astype(role_cols)
+
+
 @dataclass(frozen=True)
 class ValidationIssue:
     """One structural problem found in an analysis-input table.

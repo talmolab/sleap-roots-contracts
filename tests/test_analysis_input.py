@@ -13,6 +13,7 @@ from sleap_roots_contracts.analysis_input import (
     AnalysisInputRow,
     ValidationIssue,
     ValidationResult,
+    canonicalize_role_dtypes,
     validate_analysis_input,
 )
 from sleap_roots_contracts.schema import render
@@ -79,7 +80,13 @@ class TestPublicAPI:
         assert src.validate_analysis_input is validate_analysis_input
         assert src.ValidationResult is ValidationResult
         assert src.AnalysisInputRow is AnalysisInputRow
-        for name in ("validate_analysis_input", "ValidationResult", "AnalysisInputRow"):
+        assert src.canonicalize_role_dtypes is canonicalize_role_dtypes
+        for name in (
+            "validate_analysis_input",
+            "ValidationResult",
+            "AnalysisInputRow",
+            "canonicalize_role_dtypes",
+        ):
             assert name in src.__all__
 
 
@@ -442,6 +449,33 @@ class TestValidator:
         assert any(
             i.column is None and "trait" in i.message.lower() for i in result.errors
         )
+
+
+class TestCanonicalizeRoleDtypes:
+    """The shared role-dtype canonicalization helper (canonicalize_role_dtypes)."""
+
+    def test_casts_roles_to_string_leaves_traits_and_does_not_mutate(self):
+        """Role columns become string; traits keep dtype; input is not mutated."""
+        df = _df(
+            genotype=["A", "B"],
+            sample_id=["s1", "s2"],
+            replicate=[1, 2],  # numeric -> must become string
+            total_length=[1.0, 2.0],  # trait -> untouched
+        )
+        out = canonicalize_role_dtypes(df)
+        assert pd.api.types.is_string_dtype(out["replicate"])
+        assert pd.api.types.is_numeric_dtype(out["total_length"])
+        # input frame is not mutated
+        assert pd.api.types.is_numeric_dtype(df["replicate"])
+        # and the canonicalized frame validates as-is
+        assert validate_analysis_input(out).ok is True
+
+    def test_returns_a_copy_and_casts_only_present_roles(self):
+        """Returns a new frame; only role columns present in df are cast."""
+        df = _df(genotype=["A"], total_length=[1.0])  # no optional roles present
+        out = canonicalize_role_dtypes(df)
+        assert out is not df
+        assert pd.api.types.is_string_dtype(out["genotype"])
 
 
 class TestExampleFixtures:
