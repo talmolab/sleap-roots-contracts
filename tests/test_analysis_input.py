@@ -350,6 +350,37 @@ class TestValidator:
         assert any("trait" in i.message.lower() for i in result.errors)
         assert any(i.column == "flag" for i in result.warnings)
 
+    def test_categorical_string_role_column_is_accepted(self):
+        """A categorical role column of strings is a valid string role (spec scenario).
+
+        pandas often infers/stores a low-cardinality genotype column as ``category``
+        (e.g. after a group-by); categorical dtype must not by itself fail the role
+        dtype check.
+        """
+        df = pd.DataFrame(
+            {
+                "genotype": pd.Series(["A", "B", "A"], dtype="category"),
+                "sample_id": ["s1", "s2", "s3"],
+                "trait": [1.0, 2.0, 3.0],
+            }
+        )
+        result = validate_analysis_input(df)
+        assert result.ok is True
+        assert result.errors == []
+        assert result.warnings == []
+
+    def test_numeric_categorical_column_is_not_a_trait(self):
+        """A numeric-valued categorical (non-role) is not a trait: warns as non-numeric."""
+        df = _df(
+            genotype=["A", "B"],
+            sample_id=["s1", "s2"],
+            code=pd.Series([1, 2], dtype="category"),
+            trait=[1.0, 2.0],
+        )
+        result = validate_analysis_input(df)
+        assert result.ok is True  # the real `trait` column satisfies the >=1-trait rule
+        assert any(i.column == "code" for i in result.warnings)
+
     def test_all_roles_present_valid(self):
         """A table exercising every role column (incl. image_path) validates clean."""
         df = _df(

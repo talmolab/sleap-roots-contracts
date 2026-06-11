@@ -62,6 +62,12 @@ contract SHALL NOT attempt to distinguish phenotypic traits from numeric metadat
 - **THEN** the result's `ok` is false, `errors` is non-empty, the offending issue names the
   `replicate` column, and `raise_for_status()` raises
 
+#### Scenario: A categorical string role column is accepted
+- **WHEN** a role column (e.g. `genotype`) is a pandas categorical whose values are strings (as
+  produced by, e.g., a group-by aggregation)
+- **THEN** it is accepted as a valid string role — categorical dtype does not by itself make a role
+  column wrong-dtype
+
 #### Scenario: NaN in the required genotype column is an error
 - **WHEN** a table contains `NaN` in the required `genotype` column
 - **THEN** the result's `ok` is false, `errors` is non-empty, and the offending issue names the
