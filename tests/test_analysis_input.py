@@ -97,9 +97,9 @@ class TestValidationResultType:
         assert result.ok is False
 
     def test_raise_for_status_raises_on_error(self):
-        """raise_for_status raises when an error is present, naming the column."""
+        """raise_for_status raises ValueError when an error is present, naming the column."""
         result = ValidationResult(errors=[ValidationIssue("genotype", "bad", "error")])
-        with pytest.raises(Exception, match="genotype"):
+        with pytest.raises(ValueError, match="genotype"):
             result.raise_for_status()
 
     def test_raise_for_status_noop_when_ok(self):
@@ -275,16 +275,63 @@ class TestValidator:
             )
             result = validate_analysis_input(df)  # must not raise
             assert result.ok is False
-            assert any("duplicate" in i.message.lower() for i in result.errors)
+            # The error must name the duplicated column (spec: "names the columns").
+            assert any(
+                "duplicate" in i.message.lower() and role in i.message
+                for i in result.errors
+            )
 
     def test_duplicate_trait_column_is_error_not_misclassified(self):
-        """A duplicated trait column is reported, not silently mis-rejected."""
+        """A duplicated trait column is reported (by name), not silently mis-rejected."""
         df = pd.DataFrame(
             [["A", "s1", 1.0, 2.0]], columns=["genotype", "sample_id", "t", "t"]
         )
         result = validate_analysis_input(df)
         assert result.ok is False
-        assert any("duplicate" in i.message.lower() for i in result.errors)
+        assert any(
+            "duplicate" in i.message.lower() and "t" in i.message for i in result.errors
+        )
+
+    def test_datetime_column_is_not_a_trait(self):
+        """A datetime column is non-numeric: warns, does not satisfy the trait rule."""
+        df = _df(
+            genotype=["A", "B"],
+            sample_id=["s1", "s2"],
+            when=pd.to_datetime(["2020-01-01", "2020-01-02"]),
+        )
+        result = validate_analysis_input(df)
+        assert result.ok is False  # no numeric trait
+        assert any("trait" in i.message.lower() for i in result.errors)
+        assert any(i.column == "when" for i in result.warnings)
+
+    def test_datetime_role_column_is_wrong_dtype_error(self):
+        """A datetime role column is a wrong-dtype error, even when empty / all-NaT.
+
+        Guards the vacuous-True trap: an empty or all-NA non-string role column must
+        not slip past the dtype check.
+        """
+        # 0-row datetime genotype must error (not validate clean).
+        empty = pd.DataFrame(
+            {
+                "genotype": pd.Series([], dtype="datetime64[ns]"),
+                "sample_id": pd.Series([], dtype="object"),
+                "trait": pd.Series([], dtype="float64"),
+            }
+        )
+        r1 = validate_analysis_input(empty)
+        assert r1.ok is False
+        assert any(i.column == "genotype" for i in r1.errors)
+
+        # all-NaT datetime optional role -> dtype error, not a NaN warning.
+        nat = _df(
+            genotype=["A", "B"],
+            sample_id=["s1", "s2"],
+            image_path=pd.Series([pd.NaT, pd.NaT], dtype="datetime64[ns]"),
+            trait=[1.0, 2.0],
+        )
+        r2 = validate_analysis_input(nat)
+        assert r2.ok is False
+        assert any(i.column == "image_path" for i in r2.errors)
 
     def test_complex_dtype_column_is_not_a_trait(self):
         """A complex-dtype column does not satisfy the >=1 real-number-trait rule."""
@@ -403,8 +450,10 @@ class TestExampleFixtures:
     def test_examples_carry_realistic_opaque_trait_names(self, load_analysis_input):
         """Real fixtures preserve units/parens/dotted trait names (not synthetic)."""
         turface = load_analysis_input("turface")
-        # "Network Area (mm²)" — match by prefix to avoid a unicode literal in source.
+        # "Network Area (mm²)" — assert the superscript-2 round-trips (UTF-8 intact),
+        # using the ² escape rather than a raw unicode literal in source.
         assert any(c.startswith("Network Area (mm") for c in turface.columns)
+        assert any("²" in c for c in turface.columns)  # superscript-2 round-trips
         assert "Total Root Length (mm)" in turface.columns
         assert "Root Count 0cm" in load_analysis_input("field").columns
 

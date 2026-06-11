@@ -126,12 +126,20 @@ def _is_numeric(series: "pd.Series", pd: ModuleType) -> bool:
 def _is_string(series: "pd.Series", pd: ModuleType) -> bool:
     """True for a role column holding strings (object or pandas StringDtype).
 
-    Numeric/bool dtypes are rejected outright; for object/string dtypes every
-    non-null value must be a ``str`` so an int-coded column read as ``object`` (or a
-    numeric column) still fails the role dtype check — robust across pandas 2/3
-    string-inference semantics.
+    Numeric/bool/datetime/timedelta dtypes are rejected up front — otherwise an empty
+    or all-NA column of those dtypes would pass the value check vacuously (``dropna()``
+    is empty, so ``all([])`` is ``True``). For the remaining (object/string/category)
+    dtypes every non-null value must be a ``str`` so an int-coded column read as
+    ``object`` (or a numeric column) still fails the role dtype check — robust across
+    pandas 2/3 string-inference semantics.
     """
-    if _is_numeric(series, pd) or pd.api.types.is_bool_dtype(series):
+    types = pd.api.types
+    if (
+        _is_numeric(series, pd)
+        or types.is_bool_dtype(series)
+        or types.is_datetime64_any_dtype(series)
+        or types.is_timedelta64_dtype(series)
+    ):
         return False
     return all(isinstance(value, str) for value in series.dropna())
 
