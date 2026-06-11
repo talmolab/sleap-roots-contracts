@@ -18,7 +18,7 @@ from .models import (
 )
 from .registry import TraitDefinition, load_registry, validate_trait
 
-__version__ = "0.1.0a0"
+__version__ = "0.1.0a1"
 __all__ = [
     "BlobRef",
     "InputRef",

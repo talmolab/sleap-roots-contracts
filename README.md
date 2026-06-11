@@ -14,7 +14,9 @@ fixed canonical role names (`genotype` + optional `sample_id` / `replicate` /
 `image_path`) plus an open set of opaque numeric trait columns, returning a structured
 `ValidationResult`. It operates on a pandas DataFrame, so pandas is an optional install
 extra — `pip install sleap-roots-contracts[pandas]` — while the runtime core stays
-pydantic + pyyaml.
+pydantic + pyyaml. Canonical example tables ship in the package
+(`sleap_roots_contracts.examples.load_analysis_input_example(...)`) so consumers can load a
+validating frame straight from the released wheel.
 
 It is sub-project #1 of the sleap-roots ↔ Bloom integration program. Design and plan:
 `docs/01-contract-library-design.md` and `docs/02-contract-library-plan.md`.

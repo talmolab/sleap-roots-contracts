@@ -465,10 +465,21 @@ class TestExampleFixtures:
 
     def test_sample_level_examples_have_no_warnings(self, load_analysis_input):
         """Sample-level examples (have sample_id) validate with zero warnings."""
-        for name in ("cylinder", "field", "turface"):
+        for name in ("cylinder", "cylinder_no_replicate", "field", "turface"):
             result = validate_analysis_input(load_analysis_input(name))
             assert result.ok is True
             assert result.warnings == [], name
+
+    def test_replicate_present_and_absent_shapes_both_ship(self, load_analysis_input):
+        """The example set covers replicate-present and replicate-absent sample-level."""
+        assert "replicate" in load_analysis_input("cylinder").columns  # present
+        assert "replicate" not in load_analysis_input("cylinder_no_replicate").columns
+        # Both still validate (replicate is optional).
+        assert (
+            load_analysis_input("cylinder_no_replicate")
+            .pipe(validate_analysis_input)
+            .ok
+        )
 
     def test_genotype_aggregated_example_warns_missing_sample_id(
         self, load_analysis_input
@@ -506,23 +517,91 @@ class TestExampleFixtures:
             "wave_number",
             "accession_id",
         }
-        for name in ("cylinder", "field", "turface", "genotype_means"):
+        from sleap_roots_contracts.examples import ANALYSIS_INPUT_EXAMPLES
+
+        for name in ANALYSIS_INPUT_EXAMPLES:
             cols = set(load_analysis_input(name).columns)
             assert cols.isdisjoint(forbidden), (name, cols & forbidden)
 
-    def test_fixtures_require_role_dtype_canonicalization(self, analysis_input_dir):
-        """The shipped CSVs validate only after role-dtype canonicalization.
+    def test_accessor_loads_role_columns_as_strings(
+        self, load_analysis_input, example_path
+    ):
+        """The accessor canonicalizes role dtypes so the frame validates directly.
 
-        The real `10_final_data.csv` tables store `Replicate` as integers, so a plain
-        `pd.read_csv` infers a numeric `replicate` (a wrong-dtype error). The conftest
-        loader casts role columns to string — exactly the canonicalization a consumer
-        must do — so make that requirement explicit rather than hidden.
+        A bare `pd.read_csv` of the same file infers a numeric `replicate` and fails
+        the role-dtype check; the accessor casts role columns to string so the returned
+        frame passes without the caller doing any dtype coercion.
         """
-        raw = pd.read_csv(analysis_input_dir / "field.csv")  # no astype
-        assert pd.api.types.is_numeric_dtype(raw["replicate"])  # documents the quirk
-        assert validate_analysis_input(raw).ok is False  # raw fails by design
-        canon = raw.astype({"replicate": "string", "genotype": "string"})
-        assert validate_analysis_input(canon).ok is True
+        df = load_analysis_input("field")
+        assert pd.api.types.is_string_dtype(df["replicate"])  # accessor canonicalized
+        assert not pd.api.types.is_numeric_dtype(df["replicate"])
+        assert validate_analysis_input(df).ok is True
+
+        # Same file read raw (no accessor) fails by design — pins why the accessor exists.
+        raw = pd.read_csv(example_path("field"))
+        assert pd.api.types.is_numeric_dtype(raw["replicate"])
+        assert validate_analysis_input(raw).ok is False
+
+    def test_examples_ship_in_built_wheel(self, tmp_path):
+        """The example CSVs are packaged into the built wheel (importable by consumers)."""
+        import glob
+        import shutil
+        import subprocess
+        import zipfile
+        from pathlib import Path
+
+        from sleap_roots_contracts.examples import ANALYSIS_INPUT_EXAMPLES
+
+        if shutil.which("uv") is None:
+            pytest.skip("uv not available to build the wheel")
+        repo_root = Path(__file__).resolve().parents[1]
+        subprocess.run(
+            ["uv", "build", "--wheel", "--out-dir", str(tmp_path)],
+            cwd=repo_root,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        wheels = glob.glob(str(tmp_path / "*.whl"))
+        assert wheels, "no wheel was built"
+        names = zipfile.ZipFile(wheels[0]).namelist()
+        for example in ANALYSIS_INPUT_EXAMPLES:
+            assert any(
+                n.endswith(f"sleap_roots_contracts/examples/{example}.csv")
+                for n in names
+            ), f"{example}.csv missing from wheel"
+
+
+class TestPackagedExamplesAccessor:
+    """The sleap_roots_contracts.examples accessor surface."""
+
+    def test_names_match_constant(self):
+        """analysis_input_example_names returns the example tuple."""
+        from sleap_roots_contracts.examples import (
+            ANALYSIS_INPUT_EXAMPLES,
+            analysis_input_example_names,
+        )
+
+        assert analysis_input_example_names() == ANALYSIS_INPUT_EXAMPLES
+
+    def test_path_points_at_an_existing_packaged_csv(self):
+        """analysis_input_example_path returns a real on-disk CSV path."""
+        from sleap_roots_contracts.examples import analysis_input_example_path
+
+        path = analysis_input_example_path("cylinder")
+        assert path.is_file() and path.suffix == ".csv"
+
+    def test_unknown_example_name_raises_keyerror(self):
+        """Both accessors reject an unknown example name."""
+        from sleap_roots_contracts.examples import (
+            analysis_input_example_path,
+            load_analysis_input_example,
+        )
+
+        with pytest.raises(KeyError):
+            load_analysis_input_example("not_an_example")
+        with pytest.raises(KeyError):
+            analysis_input_example_path("not_an_example")
 
 
 class TestPandasOptional:

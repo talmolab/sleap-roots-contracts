@@ -146,21 +146,36 @@ differs from a fresh regeneration (the existing drift guard).
 - **WHEN** `AnalysisInputRow` changes but `schema/analysis_input.schema.json` is not regenerated
 - **THEN** the drift-guard check fails
 
-### Requirement: Example Fixtures Per Shape
-The library SHALL ship example analysis-input tables for the cylinder, field, and turface shapes
-(plus a genotype-aggregated table) under `tests/fixtures/`, loaded via a pytest fixture, each of which
-validates (its `ok` is true) via `validate_analysis_input`. The examples SHALL be small real subsets
-of the wheat EDPIE post-QC tables in **canonical** form — role columns plus opaque numeric trait
-columns only, with non-trait metadata excluded (mirroring a consumer's canonicalization). Only the
-role columns SHALL be canonical; trait column names SHALL remain opaque and realistic (units, parens,
-dotted names). At least one example SHALL be sample-level (has `sample_id`) and at least one SHALL be
-genotype-aggregated (no `sample_id`), so the missing-`sample_id` warning path is exercised in both
-directions. The structural classifier's metadata-as-trait limitation SHALL be pinned by a unit test
-(an inline DataFrame), not by embedding metadata decoy columns in the shipped example tables.
+### Requirement: Packaged Example Tables
+The library SHALL ship canonical analysis-input example tables **inside the installed package**
+(under `src/sleap_roots_contracts/examples/`, distributed in the wheel) and expose an accessor module
+(`sleap_roots_contracts.examples`) so downstream consumers can load them from the released package
+(not from the test tree). The accessor SHALL load each example as a DataFrame with the role columns
+typed as `str`, so the returned frame passes `validate_analysis_input` directly — a bare `pd.read_csv`
+of the same file would infer a numeric `replicate` and fail the role-dtype check, so the accessor
+performs that dtype canonicalization on the consumer's behalf. The examples SHALL be small real
+subsets of the wheat EDPIE post-QC tables in **canonical** form — role columns plus opaque numeric
+trait columns only, with non-trait metadata excluded. Trait column names SHALL remain opaque and
+realistic (units, parens, dotted names). The example set SHALL cover replicate-present sample-level
+tables (cylinder/field/turface), a replicate-absent sample-level table (the Bloom cylinder shape,
+`talmolab/sleap-roots-analyze#142`), and a genotype-aggregated table (no `sample_id`), so the
+missing-`sample_id` warning path and the replicate-present/absent shapes are all represented. The
+structural classifier's metadata-as-trait limitation SHALL be pinned by a unit test (an inline
+DataFrame), not by embedding metadata decoy columns in the shipped example tables.
 
-#### Scenario: Each shipped example validates
-- **WHEN** the cylinder, field, and turface example tables are each validated
+#### Scenario: Each packaged example loads and validates
+- **WHEN** each packaged example is loaded via the `sleap_roots_contracts.examples` accessor and
+  validated with `validate_analysis_input`
 - **THEN** every result's `ok` is true
+
+#### Scenario: The accessor canonicalizes role dtypes so the frame validates directly
+- **WHEN** a packaged example is loaded via the accessor
+- **THEN** its role columns are string-typed and `validate_analysis_input` returns `ok` true without
+  any further dtype coercion by the caller
+
+#### Scenario: The example tables ship in the built wheel
+- **WHEN** the distribution wheel is built
+- **THEN** it contains the example CSVs under `sleap_roots_contracts/examples/`
 
 #### Scenario: A genotype-aggregated example warns on the missing sample identifier
 - **WHEN** the genotype-aggregated example (no `sample_id` column) is validated with default settings

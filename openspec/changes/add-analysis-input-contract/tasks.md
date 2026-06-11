@@ -99,6 +99,22 @@
       (`test_metadata_named_numeric_column_is_still_a_trait`); add a test asserting the shipped
       examples carry no metadata decoys; update the fixtures README.
 
+## 9. Packaged example tables (post-review: ship in the wheel)
+
+- [x] 9.1 Relocate the canonical example CSVs from `tests/fixtures/analysis_input/` to
+      `src/sleap_roots_contracts/examples/` so they ship in the wheel (`tests/` is not packaged).
+- [x] 9.2 Add the `sleap_roots_contracts.examples` accessor: `load_analysis_input_example(name)`
+      (reads role columns as `str` so the frame validates as-is), `analysis_input_example_path(name)`,
+      `analysis_input_example_names()` / `ANALYSIS_INPUT_EXAMPLES`.
+- [x] 9.3 Add `cylinder_no_replicate.csv` (replicate-absent sample-level — Bloom cylinder,
+      `talmolab/sleap-roots-analyze#142`) so the example set covers replicate present + absent +
+      genotype-aggregated (`talmolab/sleap-roots-analyze#120`).
+- [x] 9.4 Point `conftest.py` at the packaged accessor; add tests: each example loads + validates;
+      the accessor canonicalizes role dtypes (raw `read_csv` fails); the examples ship in the built
+      wheel. Update `.gitattributes` for the new CSV path.
+- [x] 9.5 Bump the package version `0.1.0a0` → `0.1.0a1` (so consumers can pin the analysis-input
+      contract); regenerate both `schema/*.json` (`$id` carries the version).
+
 ## 7. Verify
 
 - [x] 7.1 `uv run black --check src tests` && `uv run ruff check src tests`

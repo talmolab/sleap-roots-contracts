@@ -2,4 +2,4 @@
 # drift guard / loaded cross-platform. Pin LF so Windows autocrlf settings can't
 # rewrite line endings and make CI diverge.
 schema/*.json text eol=lf
-tests/fixtures/analysis_input/*.csv text eol=lf
+src/sleap_roots_contracts/examples/*.csv text eol=lf

@@ -23,6 +23,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Emitted `schema/analysis_input.schema.json`, drift-guarded in CI.
   - pandas is an optional `[pandas]` install extra (lazy import + guided
     `ImportError`); the runtime core stays pydantic + pyyaml.
+  - **Packaged example tables** under `sleap_roots_contracts.examples` (ship in the
+    wheel): `load_analysis_input_example(name)` returns a frame with string-typed role
+    columns that passes `validate_analysis_input` directly; covers replicate-present
+    sample-level, replicate-absent sample-level (Bloom cylinder), and genotype-aggregated
+    shapes — the source of truth for `talmolab/sleap-roots-analyze#120`.
 
 ## [0.1.0a0] - 2026-06-08 (Pre-release)
 
