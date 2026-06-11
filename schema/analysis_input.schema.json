@@ -1,0 +1,58 @@
+{
+  "$id": "https://github.com/talmolab/sleap-roots-contracts/schema/v0.1.0a0/analysis_input.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": {
+    "type": [
+      "number",
+      "null"
+    ]
+  },
+  "description": "One row of the canonical wide analysis-input table.\n\nFixed canonical role names: a required string ``genotype`` plus optional string\n``sample_id``, ``replicate``, and ``image_path``. Any further columns are treated as\nnumeric **trait** columns (an open set with opaque names) carried via\n``extra=\"allow\"`` and typed ``number | null`` in the emitted JSON Schema.",
+  "properties": {
+    "genotype": {
+      "title": "Genotype",
+      "type": "string"
+    },
+    "image_path": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Image Path"
+    },
+    "replicate": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Replicate"
+    },
+    "sample_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Sample Id"
+    }
+  },
+  "required": [
+    "genotype"
+  ],
+  "title": "AnalysisInputRow",
+  "type": "object"
+}

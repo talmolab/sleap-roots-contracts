@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 from . import __version__
+from .analysis_input import AnalysisInputRow
 from .models import ResultEnvelope
 
 
@@ -23,7 +24,10 @@ def _default_schema_dir() -> Path:
 
 
 SCHEMA_DIR = _default_schema_dir()
-MODELS = {"result_envelope": ResultEnvelope}
+MODELS = {
+    "result_envelope": ResultEnvelope,
+    "analysis_input": AnalysisInputRow,
+}
 
 
 def render(name: str) -> str:
