@@ -1,35 +1,35 @@
 ## 0. Packaging first (CI needs pandas before the validator tests run)
 
-- [ ] 0.1 Add optional `[pandas]` extra in `pyproject.toml`; add pandas to the dev group so tests run.
+- [x] 0.1 Add optional `[pandas]` extra in `pyproject.toml`; add pandas to the dev group so tests run.
       Commit `pyproject.toml` + `uv.lock` as a matched pair (keeps `uv sync` reproducible).
-- [ ] 0.2 Add `.gitattributes` pinning `schema/*.json text eol=lf` and
+- [x] 0.2 Add `.gitattributes` pinning `schema/*.json text eol=lf` and
       `tests/fixtures/analysis_input/*.csv text eol=lf` so the drift guard is autocrlf-independent.
 
 ## 1. Schema model (test-first)
 
-- [ ] 1.1 Add `src/sleap_roots_contracts/analysis_input.py` with `from __future__ import annotations`
-- [ ] 1.2 Write the model test first (red): a well-formed row validates against `AnalysisInputRow`;
+- [x] 1.1 Add `src/sleap_roots_contracts/analysis_input.py` with `from __future__ import annotations`
+- [x] 1.2 Write the model test first (red): a well-formed row validates against `AnalysisInputRow`;
       a non-string `genotype` (int) is rejected
-- [ ] 1.3 Define `AnalysisInputRow` (Pydantic v2): required `genotype: str`; optional `str`
+- [x] 1.3 Define `AnalysisInputRow` (Pydantic v2): required `genotype: str`; optional `str`
       `sample_id` / `replicate` / `image_path`; `extra="allow"` for the open set of trait columns;
       `json_schema_extra` so additional properties are typed `{"type": ["number", "null"]}` (NaN
       allowed). Green.
 
 ## 2. ValidationResult + validator (test-first, per check)
 
-- [ ] 2.1 Test then define `ValidationIssue` (`column`, `message`, `severity`) and `ValidationResult`
+- [x] 2.1 Test then define `ValidationIssue` (`column`, `message`, `severity`) and `ValidationResult`
       (`ok`, `errors`, `warnings`, `raise_for_status()`)
-- [ ] 2.2 Implement `validate_analysis_input(df, *, strict=False)`. Lazy pandas import **inside the
+- [x] 2.2 Implement `validate_analysis_input(df, *, strict=False)`. Lazy pandas import **inside the
       function body** (never at module top) with a guided `ImportError` naming the
       `sleap-roots-contracts[pandas]` extra. NO column-mapping parameter — fixed canonical names.
-- [ ] 2.2a Test (red first): patch the import so `pandas` is absent → `validate_analysis_input` raises
+- [x] 2.2a Test (red first): patch the import so `pandas` is absent → `validate_analysis_input` raises
       `ImportError` whose message contains `[pandas]`; AND `import sleap_roots_contracts` /
       `from sleap_roots_contracts import validate_analysis_input` both still succeed with pandas
       absent (guards against a top-level pandas import)
-- [ ] 2.3 dtype detection must handle pandas ≥2 **and** 3.0 string semantics (object dtype *and*
+- [x] 2.3 dtype detection must handle pandas ≥2 **and** 3.0 string semantics (object dtype *and*
       `StringDtype`): a string-valued `genotype` passes; integer/float `genotype` is an error. Use
       `pandas.api.types` (`is_numeric_dtype` / `is_string_dtype`), not naive `== object`.
-- [ ] 2.4 Implement + test the three-tier severity checks (one failing test each, then green):
+- [x] 2.4 Implement + test the three-tier severity checks (one failing test each, then green):
       - **Errors:** missing `genotype` (2.4a); `genotype` not `str`, incl. int64 dtype (2.4b);
         `NaN` / all-NaN in the required `genotype` (2.4c); a declared role column
         (`sample_id`/`replicate`/`image_path`) with a numeric dtype (2.4d); zero numeric trait
@@ -47,49 +47,49 @@
 
 ## 3. Schema emission + drift guard (atomic with model registration)
 
-- [ ] 3.1 Register `"analysis_input": AnalysisInputRow` in `schema.py`'s `MODELS`
-- [ ] 3.2 Regenerate `uv run python -m sleap_roots_contracts.schema`; commit
+- [x] 3.1 Register `"analysis_input": AnalysisInputRow` in `schema.py`'s `MODELS`
+- [x] 3.2 Regenerate `uv run python -m sleap_roots_contracts.schema`; commit
       `schema/analysis_input.schema.json` **in the same commit as 3.1 + the model** (registering
       without the committed `.json` red-fails the drift guard step *and* test)
-- [ ] 3.3 Positive schema-shape test (not just drift): `render("analysis_input")` has `genotype` in
+- [x] 3.3 Positive schema-shape test (not just drift): `render("analysis_input")` has `genotype` in
       `required`, `properties.genotype.type == "string"`, and **exactly one** `additionalProperties`
       equal to `{"type": ["number", "null"]}` (pydantic's default `true` from `extra="allow"` must
       be overridden, not duplicated)
-- [ ] 3.4 Confirm the existing `MODELS`-iterating drift-guard + meta-validation tests now cover the
+- [x] 3.4 Confirm the existing `MODELS`-iterating drift-guard + meta-validation tests now cover the
       new schema (no edits needed — they loop over `MODELS`)
 
 ## 4. Public API
 
-- [ ] 4.1 Export `validate_analysis_input`, `ValidationResult`, `AnalysisInputRow` from
+- [x] 4.1 Export `validate_analysis_input`, `ValidationResult`, `AnalysisInputRow` from
       `__init__.py` `__all__` (only after the symbols exist); add an export-presence test
 
 ## 5. Fixtures + tests
 
-- [ ] 5.1 Add `tests/fixtures/analysis_input/{cylinder,field,turface,genotype_means}.csv` — small
+- [x] 5.1 Add `tests/fixtures/analysis_input/{cylinder,field,turface,genotype_means}.csv` — small
       **real** subsets of the wheat EDPIE post-QC `10_final_data.csv` tables (bundle:
       `talmolab/sleap-roots-analyze#120`), committed static (no network). Rename only the role columns
       to canonical (`Genotype`/`Barcode`/`Replicate`); keep real trait names + 1–2 numeric-metadata
       **decoy** columns (`scan_id`, `plant_age_days`, `Plot`, `Computation.Time.s`) to pin the
       structural classifier. Three are sample-level; `genotype_means.csv` is genotype-aggregated
       (no `sample_id`) for the warn path. Document provenance in a fixtures README.
-- [ ] 5.2 Wire the fixture **loader as a pytest fixture** (`tests/conftest.py`), not a plain helper;
+- [x] 5.2 Wire the fixture **loader as a pytest fixture** (`tests/conftest.py`), not a plain helper;
       read via `pd.read_csv` (line-ending tolerant)
-- [ ] 5.3 `tests/test_analysis_input.py`: `@pytest.mark.parametrize` "each example validates cleanly"
+- [x] 5.3 `tests/test_analysis_input.py`: `@pytest.mark.parametrize` "each example validates cleanly"
       over the three shapes (`ok` true)
 
 ## 6. Docs
 
-- [ ] 6.1 Update `README.md`: name the `analysis-input-contract` / `validate_analysis_input` alongside
+- [x] 6.1 Update `README.md`: name the `analysis-input-contract` / `validate_analysis_input` alongside
       the result+provenance contract, and note the optional `[pandas]` install extra (runtime core
       stays pydantic + pyyaml)
-- [ ] 6.2 Add an `### Added` entry under `## [Unreleased]` in `docs/CHANGELOG.md` for the capability
-- [ ] 6.3 Update `openspec/project.md`: Purpose now covers two contracts; add pandas as an **optional**
+- [x] 6.2 Add an `### Added` entry under `## [Unreleased]` in `docs/CHANGELOG.md` for the capability
+- [x] 6.3 Update `openspec/project.md`: Purpose now covers two contracts; add pandas as an **optional**
       extra under Tech Stack / External Dependencies (keep "runtime core = pydantic + pyyaml")
 
 ## 7. Verify
 
-- [ ] 7.1 `uv run black --check src tests` && `uv run ruff check src tests`
-- [ ] 7.2 `uv run python -m sleap_roots_contracts.schema && git diff --exit-code schema/`
-- [ ] 7.3 `uv run pytest -v --cov=sleap_roots_contracts --cov-report=term-missing` (full suite green;
+- [x] 7.1 `uv run black --check src tests` && `uv run ruff check src tests`
+- [x] 7.2 `uv run python -m sleap_roots_contracts.schema && git diff --exit-code schema/`
+- [x] 7.3 `uv run pytest -v --cov=sleap_roots_contracts --cov-report=term-missing` (full suite green;
       eyeball coverage of `analysis_input.py`, incl. the no-pandas branch)
-- [ ] 7.4 `openspec validate add-analysis-input-contract --strict`
+- [x] 7.4 `openspec validate add-analysis-input-contract --strict`
