@@ -1,6 +1,6 @@
 [project]
 name = "sleap-roots-contracts"
-version = "0.1.0a0"
+version = "0.1.0a1"
 description = "Shared result + provenance contract for the sleap-roots <-> Bloom pipeline."
 readme = "README.md"
 license = "GPL-3.0-or-later"
@@ -20,6 +20,12 @@ dependencies = [
     "pyyaml>=6.0",
 ]
 
+[project.optional-dependencies]
+# The analysis-input validator operates on a pandas DataFrame. pandas is an
+# optional extra so the runtime core stays pydantic + pyyaml; both real
+# consumers (sleap-roots-analyze, bloom-mcp) already ship it.
+pandas = ["pandas>=2.0"]
+
 [project.urls]
 Homepage = "https://github.com/talmolab/sleap-roots-contracts"
 Repository = "https://github.com/talmolab/sleap-roots-contracts"
@@ -37,6 +43,7 @@ dev = [
     "black>=25.1.0",
     "jsonschema>=4.23",
     "build>=1.3.0",
+    "pandas>=2.0",
 ]
 
 [tool.black]

@@ -1,5 +1,9 @@
+from importlib.metadata import version
+
 import sleap_roots_contracts
 
 
 def test_version_exposed():
-    assert sleap_roots_contracts.__version__ == "0.1.0a0"
+    """__version__ is a string and agrees with the installed package metadata."""
+    assert isinstance(sleap_roots_contracts.__version__, str)
+    assert sleap_roots_contracts.__version__ == version("sleap-roots-contracts")

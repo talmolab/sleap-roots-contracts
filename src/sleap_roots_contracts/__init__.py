@@ -1,5 +1,12 @@
 """Shared result + provenance contract for the sleap-roots <-> Bloom pipeline."""
 
+from .analysis_input import (
+    AnalysisInputRow,
+    ValidationIssue,
+    ValidationResult,
+    canonicalize_role_dtypes,
+    validate_analysis_input,
+)
 from .hashing import NonCanonicalizableError, compute_param_hash
 from .models import (
     BlobRef,
@@ -12,7 +19,7 @@ from .models import (
 )
 from .registry import TraitDefinition, load_registry, validate_trait
 
-__version__ = "0.1.0a0"
+__version__ = "0.1.0a1"
 __all__ = [
     "BlobRef",
     "InputRef",
@@ -24,6 +31,12 @@ __all__ = [
     "TraitDefinition",
     "load_registry",
     "validate_trait",
+    # Analysis-input contract (structural validator + canonical row model).
+    "AnalysisInputRow",
+    "ValidationIssue",
+    "ValidationResult",
+    "validate_analysis_input",
+    "canonicalize_role_dtypes",
     # Producer-side hashing surface (Python consumers of this package are the
     # producers; Bloom consumes only the emitted JSON Schema).
     "compute_param_hash",

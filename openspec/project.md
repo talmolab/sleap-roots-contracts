@@ -1,10 +1,12 @@
 # Project Context
 
 ## Purpose
-`sleap-roots-contracts` is the shared **result + provenance contract** for the sleap-roots ↔
-Bloom pipeline. It is a small, dependency-light, **Bloom-agnostic** leaf library that defines
-the shape of a per-scan pipeline result and its provenance (Pydantic v2 models), emits a
-versioned JSON Schema artifact, and ships a trait-definitions registry.
+`sleap-roots-contracts` is the shared **data contract** library for the sleap-roots ↔ Bloom
+pipeline. It is a small, dependency-light, **Bloom-agnostic** leaf library that defines two
+contracts: (1) the **result + provenance contract** — the shape of a per-scan pipeline result
+and its provenance (Pydantic v2 models) — and (2) the **analysis-input contract** — the
+canonical wide trait table, with a structural `validate_analysis_input` validator. It emits
+versioned JSON Schema artifacts and ships a trait-definitions registry.
 
 Producers (`sleap-roots-predict`, `sleap-roots-traits`) import it; **Bloom consumes the emitted
 JSON Schema** (codegen + migration-match). It is sub-project #1 of the sleap-roots ↔ Bloom
@@ -13,8 +15,10 @@ integration program (see `docs/01-contract-library-design.md` and `docs/02-contr
 ## Tech Stack
 - Python ≥3.11
 - uv + `uv_build` (build backend)
-- Pydantic v2 (canonical source of truth for the contract)
+- Pydantic v2 (canonical source of truth for the contracts)
 - PyYAML (trait-definitions registry)
+- pandas — **optional** `[pandas]` extra, required only by `validate_analysis_input`
+  (runtime core stays pydantic + pyyaml)
 - pytest + pytest-cov; ruff + black; jsonschema (schema meta-validation)
 - GitHub Actions (CI + PyPI trusted publishing). **Distributed via PyPI — no Docker/GHCR**
   (the container rule applies to the pipeline services, not this library).
@@ -55,8 +59,11 @@ values are stored in Bloom long-format (`cyl_scan_traits(scan_id, name, value)`)
 - **Bloom DB safety:** the contract only *describes* data; write-back (sub-project #2) goes
   through sanctioned, idempotent service-role RPCs — never ad-hoc SQL. Keep this library free of
   any DB/network code.
-- Keep dependencies minimal (pydantic + pyyaml only at runtime).
+- Keep dependencies minimal (pydantic + pyyaml are the only runtime-core deps; pandas is an
+  optional `[pandas]` extra used solely by `validate_analysis_input`).
 
 ## External Dependencies
-None at runtime beyond pydantic + pyyaml. Downstream consumers: `sleap-roots-predict`,
-`sleap-roots-traits` (import), and Bloom (consumes `schema/*.json`).
+Runtime core is pydantic + pyyaml; pandas is an optional `[pandas]` extra (only
+`validate_analysis_input` needs it). Downstream consumers: `sleap-roots-predict`,
+`sleap-roots-traits` (import the result contract), `sleap-roots-analyze` + `bloom-mcp`
+(call `validate_analysis_input`), and Bloom (consumes `schema/*.json`).
