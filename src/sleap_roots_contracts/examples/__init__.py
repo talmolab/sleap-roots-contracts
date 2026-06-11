@@ -33,6 +33,13 @@ ANALYSIS_INPUT_EXAMPLES = (
 )
 _ROLE_COLUMNS = ("genotype", "sample_id", "replicate", "image_path")
 
+__all__ = [
+    "ANALYSIS_INPUT_EXAMPLES",
+    "analysis_input_example_names",
+    "analysis_input_example_path",
+    "load_analysis_input_example",
+]
+
 
 def analysis_input_example_names() -> tuple[str, ...]:
     """Return the names of the packaged analysis-input example tables."""
@@ -52,6 +59,11 @@ def analysis_input_example_path(name: str) -> Path:
     For consumers that read the file with their own loader. Note that a bare
     ``pd.read_csv`` infers a numeric ``replicate``; cast the role columns to ``str``
     before validating, or use :func:`load_analysis_input_example`, which does so.
+
+    The returned path is valid for filesystem-backed installs (the normal wheel /
+    pip / uv case). Under a zip-imported install the resource is not a real file on
+    disk; use :func:`load_analysis_input_example` (which extracts via
+    ``importlib.resources.as_file``) instead.
     """
     _check_name(name)
     return Path(str(resources.files(__name__).joinpath(f"{name}.csv")))
@@ -74,14 +86,14 @@ def load_analysis_input_example(name: str) -> "pd.DataFrame":
         ImportError: if pandas is not installed (install the ``[pandas]`` extra).
         KeyError: if ``name`` is not a known example.
     """
+    _check_name(name)  # validate the name first, independent of the optional extra
     try:
         import pandas as pd
-    except ImportError as exc:  # pragma: no cover - exercised via import mocking
+    except ImportError as exc:
         raise ImportError(
             "loading example tables requires pandas. Install the optional extra: "
             "pip install 'sleap-roots-contracts[pandas]'"
         ) from exc
-    _check_name(name)
     source = resources.files(__name__).joinpath(f"{name}.csv")
     with resources.as_file(source) as path:
         df = pd.read_csv(path)

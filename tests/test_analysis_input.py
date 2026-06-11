@@ -542,6 +542,21 @@ class TestExampleFixtures:
         assert pd.api.types.is_numeric_dtype(raw["replicate"])
         assert validate_analysis_input(raw).ok is False
 
+    def test_examples_resolve_from_installed_package(self):
+        """Every example CSV resolves as a package resource (no uv/build needed).
+
+        This is the always-runnable guarantee that the CSVs are part of the
+        distribution; `test_examples_ship_in_built_wheel` is the belt-and-suspenders
+        build check (which skips when `uv` is unavailable).
+        """
+        from importlib import resources
+
+        from sleap_roots_contracts.examples import ANALYSIS_INPUT_EXAMPLES
+
+        pkg = resources.files("sleap_roots_contracts.examples")
+        for name in ANALYSIS_INPUT_EXAMPLES:
+            assert pkg.joinpath(f"{name}.csv").is_file(), name
+
     def test_examples_ship_in_built_wheel(self, tmp_path):
         """The example CSVs are packaged into the built wheel (importable by consumers)."""
         import glob
@@ -625,8 +640,25 @@ class TestPandasOptional:
         with pytest.raises(ImportError, match=r"\[pandas\]"):
             validate_analysis_input(object())
 
+    def test_examples_loader_raises_guided_importerror(self, monkeypatch):
+        """load_analysis_input_example raises a guided ImportError when pandas is absent."""
+        import builtins
+
+        from sleap_roots_contracts.examples import load_analysis_input_example
+
+        real_import = builtins.__import__
+
+        def fake_import(name, *args, **kwargs):
+            if name == "pandas" or name.startswith("pandas."):
+                raise ImportError("No module named 'pandas'")
+            return real_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", fake_import)
+        with pytest.raises(ImportError, match=r"\[pandas\]"):
+            load_analysis_input_example("cylinder")
+
     def test_package_imports_without_pandas(self):
-        """import sleap_roots_contracts succeeds with pandas absent (no eager import)."""
+        """import sleap_roots_contracts(.examples) succeeds with pandas absent."""
         code = textwrap.dedent("""
             import sys
             class _Block:
@@ -639,6 +671,10 @@ class TestPandasOptional:
             import sleap_roots_contracts  # noqa: F401
             from sleap_roots_contracts.analysis_input import (  # noqa: F401
                 validate_analysis_input,
+            )
+            import sleap_roots_contracts.examples  # noqa: F401  (no eager pandas)
+            from sleap_roots_contracts.examples import (  # noqa: F401
+                analysis_input_example_path,
             )
             print("OK")
             """)
