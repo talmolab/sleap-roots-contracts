@@ -1,21 +1,26 @@
 ## 1. Schema model
 
 - [ ] 1.1 Add `src/sleap_roots_contracts/analysis_input.py` with `from __future__ import annotations`
-- [ ] 1.2 Define `AnalysisInputRow` (Pydantic v2, frozen): required `genotype: str`; optional
-      non-null metadata `replicate`/`barcode`/`wave`/`experiment`; `extra="allow"` for trait columns
-- [ ] 1.3 Customize JSON Schema (`json_schema_extra`, derived from field names — no drift) so
-      additional properties are typed `{"type": ["number", "null"]}` and metadata columns are
-      `string` (not nullable); write the model test first (red → green)
+- [ ] 1.2 Define `AnalysisInputRow` (Pydantic v2): required `genotype: str`; optional `str`
+      `sample_id` / `replicate` / `image_path`; `extra="allow"` for the open set of trait columns
+- [ ] 1.3 Customize JSON Schema (`json_schema_extra`) so additional properties are typed
+      `{"type": ["number", "null"]}` (NaN allowed); write the model test first (red → green)
 
 ## 2. ValidationResult + validator
 
 - [ ] 2.1 Define `ValidationResult` (`ok`, `errors`, `warnings`, `raise_for_status()`) and a
       `ValidationIssue` (column + message + severity); test the type first
 - [ ] 2.2 Implement `validate_analysis_input(df, *, strict=False)` with lazy pandas import and a
-      guided `ImportError` naming the `[pandas]` extra
-- [ ] 2.3 Implement checks: missing `genotype` → error; zero numeric trait columns → error; wrong
-      dtype → error; out-of-range trait → error; NaN-in-metadata → error; NaN-in-trait → allowed;
-      unknown column → warning (error under `strict`). Each error names the column. (TDD per check.)
+      guided `ImportError` naming the `[pandas]` extra. NO column-mapping parameter — fixed canonical
+      names.
+- [ ] 2.3 Implement the three-tier severity checks (TDD per check):
+      - **Errors:** missing `genotype`; `genotype` not `str`; zero numeric trait columns; wrong dtype
+        on a declared role column; `NaN` in required `genotype`.
+      - **Warnings** (error under `strict`): missing `sample_id`; unknown/unexpected column; `NaN` in
+        optional metadata.
+      - **Allowed:** `NaN` in trait columns.
+      Each issue names the offending column. (No trait-name registry, no value-range checks — value
+      range lives in `result-contract` + analyze QC.)
 
 ## 3. Schema emission + drift guard
 
@@ -31,9 +36,15 @@
 
 ## 5. Fixtures + tests
 
-- [ ] 5.1 Add `tests/fixtures/analysis_input/{cylinder,field,turface}.csv` and a loader helper
-- [ ] 5.2 `tests/test_analysis_input.py`: each example validates clean; malformed DataFrame asserts
-      useful, column-named error messages; strict-vs-default unknown-column behavior; NaN policy
+- [ ] 5.1 Add `tests/fixtures/analysis_input/{cylinder,field,turface}.csv` built from the real
+      EDPIE vocabularies (turface `Genotype`/`Barcode`, cylinder `accession_name`/`qr_code`,
+      field/root-core) canonicalized to the canonical names; bundle: `talmolab/sleap-roots-analyze#120`
+- [ ] 5.2 Wire the fixture **loader as a pytest fixture** (`tests/conftest.py` or a fixtures module),
+      not a plain helper
+- [ ] 5.3 `tests/test_analysis_input.py`: `@pytest.mark.parametrize` "each example validates" over the
+      three shapes; missing-genotype error + `raise_for_status` raises; no-trait error; NaN
+      allowed-in-trait / warn-in-metadata; unknown column warns-default / errors-strict; malformed
+      table → column-named messages; missing-pandas `ImportError`; schema round-trip + drift guard
 
 ## 6. Packaging + docs
 

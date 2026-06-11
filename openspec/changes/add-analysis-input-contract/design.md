@@ -1,41 +1,71 @@
 ## Context
 
 Issue #3 specifies a canonical schema + `validate_analysis_input(df) -> ValidationResult` + an
-emitted JSON Schema for the wide analysis-input CSV, mirroring the existing `validate_trait` +
-`trait_definitions.yaml` + `result_envelope.schema.json` triad. Two facts about the existing repo
-shape the design: (1) runtime deps are deliberately only `pydantic` + `pyyaml`; (2) `schema.py`
-emits JSON Schema from Pydantic models (`model_json_schema()`) and CI drift-guards the result.
+emitted JSON Schema for the wide analysis-input CSV. Two facts about the existing repo shape the
+design: (1) runtime deps are deliberately only `pydantic` + `pyyaml`; (2) `schema.py` emits JSON
+Schema from Pydantic models (`model_json_schema()`) and CI drift-guards the result.
+
+**The problem being solved (the crux of this design).** In `sleap-roots-analyze`, the role column
+*names* are configurable (`ColumnConfig`: `genotype` defaults to `"geno"`, sample id to `"Barcode"`,
+replicate to `"rep"`). A contract cannot validate against names that vary per dataset, and the
+emitted JSON Schema (which Bloom / TypeScript validate against) needs **fixed** names. **This
+contract hardcodes the canonical role names** and takes **no column-mapping parameter** — it is the
+canonical Bloom-exchange shape with fixed role names, and consumers canonicalize their own data to it
+before validating (`bloom-mcp` data-access already does; `sleap-roots-analyze` renames
+config → canonical at its loader boundary, `talmolab/sleap-roots-analyze#144`). It is deliberately
+**not** Bloom's internal schema; the Bloom-columns → canonical mapping lives in the data-access
+layer, not here.
 
 ## Goals / Non-Goals
 
-- Goals: a canonical row schema; a structured, importable validator; an emitted, drift-guarded JSON
-  Schema; example fixtures per shape — all matching existing conventions.
-- Non-Goals: wiring the validator into `sleap-roots-analyze`/`bloom-mcp` (separate downstream
-  issues); a trait-name registry for analysis input (the per-trait registry stays the
-  `result-contract` concern; range checks here reuse `trait_definitions.yaml` only where a column
-  name matches a known trait).
+- Goals: a canonical row schema with **fixed** role names; a structured, importable validator; an
+  emitted, drift-guarded JSON Schema; example fixtures per shape — all matching existing conventions.
+- Non-Goals:
+  - A **column-mapping parameter** — the contract validates fixed canonical names only; consumers
+    canonicalize upstream.
+  - A **trait-name registry** for analysis input, and **any value-range / out-of-range checks**. This
+    contract is **structural-only**: trait names are opaque. Per-trait name/dtype/range validation
+    and `trait_definitions.yaml` stay a `result-contract` (write-side) concern (`validate_trait`),
+    and statistical outlier handling stays `sleap-roots-analyze`'s QC (`detect_outliers` / `cleanup`).
+    Nothing here reads `trait_definitions.yaml`.
+  - Wiring the validator into `sleap-roots-analyze` / `bloom-mcp` (separate downstream issues:
+    `talmolab/sleap-roots-analyze#144` and the bloom-mcp data-access consumer).
 
 ## Decisions
 
+- **Fixed canonical role names; no mapping parameter.** Roles are hardcoded: `genotype` (required,
+  `str`), `sample_id` / `replicate` / `image_path` (optional, `str`). `replicate` is optional because
+  its value is never load-bearing in analysis and Bloom cylinder data has no replicate factor
+  (`talmolab/sleap-roots-analyze#142`). `sample_id` is optional but *flagged when absent* (warn;
+  error under `strict`) because the only legitimately sample-id-less inputs are genotype-aggregated
+  tables. The four names align with `ColumnConfig`'s roles (note `image_path`, absent from earlier
+  drafts).
+
 - **Pydantic row model, not pandera.** The issue leaves this to the implementer. Pandera would add a
   heavy new dependency to a lib whose value proposition is being dependency-light, and would bypass
-  the pydantic-native `schema.py` emission/drift-guard pipeline. A `AnalysisInputRow` Pydantic model
+  the pydantic-native `schema.py` emission/drift-guard pipeline. An `AnalysisInputRow` Pydantic model
   plugs straight into `MODELS` and gets `analysis_input.schema.json` + the drift guard for free.
   *Alternative considered:* pandera `DataFrameSchema` — rejected for the dependency + dual
   emission-path cost.
 
 - **Row schema for a wide table; cardinality lives in the validator.** JSON Schema describes one row
-  object: `genotype` required string, metadata columns string, `additionalProperties` typed
-  `number|null` (the trait columns). Row-level JSON Schema cannot express "≥1 trait column", so that
-  table-level cardinality rule is enforced (and tested) only in the Python validator and documented
-  as a known schema limitation for non-Python consumers.
+  object: `genotype` required string, optional role columns string, `additionalProperties` typed
+  `number|null` (the open set of trait columns). Row-level JSON Schema cannot express "≥1 trait
+  column", so that table-level cardinality rule is enforced (and tested) only in the Python validator
+  and documented as a known schema limitation for non-Python consumers.
+
+- **Three-tier severity model.** Only three rules are universal hard errors: `genotype` present,
+  `genotype` typed `str`, and ≥1 numeric trait column (plus dtype sanity on any declared role column).
+  Everything else warns by default and escalates under `strict=True`: a missing `sample_id`, an
+  unknown/unexpected column (the metadata column *set* is open — no closed allowlist), and `NaN` in
+  optional metadata. `NaN` is allowed in trait columns. This mirrors `validate_trait`'s
+  warn-vs-error model while delivering structured output.
 
 - **`ValidationResult` + `raise_for_status()`, not a bare-raise validator.** The issue asks for both
-  a `-> ValidationResult` return *and* "missing-required/out-of-range raise". A function cannot both
-  return structured warnings and raise on the same call, so the validator always returns a
-  `ValidationResult` (collecting every error and warning with the offending column), and callers who
-  want exception semantics call `result.raise_for_status()`. This preserves `validate_trait`'s
-  warn-vs-error severity model while delivering the structured output the issue requires.
+  a `-> ValidationResult` return *and* "missing-required raise". A function cannot both return
+  structured warnings and raise on the same call, so the validator always returns a `ValidationResult`
+  (collecting every error and warning with the offending column), and callers who want exception
+  semantics call `result.raise_for_status()`.
   *Alternative considered:* raise immediately on the first hard error — rejected because it reports
   only one problem per call and discards the warnings channel.
 
@@ -49,12 +79,8 @@ emits JSON Schema from Pydantic models (`model_json_schema()`) and CI drift-guar
 
 - "≥1 trait column" is invisible to JSON-Schema-only (Bloom) consumers → mitigate by documenting it
   in the spec and the schema's description, and enforcing it in the Python validator.
-- Distinguishing a "trait column" from an "unknown metadata column" is heuristic (numeric dtype +
-  not a known metadata name) → mitigate with explicit fixtures and malformed-table tests pinning the
-  classification, and `strict=True` to surface anything unexpected.
-
-## Open Questions
-
-- Should out-of-range trait values reuse `trait_definitions.yaml` ranges when a column name matches a
-  registered trait, or stay name-agnostic for v1? (Lean: reuse where the name matches; skip range
-  checks for unregistered trait columns.) — resolve during TDD; does not change the public API.
+- Distinguishing a "trait column" from an "unknown column" is structural (numeric dtype ⇒ trait;
+  non-numeric non-role ⇒ unknown). A numeric-but-not-a-trait column (e.g. `Computation.Time.s`, or
+  root-core's `Plot` / `Depth_cm`) would classify as a trait — acceptable under structural-only
+  validation, and the reason consumers canonicalize (dropping such columns) *before* validating.
+  Pinned against the real EDPIE fixtures (`talmolab/sleap-roots-analyze#120`).

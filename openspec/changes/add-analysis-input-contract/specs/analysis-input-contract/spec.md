@@ -2,12 +2,16 @@
 
 ### Requirement: Analysis-Input Table Schema
 The library SHALL define a canonical schema for the wide analysis-input table as a Pydantic row
-model (`AnalysisInputRow`) describing one row: a required `genotype` column (`str`), optional
-metadata columns (`replicate`, `barcode`, `wave`, `experiment`) typed as non-null `str`, and an
-open set of numeric **trait** columns typed `float64` whose names are not fixed in advance.
+model (`AnalysisInputRow`) describing one row with **fixed canonical role names**: a required
+`genotype` column (`str`), optional `str` metadata columns `sample_id`, `replicate`, and
+`image_path`, and an open set of numeric **trait** columns whose names are opaque (not fixed in
+advance). The schema SHALL NOT accept a column-mapping parameter; consumers canonicalize their own
+column names to these fixed names before validating. Trait names SHALL NOT be validated against any
+registry, and trait values SHALL NOT be range-checked — those remain `result-contract` and
+statistical-QC concerns.
 
 #### Scenario: A well-formed row validates against the model
-- **WHEN** a row with a string `genotype`, an optional string `replicate`, and one or more numeric
+- **WHEN** a row with a string `genotype`, an optional string `sample_id`, and one or more numeric
   trait values is validated against `AnalysisInputRow`
 - **THEN** validation succeeds
 
@@ -17,16 +21,20 @@ open set of numeric **trait** columns typed `float64` whose names are not fixed 
 
 ### Requirement: Analysis-Input DataFrame Validator
 The library SHALL provide `validate_analysis_input(df, *, strict=False) -> ValidationResult`,
-importable from the package root, that validates a tabular analysis input and returns a structured
-`ValidationResult` carrying `ok`, `errors`, and `warnings`. A missing required `genotype` column,
-the absence of any numeric trait column, a wrong-dtype column, an out-of-range trait value, and a
-`NaN` in a metadata column SHALL be recorded as **errors**. Unknown columns SHALL be recorded as
-**warnings** by default and as **errors** when `strict=True`. `NaN` SHALL be permitted in trait
-columns. `ValidationResult` SHALL expose `raise_for_status()` that raises when any error is present
-and is a no-op otherwise.
+importable from the package root, that validates a tabular analysis input against the fixed canonical
+names and returns a structured `ValidationResult` carrying `ok`, `errors`, and `warnings`. The
+validator SHALL apply a three-tier severity model. As **errors** (always failing): a missing
+`genotype` column, a `genotype` column that is not string-typed, a declared role column with a wrong
+dtype, the absence of any numeric trait column, and a `NaN` in the required `genotype` column. As
+**warnings** by default and **errors** when `strict=True`: a missing `sample_id` column, an
+unknown/unexpected column, and a `NaN` in an optional metadata column. `NaN` SHALL be permitted in
+trait columns. The metadata column set SHALL NOT be a closed allowlist. `ValidationResult` SHALL
+expose `raise_for_status()` that raises when any error is present and is a no-op otherwise, and each
+recorded issue SHALL identify the offending column.
 
 #### Scenario: A valid analysis-input table passes
-- **WHEN** a table with a `genotype` column and at least one numeric trait column is validated
+- **WHEN** a table with a string `genotype` column, a `sample_id` column, and at least one numeric
+  trait column is validated
 - **THEN** the result's `ok` is true and `errors` is empty
 
 #### Scenario: A missing required column is an error
@@ -34,17 +42,27 @@ and is a no-op otherwise.
 - **THEN** the result's `ok` is false, `errors` is non-empty, and `raise_for_status()` raises
 
 #### Scenario: A table with no trait column is an error
-- **WHEN** a table that has only metadata columns and no numeric trait column is validated
+- **WHEN** a table that has only role/metadata columns and no numeric trait column is validated
 - **THEN** the result's `ok` is false and `errors` is non-empty
 
-#### Scenario: NaN is allowed in traits but not in metadata
-- **WHEN** a table contains `NaN` in a trait column and a valid value in every metadata column
+#### Scenario: NaN is allowed in traits but warned in optional metadata
+- **WHEN** a table contains `NaN` in a trait column and valid values in every role column
 - **THEN** the result's `ok` is true
-- **WHEN** a table contains `NaN` in a metadata column
-- **THEN** the result's `errors` is non-empty
+- **WHEN** a table contains `NaN` in an optional metadata column (e.g. `replicate`) with default
+  settings
+- **THEN** a warning is recorded and `ok` remains true
+- **WHEN** the same table is validated with `strict=True`
+- **THEN** the `NaN` in optional metadata is recorded as an error and `ok` is false
+
+#### Scenario: A missing sample_id warns by default and errors when strict
+- **WHEN** a table with a `genotype` column and trait columns but no `sample_id` column is validated
+  with default settings
+- **THEN** a warning is recorded and `ok` remains true
+- **WHEN** the same table is validated with `strict=True`
+- **THEN** the missing `sample_id` is recorded as an error and `ok` is false
 
 #### Scenario: An unknown column warns by default and errors when strict
-- **WHEN** a table with an unrecognized non-trait column is validated with default settings
+- **WHEN** a table with an unrecognized non-numeric column is validated with default settings
 - **THEN** a warning is recorded and `ok` remains true
 - **WHEN** the same table is validated with `strict=True`
 - **THEN** the unknown column is recorded as an error and `ok` is false
@@ -65,10 +83,10 @@ called without pandas installed, it SHALL raise an `ImportError` whose message n
 
 ### Requirement: Emitted Analysis-Input JSON Schema Artifact
 The library SHALL emit a versioned JSON Schema (`schema/analysis_input.schema.json`) generated from
-`AnalysisInputRow`, describing one table row: `genotype` required and typed `string`, the metadata
-columns typed `string`, and additional (trait) properties typed as `number` or `null`. The package
-version SHALL be carried in the schema's `$id`, and CI SHALL fail if the committed schema differs
-from a fresh regeneration (the existing drift guard).
+`AnalysisInputRow`, describing one table row: `genotype` required and typed `string`, the optional
+metadata columns typed `string`, and additional (trait) properties typed as `number` or `null`. The
+package version SHALL be carried in the schema's `$id`, and CI SHALL fail if the committed schema
+differs from a fresh regeneration (the existing drift guard).
 
 #### Scenario: The emitted schema marks genotype required and types trait columns
 - **WHEN** the JSON Schema is generated from `AnalysisInputRow`
@@ -81,7 +99,8 @@ from a fresh regeneration (the existing drift guard).
 
 ### Requirement: Example Fixtures Per Shape
 The library SHALL ship example analysis-input tables for the cylinder, field, and turface shapes
-under `tests/fixtures/`, each of which validates cleanly via `validate_analysis_input`.
+under `tests/fixtures/`, loaded via a pytest fixture, each of which validates cleanly via
+`validate_analysis_input`.
 
 #### Scenario: Each shipped example validates
 - **WHEN** the cylinder, field, and turface example tables are each validated
