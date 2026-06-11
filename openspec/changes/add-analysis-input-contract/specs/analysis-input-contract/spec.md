@@ -32,6 +32,12 @@ trait columns. The metadata column set SHALL NOT be a closed allowlist. `Validat
 expose `raise_for_status()` that raises when any error is present and is a no-op otherwise, and each
 recorded issue SHALL identify the offending column.
 
+The validator SHALL operate on the **canonicalized** analysis input — role columns plus trait
+columns, with non-trait metadata already excluded upstream (the consumer's responsibility, e.g.
+`sleap-roots-analyze`'s `get_trait_columns` boundary per `talmolab/sleap-roots-analyze#144`). Because
+the validator has no metadata registry, any numeric non-role column SHALL be treated as a trait; the
+contract SHALL NOT attempt to distinguish phenotypic traits from numeric metadata by name.
+
 #### Scenario: A valid analysis-input table passes
 - **WHEN** a table with a string `genotype` column, a `sample_id` column, and at least one numeric
   trait column is validated
@@ -138,11 +144,13 @@ differs from a fresh regeneration (the existing drift guard).
 The library SHALL ship example analysis-input tables for the cylinder, field, and turface shapes
 (plus a genotype-aggregated table) under `tests/fixtures/`, loaded via a pytest fixture, each of which
 validates (its `ok` is true) via `validate_analysis_input`. The examples SHALL be small real subsets
-of the wheat EDPIE post-QC tables: only the role columns SHALL be canonical; trait column names SHALL
-remain opaque and realistic (units, parens, dotted names), and each table SHALL retain a couple of
-real numeric-metadata decoy columns to pin the structural classifier on real data. At least one
-example SHALL be sample-level (has `sample_id`) and at least one SHALL be genotype-aggregated (no
-`sample_id`), so the missing-`sample_id` warning path is exercised in both directions.
+of the wheat EDPIE post-QC tables in **canonical** form — role columns plus opaque numeric trait
+columns only, with non-trait metadata excluded (mirroring a consumer's canonicalization). Only the
+role columns SHALL be canonical; trait column names SHALL remain opaque and realistic (units, parens,
+dotted names). At least one example SHALL be sample-level (has `sample_id`) and at least one SHALL be
+genotype-aggregated (no `sample_id`), so the missing-`sample_id` warning path is exercised in both
+directions. The structural classifier's metadata-as-trait limitation SHALL be pinned by a unit test
+(an inline DataFrame), not by embedding metadata decoy columns in the shipped example tables.
 
 #### Scenario: Each shipped example validates
 - **WHEN** the cylinder, field, and turface example tables are each validated

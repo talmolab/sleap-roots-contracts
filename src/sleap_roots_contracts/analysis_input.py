@@ -146,6 +146,12 @@ def validate_analysis_input(
     parameter; consumers canonicalize their own column names first. Trait names are
     opaque: no trait-name registry and no value-range checks are applied.
 
+    Precondition: ``df`` is the **canonicalized** analysis input — role columns plus
+    trait columns, with non-trait metadata already excluded upstream (e.g. analyze's
+    ``get_trait_columns`` boundary, ``talmolab/sleap-roots-analyze#144``). Because this
+    validator has no metadata registry, any numeric non-role column is treated as a
+    trait; excluding metadata is the consumer's responsibility, not the contract's.
+
     Severity tiers:
         - **Errors** (always fail): missing ``genotype``; ``genotype`` not string-typed;
           ``NaN`` in ``genotype``; a declared role column with a wrong (non-string)

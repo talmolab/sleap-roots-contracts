@@ -193,6 +193,20 @@ class TestValidator:
         assert result.ok is True
         assert result.warnings == []
 
+    def test_metadata_named_numeric_column_is_still_a_trait(self):
+        """Pin the structural limitation: a metadata-NAMED numeric column is a trait.
+
+        The validator has no registry, so a numeric column like ``scan_id`` (clearly
+        metadata, not a phenotype) is counted as an opaque trait and nothing flags it.
+        This is why the contract expects the CANONICALIZED input — consumers drop
+        non-trait columns first (analyze's get_trait_columns boundary, analyze#144) —
+        and why the shipped example fixtures carry role + trait columns only.
+        """
+        df = _df(genotype=["A"], sample_id=["s1"], scan_id=[100123])
+        result = validate_analysis_input(df)
+        assert result.ok is True  # scan_id satisfies the >=1-trait rule (by design)
+        assert result.warnings == []  # numeric => trait, not flagged
+
     def test_non_numeric_stray_column_warns_then_errors_strict(self):
         """A non-numeric stray column warns by default, errors under strict."""
         df = _df(genotype=["A"], sample_id=["s1"], total_length=[1.0], notes=["hello"])
@@ -355,12 +369,14 @@ class TestValidator:
 class TestExampleFixtures:
     """The shipped examples are real subsets of the wheat EDPIE post-QC tables.
 
-    Only the role columns are canonical; trait names stay opaque and realistic
-    (units, parens, dots: ``Network Area (mm²)``, ``Computation.Time.s``,
-    ``Root Count 0cm``). Each table also carries a couple of real numeric-metadata
-    decoy columns (e.g. ``scan_id``, ``plant_age_days``, ``Plot``) — the structural
-    classifier has no registry, so it (correctly, by design) treats them as opaque
-    trait columns; consumers drop such columns when canonicalizing (analyze#144).
+    They are CANONICAL analysis inputs — role columns + opaque numeric trait columns
+    only — mirroring what a consumer produces after canonicalization (rename roles,
+    drop non-trait metadata; analyze's get_trait_columns boundary, analyze#144). Trait
+    names stay opaque and realistic (units, parens, dots: ``Network Area (mm²)``,
+    ``Total Root Length (mm)``, ``Root Count 0cm``). The structural classifier's
+    metadata-as-trait limitation is pinned separately by an inline unit test
+    (``test_metadata_named_numeric_column_is_still_a_trait``), not baked into these
+    "good" example tables.
     """
 
     def test_example_validates(self, example_analysis_input):
@@ -389,9 +405,30 @@ class TestExampleFixtures:
         turface = load_analysis_input("turface")
         # "Network Area (mm²)" — match by prefix to avoid a unicode literal in source.
         assert any(c.startswith("Network Area (mm") for c in turface.columns)
-        assert "Computation.Time.s" in turface.columns
         assert "Total Root Length (mm)" in turface.columns
         assert "Root Count 0cm" in load_analysis_input("field").columns
+
+    def test_examples_are_canonical_role_plus_trait_only(self, load_analysis_input):
+        """Shipped examples carry role + trait columns only (metadata excluded).
+
+        The contract validates the canonicalized analysis input; non-trait metadata
+        is dropped upstream by the consumer (analyze#144), so the examples must not
+        ship metadata decoys (scan_id, Plot, Computation.Time.s, ...).
+        """
+        forbidden = {
+            "scan_id",
+            "plant_age_days",
+            "Plot",
+            "Cid",
+            "Computation.Time.s",
+            "n_samples",
+            "experiment_id",
+            "wave_number",
+            "accession_id",
+        }
+        for name in ("cylinder", "field", "turface", "genotype_means"):
+            cols = set(load_analysis_input(name).columns)
+            assert cols.isdisjoint(forbidden), (name, cols & forbidden)
 
     def test_fixtures_require_role_dtype_canonicalization(self, analysis_input_dir):
         """The shipped CSVs validate only after role-dtype canonicalization.
@@ -406,24 +443,6 @@ class TestExampleFixtures:
         assert validate_analysis_input(raw).ok is False  # raw fails by design
         canon = raw.astype({"replicate": "string", "genotype": "string"})
         assert validate_analysis_input(canon).ok is True
-
-    def test_numeric_metadata_decoys_are_structurally_traits(self, load_analysis_input):
-        """Pin the known limitation: real numeric-metadata cols classify as traits.
-
-        cylinder ships ``scan_id`` / ``plant_age_days`` — numeric, not roles, so the
-        structural validator counts them as (opaque) trait columns. The table still
-        validates ok; nothing flags them. This is why consumers must canonicalize
-        (drop non-trait numeric columns) before validating, not the contract's job.
-        """
-        cylinder = load_analysis_input("cylinder")
-        assert {"scan_id", "plant_age_days"} <= set(cylinder.columns)
-        result = validate_analysis_input(cylinder)
-        assert result.ok is True
-        assert result.errors == []
-        # No warning is raised for the decoys (numeric ⇒ trait, by design).
-        assert all(
-            i.column not in {"scan_id", "plant_age_days"} for i in result.warnings
-        )
 
 
 class TestPandasOptional:

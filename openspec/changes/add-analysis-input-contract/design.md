@@ -61,6 +61,24 @@ layer, not here.
   optional metadata. `NaN` is allowed in trait columns. This mirrors `validate_trait`'s
   warn-vs-error model while delivering structured output.
 
+- **Validate the canonicalized, trait-subsetted frame; do not duplicate the consumer's metadata
+  exclusion.** Precondition: the validator receives role columns + trait columns, with non-trait
+  metadata already excluded upstream. `sleap-roots-analyze` already owns a robust, dataset-aware
+  exclusion at its load boundary — `get_trait_columns` (`data_cleanup.py`) drops role columns, a
+  hardcoded metadata denylist (`scan_*`, `*_id`, `plant_age`, `wave_*`, `Plot`, `date`/`time`, …),
+  and user-configurable `additional_exclude_cols` — and per-operation trait selection means metadata
+  never reaches its stats/PCA/heritability. Replicating that denylist here would (a) violate the
+  structural-only / opaque-names decision, (b) create a second source of truth that drifts from
+  analyze's, and (c) inherit its brittleness — analyze's Bug #75 (a bare `"id"` substring excluded
+  real traits `solidity`/`width` until narrowed to the `_id` suffix) is exactly the name-guessing this
+  contract avoids. So the contract stays structural: any numeric non-role column is an opaque trait,
+  and the consumer canonicalizes (rename roles + drop metadata) *before* calling
+  `validate_analysis_input` (`talmolab/sleap-roots-analyze#144`). The shipped example fixtures are
+  therefore canonical (role + trait only); the metadata-as-trait limitation is pinned by an inline
+  unit test rather than baked into the example tables.
+  *Alternative considered:* a built-in metadata denylist / `traits=`/`exclude=` parameter — rejected
+  per (a)–(c); column selection belongs in the consumer where the config + dataset knowledge lives.
+
 - **`ValidationResult` + `raise_for_status()`, not a bare-raise validator.** The issue asks for both
   a `-> ValidationResult` return *and* "missing-required raise". A function cannot both return
   structured warnings and raise on the same call, so the validator always returns a `ValidationResult`
@@ -79,8 +97,10 @@ layer, not here.
 
 - "≥1 trait column" is invisible to JSON-Schema-only (Bloom) consumers → mitigate by documenting it
   in the spec and the schema's description, and enforcing it in the Python validator.
-- Distinguishing a "trait column" from an "unknown column" is structural (numeric dtype ⇒ trait;
-  non-numeric non-role ⇒ unknown). A numeric-but-not-a-trait column (e.g. `Computation.Time.s`, or
-  root-core's `Plot` / `Depth_cm`) would classify as a trait — acceptable under structural-only
-  validation, and the reason consumers canonicalize (dropping such columns) *before* validating.
+- Distinguishing a "trait column" from numeric metadata is structural (numeric dtype ⇒ trait). A
+  numeric-but-not-a-trait column (e.g. `Computation.Time.s`, root-core's `Plot`, `scan_id`) would
+  classify as a trait — accepted by design (see the canonicalization decision above): the consumer
+  excludes such columns *before* validating. The risk surfaces for **non-analyze** consumers (bloom-mcp,
+  Bloom via the JSON Schema) that lack analyze's `get_trait_columns` — mitigated by documenting the
+  precondition in the spec + the validator docstring, and pinning the limitation with a unit test.
   Pinned against the real EDPIE fixtures (`talmolab/sleap-roots-analyze#120`).

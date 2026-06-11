@@ -86,6 +86,19 @@
 - [x] 6.3 Update `openspec/project.md`: Purpose now covers two contracts; add pandas as an **optional**
       extra under Tech Stack / External Dependencies (keep "runtime core = pydantic + pyyaml")
 
+## 8. Canonicalization precondition (post-review refinement)
+
+- [x] 8.1 Document the precondition (validator validates the canonicalized role+trait frame; non-trait
+      metadata excluded upstream — analyze's `get_trait_columns`, analyze#144) in the validator
+      docstring, `proposal.md`, `design.md`, and `spec.md`. Add a design decision: do NOT duplicate
+      analyze's metadata denylist (structural-only; avoids a second source of truth + Bug #75
+      brittleness).
+- [x] 8.2 Regenerate the example fixtures as **canonical** tables (role + trait columns only — drop the
+      numeric-metadata decoys `scan_id`/`plant_age_days`/`Plot`/`Cid`/`Computation.Time.s`/`n_samples`).
+- [x] 8.3 Move the metadata-as-trait pin to an inline unit test
+      (`test_metadata_named_numeric_column_is_still_a_trait`); add a test asserting the shipped
+      examples carry no metadata decoys; update the fixtures README.
+
 ## 7. Verify
 
 - [x] 7.1 `uv run black --check src tests` && `uv run ruff check src tests`

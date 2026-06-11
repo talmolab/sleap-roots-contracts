@@ -43,7 +43,11 @@ Tracks `talmolab/sleap-roots-contracts#3` (re-homed from `sleap-roots-analyze#12
     `NaN` in optional metadata.
   - **Allowed**: `NaN` in trait columns.
   `ValidationResult` carries `ok`, `errors`, `warnings`, and a `.raise_for_status()` that raises on
-  any error. Each `ValidationIssue` names the offending column.
+  any error. Each `ValidationIssue` names the offending column. **Precondition:** the input is the
+  canonicalized analysis table (role + trait columns); non-trait metadata is excluded upstream by the
+  consumer (`sleap-roots-analyze`'s `get_trait_columns`, `talmolab/sleap-roots-analyze#144`). The
+  contract has no metadata registry — any numeric non-role column is an opaque trait — so it does not
+  (and is not meant to) replicate analyze's column-exclusion config.
 - Register the row model in `schema.py` and emit **`schema/analysis_input.schema.json`**, picked up
   by the existing CI drift guard exactly like `result_envelope.schema.json`.
 - Add **example fixtures** for each shape (cylinder / field / turface) under
