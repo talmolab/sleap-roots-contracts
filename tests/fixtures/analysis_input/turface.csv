@@ -1,0 +1,5 @@
+genotype,sample_id,replicate,total_root_length_mm,network_area_mm2,max_root_depth_mm,lateral_root_count,network_width_to_depth_ratio
+Kharchia65,TUR-0001,1,1842.5,512.30,201.4,42,0.61
+Kharchia65,TUR-0002,2,1789.0,498.71,197.8,39,0.58
+W7984,TUR-0003,1,2103.7,604.12,233.6,55,0.64
+Opata85,TUR-0004,2,1955.2,571.44,219.0,48,0.60

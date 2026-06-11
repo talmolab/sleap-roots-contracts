@@ -1,0 +1,5 @@
+genotype,sample_id,image_path,primary_root_length_mm,lateral_root_count,total_root_length_mm,primary_root_count
+PI-503544,QR-1023,scans/cyl_0001.png,312.6,18,1204.9,1
+PI-503544,QR-1024,scans/cyl_0002.png,298.1,21,1188.3,1
+CItr-15144,QR-1025,scans/cyl_0003.png,341.0,15,1330.7,1
+CItr-15144,QR-1026,scans/cyl_0004.png,355.4,19,1402.2,1

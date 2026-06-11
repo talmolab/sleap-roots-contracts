@@ -1,0 +1,5 @@
+genotype,sample_id,replicate,root_count,root_biomass_g,shoot_biomass_g,root_to_shoot_ratio
+Yecora,PLOT-101,1,118,2.41,9.83,0.245
+Yecora,PLOT-102,2,124,2.58,10.11,0.255
+Tadinia,PLOT-103,1,97,1.98,8.74,0.227
+Tadinia,PLOT-104,2,103,2.12,9.05,0.234

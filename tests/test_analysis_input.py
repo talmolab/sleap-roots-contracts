@@ -267,6 +267,17 @@ class TestValidator:
             assert issue.severity == "error"
 
 
+class TestExampleFixtures:
+    """The shipped cylinder/field/turface examples validate cleanly."""
+
+    def test_example_validates(self, example_analysis_input):
+        """Each canonical example table passes with no errors or warnings."""
+        result = validate_analysis_input(example_analysis_input)
+        assert result.ok is True
+        assert result.errors == []
+        assert result.warnings == []
+
+
 class TestPandasOptional:
     """pandas is an optional [pandas] extra: lazy import + guided ImportError."""
 
