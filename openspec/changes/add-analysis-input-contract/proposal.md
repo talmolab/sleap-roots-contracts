@@ -37,8 +37,8 @@ Tracks `talmolab/sleap-roots-contracts#3` (re-homed from `sleap-roots-analyze#12
 - Add `validate_analysis_input(df, *, strict=False) -> ValidationResult`, exported from the package
   root. It validates against the **fixed** canonical names (no mapping parameter) under a three-tier
   severity model:
-  - **Errors** (always fail): missing `genotype`; `genotype` not `str`; zero numeric trait columns;
-    wrong dtype on a declared role column.
+  - **Errors** (always fail): missing `genotype`; `genotype` not `str`; `NaN` in the required
+    `genotype`; zero numeric trait columns; wrong dtype on a declared role column.
   - **Warnings** (fail only under `strict=True`): missing `sample_id`; unknown/unexpected columns;
     `NaN` in optional metadata.
   - **Allowed**: `NaN` in trait columns.

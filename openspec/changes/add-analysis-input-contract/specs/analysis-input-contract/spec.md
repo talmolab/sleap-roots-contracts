@@ -45,6 +45,24 @@ recorded issue SHALL identify the offending column.
 - **WHEN** a table that has only role/metadata columns and no numeric trait column is validated
 - **THEN** the result's `ok` is false and `errors` is non-empty
 
+#### Scenario: A non-string genotype column is an error
+- **WHEN** a table whose `genotype` column is numeric-typed (e.g. integer codes, not strings) is
+  validated
+- **THEN** the result's `ok` is false, `errors` is non-empty, and the offending issue names the
+  `genotype` column
+
+#### Scenario: A wrong dtype on a declared role column is an error
+- **WHEN** a table whose optional `replicate` column is numeric-typed (not string) is validated
+- **THEN** the result's `ok` is false, `errors` is non-empty, the offending issue names the
+  `replicate` column, and `raise_for_status()` raises
+
+#### Scenario: NaN in the required genotype column is an error
+- **WHEN** a table contains `NaN` in the required `genotype` column
+- **THEN** the result's `ok` is false, `errors` is non-empty, and the offending issue names the
+  `genotype` column
+- **WHEN** that same `NaN` instead appears only in an optional metadata column with default settings
+- **THEN** the result's `ok` remains true (a warning, not an error)
+
 #### Scenario: NaN is allowed in traits but warned in optional metadata
 - **WHEN** a table contains `NaN` in a trait column and valid values in every role column
 - **THEN** the result's `ok` is true
@@ -69,7 +87,13 @@ recorded issue SHALL identify the offending column.
 
 #### Scenario: Validation errors carry useful messages
 - **WHEN** a malformed table is validated
-- **THEN** each recorded error identifies the offending column and the reason for failure
+- **THEN** each recorded issue exposes a `column` naming the offending column (or no column for a
+  table-level issue) and a human-readable `message`
+
+#### Scenario: An empty table is validated structurally
+- **WHEN** a table that has the canonical columns but zero rows is validated
+- **THEN** column-presence and dtype checks still apply (e.g. a missing `genotype` column is still an
+  error) and no per-row `NaN` issues are raised for the absent rows
 
 ### Requirement: Pandas Is An Optional Dependency
 The validator SHALL operate on a pandas DataFrame, and pandas SHALL be an optional install extra so
