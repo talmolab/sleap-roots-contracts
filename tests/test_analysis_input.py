@@ -69,6 +69,20 @@ class TestAnalysisInputSchema:
         assert schema["additionalProperties"] == {"type": ["number", "null"]}
 
 
+class TestPublicAPI:
+    """The analysis-input surface is importable from the package root."""
+
+    def test_exports_from_package_root(self):
+        """validate_analysis_input, ValidationResult, AnalysisInputRow are exported."""
+        import sleap_roots_contracts as src
+
+        assert src.validate_analysis_input is validate_analysis_input
+        assert src.ValidationResult is ValidationResult
+        assert src.AnalysisInputRow is AnalysisInputRow
+        for name in ("validate_analysis_input", "ValidationResult", "AnalysisInputRow"):
+            assert name in src.__all__
+
+
 class TestValidationResultType:
     """The structured result + issue types."""
 
