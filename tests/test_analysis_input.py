@@ -1,11 +1,26 @@
 """Tests for the analysis-input contract: row model, schema, and validator."""
 
 import json
+import subprocess
+import sys
+import textwrap
 
+import numpy as np
+import pandas as pd
 import pytest
 
-from sleap_roots_contracts.analysis_input import AnalysisInputRow
+from sleap_roots_contracts.analysis_input import (
+    AnalysisInputRow,
+    ValidationIssue,
+    ValidationResult,
+    validate_analysis_input,
+)
 from sleap_roots_contracts.schema import render
+
+
+def _df(**columns) -> pd.DataFrame:
+    """Build a DataFrame from explicit column arrays (keeps dtypes predictable)."""
+    return pd.DataFrame(columns)
 
 
 class TestAnalysisInputRow:
@@ -52,3 +67,232 @@ class TestAnalysisInputSchema:
         """Exactly one additionalProperties, typed number|null (not pydantic's true)."""
         schema = json.loads(render("analysis_input"))
         assert schema["additionalProperties"] == {"type": ["number", "null"]}
+
+
+class TestValidationResultType:
+    """The structured result + issue types."""
+
+    def test_ok_is_true_when_no_errors(self):
+        """ok derives from the absence of errors (warnings don't flip it)."""
+        result = ValidationResult(warnings=[ValidationIssue("c", "w", "warning")])
+        assert result.ok is True
+
+    def test_ok_is_false_when_errors_present(self):
+        """Any error makes ok false."""
+        result = ValidationResult(errors=[ValidationIssue("c", "e", "error")])
+        assert result.ok is False
+
+    def test_raise_for_status_raises_on_error(self):
+        """raise_for_status raises when an error is present, naming the column."""
+        result = ValidationResult(errors=[ValidationIssue("genotype", "bad", "error")])
+        with pytest.raises(Exception, match="genotype"):
+            result.raise_for_status()
+
+    def test_raise_for_status_noop_when_ok(self):
+        """raise_for_status is a no-op when there are no errors."""
+        ValidationResult().raise_for_status()  # must not raise
+
+
+class TestValidator:
+    """validate_analysis_input three-tier severity model (structural-only)."""
+
+    def test_valid_table_passes(self):
+        """genotype + sample_id + a numeric trait validates clean."""
+        df = _df(genotype=["A", "B"], sample_id=["s1", "s2"], total_length=[1.0, 2.0])
+        result = validate_analysis_input(df)
+        assert result.ok is True
+        assert result.errors == []
+        assert result.warnings == []
+
+    # --- hard errors -------------------------------------------------------
+
+    def test_missing_genotype_is_error_and_raises(self):
+        """Missing genotype is an error; raise_for_status raises."""
+        df = _df(sample_id=["s1"], total_length=[1.0])
+        result = validate_analysis_input(df)
+        assert result.ok is False
+        assert any(i.column == "genotype" for i in result.errors)
+        with pytest.raises(Exception):
+            result.raise_for_status()
+
+    def test_integer_genotype_dtype_is_error(self):
+        """An int-typed genotype column (not str) is a hard error."""
+        df = _df(genotype=[1, 2], sample_id=["s1", "s2"], total_length=[1.0, 2.0])
+        result = validate_analysis_input(df)
+        assert result.ok is False
+        assert any(i.column == "genotype" for i in result.errors)
+
+    def test_string_genotype_dtype_passes(self):
+        """A string-typed genotype passes the dtype check."""
+        df = _df(genotype=["A"], sample_id=["s1"], total_length=[1.0])
+        assert validate_analysis_input(df).ok is True
+
+    def test_nan_in_genotype_is_error(self):
+        """A NaN in the required genotype column is an error."""
+        df = _df(genotype=["A", None], sample_id=["s1", "s2"], total_length=[1.0, 2.0])
+        result = validate_analysis_input(df)
+        assert result.ok is False
+        assert any(i.column == "genotype" for i in result.errors)
+
+    def test_all_nan_genotype_is_error(self):
+        """An all-NaN genotype column is an error."""
+        df = _df(
+            genotype=pd.Series([np.nan, np.nan], dtype="object"),
+            sample_id=["s1", "s2"],
+            total_length=[1.0, 2.0],
+        )
+        assert validate_analysis_input(df).ok is False
+
+    def test_numeric_role_column_is_wrong_dtype_error(self):
+        """A numeric (non-str) replicate column is a hard error; raises."""
+        df = _df(
+            genotype=["A", "B"],
+            sample_id=["s1", "s2"],
+            replicate=[1, 2],
+            total_length=[1.0, 2.0],
+        )
+        result = validate_analysis_input(df)
+        assert result.ok is False
+        assert any(i.column == "replicate" for i in result.errors)
+        with pytest.raises(Exception):
+            result.raise_for_status()
+
+    def test_zero_trait_columns_is_error(self):
+        """A table with only role columns and no numeric trait is an error."""
+        df = _df(genotype=["A", "B"], sample_id=["s1", "s2"], replicate=["1", "2"])
+        result = validate_analysis_input(df)
+        assert result.ok is False
+        assert any("trait" in i.message.lower() for i in result.errors)
+
+    # --- trait vs unknown classification (both directions) -----------------
+
+    def test_numeric_non_role_column_counts_as_trait(self):
+        """Any numeric non-role column is a trait (so >=1-trait passes, no warning)."""
+        df = _df(genotype=["A"], sample_id=["s1"], some_opaque_metric=[42.0])
+        result = validate_analysis_input(df)
+        assert result.ok is True
+        assert result.warnings == []
+
+    def test_non_numeric_stray_column_warns_then_errors_strict(self):
+        """A non-numeric stray column warns by default, errors under strict."""
+        df = _df(genotype=["A"], sample_id=["s1"], total_length=[1.0], notes=["hello"])
+        default = validate_analysis_input(df)
+        assert default.ok is True
+        assert any(i.column == "notes" for i in default.warnings)
+
+        strict = validate_analysis_input(df, strict=True)
+        assert strict.ok is False
+        assert any(i.column == "notes" for i in strict.errors)
+
+    # --- warnings that escalate under strict -------------------------------
+
+    def test_missing_sample_id_warns_then_errors_strict(self):
+        """Missing sample_id warns by default, errors under strict."""
+        df = _df(genotype=["A", "B"], total_length=[1.0, 2.0])
+        default = validate_analysis_input(df)
+        assert default.ok is True
+        assert any(i.column == "sample_id" for i in default.warnings)
+
+        strict = validate_analysis_input(df, strict=True)
+        assert strict.ok is False
+        assert any(i.column == "sample_id" for i in strict.errors)
+
+    def test_nan_in_optional_metadata_warns_then_errors_strict(self):
+        """A NaN in an optional metadata column warns by default, errors strict."""
+        df = _df(
+            genotype=["A", "B"],
+            sample_id=["s1", "s2"],
+            replicate=["1", None],
+            total_length=[1.0, 2.0],
+        )
+        default = validate_analysis_input(df)
+        assert default.ok is True
+        assert any(i.column == "replicate" for i in default.warnings)
+
+        strict = validate_analysis_input(df, strict=True)
+        assert strict.ok is False
+        assert any(i.column == "replicate" for i in strict.errors)
+
+    # --- allowed -----------------------------------------------------------
+
+    def test_nan_in_trait_is_allowed(self):
+        """A NaN in a trait column is allowed (ok stays true)."""
+        df = _df(
+            genotype=["A", "B"],
+            sample_id=["s1", "s2"],
+            total_length=[1.0, np.nan],
+        )
+        assert validate_analysis_input(df).ok is True
+
+    # --- empty table -------------------------------------------------------
+
+    def test_empty_table_with_columns_validates_structurally(self):
+        """Canonical columns + zero rows: structural checks apply, no row NaN issues."""
+        df = _df(
+            genotype=pd.Series([], dtype="object"),
+            sample_id=pd.Series([], dtype="object"),
+            total_length=pd.Series([], dtype="float64"),
+        )
+        result = validate_analysis_input(df)
+        assert result.ok is True
+
+    def test_empty_table_missing_genotype_is_error(self):
+        """A zero-row table still errors on a missing genotype column."""
+        df = _df(total_length=pd.Series([], dtype="float64"))
+        assert validate_analysis_input(df).ok is False
+
+    # --- message quality ---------------------------------------------------
+
+    def test_issues_carry_column_and_message(self):
+        """Each recorded issue exposes a column and a non-empty message."""
+        df = _df(genotype=[1], replicate=[2])  # int genotype + no trait + numeric rep
+        result = validate_analysis_input(df)
+        assert result.errors
+        for issue in result.errors:
+            assert issue.message
+            assert issue.severity == "error"
+
+
+class TestPandasOptional:
+    """pandas is an optional [pandas] extra: lazy import + guided ImportError."""
+
+    def test_missing_pandas_raises_guided_importerror(self, monkeypatch):
+        """With pandas import blocked, the validator raises a guided ImportError."""
+        import builtins
+
+        real_import = builtins.__import__
+
+        def fake_import(name, *args, **kwargs):
+            if name == "pandas" or name.startswith("pandas."):
+                raise ImportError("No module named 'pandas'")
+            return real_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", fake_import)
+        # The arg is never inspected — the lazy pandas import fails first. That this
+        # ImportError fires at all proves the import is inside the function body
+        # (a top-level import would not re-trigger __import__ on the call).
+        with pytest.raises(ImportError, match=r"\[pandas\]"):
+            validate_analysis_input(object())
+
+    def test_package_imports_without_pandas(self):
+        """import sleap_roots_contracts succeeds with pandas absent (no eager import)."""
+        code = textwrap.dedent("""
+            import sys
+            class _Block:
+                def find_spec(self, name, path, target=None):
+                    if name == "pandas" or name.startswith("pandas."):
+                        raise ImportError("pandas blocked")
+                    return None
+            sys.meta_path.insert(0, _Block())
+            sys.modules.pop("pandas", None)
+            import sleap_roots_contracts  # noqa: F401
+            from sleap_roots_contracts.analysis_input import (  # noqa: F401
+                validate_analysis_input,
+            )
+            print("OK")
+            """)
+        proc = subprocess.run(
+            [sys.executable, "-c", code], capture_output=True, text=True
+        )
+        assert proc.returncode == 0, proc.stderr
+        assert "OK" in proc.stdout
