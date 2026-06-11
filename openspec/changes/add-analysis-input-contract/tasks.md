@@ -65,10 +65,13 @@
 
 ## 5. Fixtures + tests
 
-- [ ] 5.1 Add `tests/fixtures/analysis_input/{cylinder,field,turface}.csv` — committed static CSVs
-      (no network), built from the real EDPIE vocabularies (turface `Genotype`/`Barcode`, cylinder
-      `accession_name`/`qr_code`, field/root-core) canonicalized to the canonical names; bundle:
-      `talmolab/sleap-roots-analyze#120`
+- [ ] 5.1 Add `tests/fixtures/analysis_input/{cylinder,field,turface,genotype_means}.csv` — small
+      **real** subsets of the wheat EDPIE post-QC `10_final_data.csv` tables (bundle:
+      `talmolab/sleap-roots-analyze#120`), committed static (no network). Rename only the role columns
+      to canonical (`Genotype`/`Barcode`/`Replicate`); keep real trait names + 1–2 numeric-metadata
+      **decoy** columns (`scan_id`, `plant_age_days`, `Plot`, `Computation.Time.s`) to pin the
+      structural classifier. Three are sample-level; `genotype_means.csv` is genotype-aggregated
+      (no `sample_id`) for the warn path. Document provenance in a fixtures README.
 - [ ] 5.2 Wire the fixture **loader as a pytest fixture** (`tests/conftest.py`), not a plain helper;
       read via `pd.read_csv` (line-ending tolerant)
 - [ ] 5.3 `tests/test_analysis_input.py`: `@pytest.mark.parametrize` "each example validates cleanly"

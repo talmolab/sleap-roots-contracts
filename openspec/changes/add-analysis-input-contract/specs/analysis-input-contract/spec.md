@@ -90,6 +90,13 @@ recorded issue SHALL identify the offending column.
 - **THEN** each recorded issue exposes a `column` naming the offending column (or no column for a
   table-level issue) and a human-readable `message`
 
+#### Scenario: A numeric non-role column is treated as an opaque trait
+- **WHEN** a table includes a numeric column that is not a declared role (e.g. an id, count, or
+  timing column such as `scan_id` or `Computation.Time.s`)
+- **THEN** it is counted as a trait column (it satisfies the "at least one numeric trait" rule) and
+  no warning or error is raised for it — the structural validator has no metadata registry, so
+  excluding such columns is the consumer's canonicalization responsibility, not the contract's
+
 #### Scenario: An empty table is validated structurally
 - **WHEN** a table that has the canonical columns but zero rows is validated
 - **THEN** column-presence and dtype checks still apply (e.g. a missing `genotype` column is still an
@@ -123,9 +130,20 @@ differs from a fresh regeneration (the existing drift guard).
 
 ### Requirement: Example Fixtures Per Shape
 The library SHALL ship example analysis-input tables for the cylinder, field, and turface shapes
-under `tests/fixtures/`, loaded via a pytest fixture, each of which validates cleanly via
-`validate_analysis_input`.
+(plus a genotype-aggregated table) under `tests/fixtures/`, loaded via a pytest fixture, each of which
+validates (its `ok` is true) via `validate_analysis_input`. The examples SHALL be small real subsets
+of the wheat EDPIE post-QC tables: only the role columns SHALL be canonical; trait column names SHALL
+remain opaque and realistic (units, parens, dotted names), and each table SHALL retain a couple of
+real numeric-metadata decoy columns to pin the structural classifier on real data. At least one
+example SHALL be sample-level (has `sample_id`) and at least one SHALL be genotype-aggregated (no
+`sample_id`), so the missing-`sample_id` warning path is exercised in both directions.
 
 #### Scenario: Each shipped example validates
 - **WHEN** the cylinder, field, and turface example tables are each validated
 - **THEN** every result's `ok` is true
+
+#### Scenario: A genotype-aggregated example warns on the missing sample identifier
+- **WHEN** the genotype-aggregated example (no `sample_id` column) is validated with default settings
+- **THEN** its `ok` is true and a warning naming `sample_id` is recorded
+- **WHEN** a sample-level example (has `sample_id`) is validated
+- **THEN** its `ok` is true and no warning is recorded

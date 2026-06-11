@@ -268,14 +268,63 @@ class TestValidator:
 
 
 class TestExampleFixtures:
-    """The shipped cylinder/field/turface examples validate cleanly."""
+    """The shipped examples are real subsets of the wheat EDPIE post-QC tables.
+
+    Only the role columns are canonical; trait names stay opaque and realistic
+    (units, parens, dots: ``Network Area (mm²)``, ``Computation.Time.s``,
+    ``Root Count 0cm``). Each table also carries a couple of real numeric-metadata
+    decoy columns (e.g. ``scan_id``, ``plant_age_days``, ``Plot``) — the structural
+    classifier has no registry, so it (correctly, by design) treats them as opaque
+    trait columns; consumers drop such columns when canonicalizing (analyze#144).
+    """
 
     def test_example_validates(self, example_analysis_input):
-        """Each canonical example table passes with no errors or warnings."""
+        """Each shipped example passes (ok, no errors); warnings are allowed."""
         result = validate_analysis_input(example_analysis_input)
         assert result.ok is True
         assert result.errors == []
-        assert result.warnings == []
+
+    def test_sample_level_examples_have_no_warnings(self, load_analysis_input):
+        """Sample-level examples (have sample_id) validate with zero warnings."""
+        for name in ("cylinder", "field", "turface"):
+            result = validate_analysis_input(load_analysis_input(name))
+            assert result.ok is True
+            assert result.warnings == [], name
+
+    def test_genotype_aggregated_example_warns_missing_sample_id(
+        self, load_analysis_input
+    ):
+        """The genotype-aggregated example (no sample_id) warns but stays ok."""
+        result = validate_analysis_input(load_analysis_input("genotype_means"))
+        assert result.ok is True
+        assert any(i.column == "sample_id" for i in result.warnings)
+
+    def test_examples_carry_realistic_opaque_trait_names(self, load_analysis_input):
+        """Real fixtures preserve units/parens/dotted trait names (not synthetic)."""
+        turface = load_analysis_input("turface")
+        # "Network Area (mm²)" — match by prefix to avoid a unicode literal in source.
+        assert any(c.startswith("Network Area (mm") for c in turface.columns)
+        assert "Computation.Time.s" in turface.columns
+        assert "Total Root Length (mm)" in turface.columns
+        assert "Root Count 0cm" in load_analysis_input("field").columns
+
+    def test_numeric_metadata_decoys_are_structurally_traits(self, load_analysis_input):
+        """Pin the known limitation: real numeric-metadata cols classify as traits.
+
+        cylinder ships ``scan_id`` / ``plant_age_days`` — numeric, not roles, so the
+        structural validator counts them as (opaque) trait columns. The table still
+        validates ok; nothing flags them. This is why consumers must canonicalize
+        (drop non-trait numeric columns) before validating, not the contract's job.
+        """
+        cylinder = load_analysis_input("cylinder")
+        assert {"scan_id", "plant_age_days"} <= set(cylinder.columns)
+        result = validate_analysis_input(cylinder)
+        assert result.ok is True
+        assert result.errors == []
+        # No warning is raised for the decoys (numeric ⇒ trait, by design).
+        assert all(
+            i.column not in {"scan_id", "plant_age_days"} for i in result.warnings
+        )
 
 
 class TestPandasOptional:
