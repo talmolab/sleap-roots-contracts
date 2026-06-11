@@ -11,6 +11,7 @@ opaque: there is no trait-name registry and no value-range checking here (those 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from types import ModuleType
 from typing import TYPE_CHECKING, Literal
 
 from pydantic import BaseModel, ConfigDict
@@ -96,7 +97,7 @@ class ValidationResult:
         raise ValueError(f"analysis input validation failed: {detail}")
 
 
-def _import_pandas() -> "pd":
+def _import_pandas() -> ModuleType:
     """Import pandas lazily, with a guided error naming the optional extra.
 
     Kept inside this function (never imported at module top) so the package's
@@ -113,14 +114,16 @@ def _import_pandas() -> "pd":
     return pd
 
 
-def _is_numeric(series, pd) -> bool:
-    """True for an integer/float (trait-eligible) column, excluding booleans."""
-    return pd.api.types.is_numeric_dtype(series) and not pd.api.types.is_bool_dtype(
-        series
+def _is_numeric(series: "pd.Series", pd: ModuleType) -> bool:
+    """True for a real-number (trait-eligible) column, excluding bool and complex."""
+    return (
+        pd.api.types.is_numeric_dtype(series)
+        and not pd.api.types.is_bool_dtype(series)
+        and not pd.api.types.is_complex_dtype(series)
     )
 
 
-def _is_string(series, pd) -> bool:
+def _is_string(series: "pd.Series", pd: ModuleType) -> bool:
     """True for a role column holding strings (object or pandas StringDtype).
 
     Numeric/bool dtypes are rejected outright; for object/string dtypes every
@@ -173,6 +176,18 @@ def validate_analysis_input(
 
     columns = list(df.columns)
 
+    # Duplicate column labels make df[name] return a DataFrame (not a Series), which
+    # breaks every per-column check below. Reject up front with a table-level error
+    # instead of crashing on the malformed structure.
+    duplicates = sorted({c for c in columns if columns.count(c) > 1})
+    if duplicates:
+        result.errors.append(
+            ValidationIssue(
+                None, f"duplicate column names not allowed: {duplicates}", "error"
+            )
+        )
+        return result
+
     # Required genotype: present, string-typed, non-null.
     if REQUIRED_ROLE not in columns:
         result.errors.append(
@@ -209,7 +224,7 @@ def validate_analysis_input(
             result.errors.append(
                 ValidationIssue(
                     role,
-                    f"role column '{role}' must be string-typed, not numeric",
+                    f"role column '{role}' must be string-typed",
                     "error",
                 )
             )

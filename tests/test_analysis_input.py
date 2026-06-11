@@ -149,13 +149,19 @@ class TestValidator:
         assert any(i.column == "genotype" for i in result.errors)
 
     def test_all_nan_genotype_is_error(self):
-        """An all-NaN genotype column is an error."""
+        """An all-NaN genotype column errors for the NaN reason, naming genotype."""
         df = _df(
             genotype=pd.Series([np.nan, np.nan], dtype="object"),
             sample_id=["s1", "s2"],
             total_length=[1.0, 2.0],
         )
-        assert validate_analysis_input(df).ok is False
+        result = validate_analysis_input(df)
+        assert result.ok is False
+        # Must error for the NaN rule (not silently slip to a dtype error).
+        assert any(
+            i.column == "genotype" and "missing" in i.message.lower()
+            for i in result.errors
+        )
 
     def test_numeric_role_column_is_wrong_dtype_error(self):
         """A numeric (non-str) replicate column is a hard error; raises."""
@@ -227,6 +233,75 @@ class TestValidator:
         assert strict.ok is False
         assert any(i.column == "replicate" for i in strict.errors)
 
+    def test_all_nan_optional_role_warns_not_dtype_error(self):
+        """An all-NaN optional role column is dtype-valid -> NaN warning, not error."""
+        df = _df(
+            genotype=["A", "B"],
+            sample_id=["s1", "s2"],
+            replicate=pd.Series([None, None], dtype="object"),
+            total_length=[1.0, 2.0],
+        )
+        default = validate_analysis_input(df)
+        assert default.ok is True
+        assert any(i.column == "replicate" for i in default.warnings)
+        assert not any(i.column == "replicate" for i in default.errors)
+
+    # --- degenerate structure ----------------------------------------------
+
+    def test_duplicate_role_column_is_error_not_crash(self):
+        """Duplicate role columns are a table-level error, never an exception."""
+        for role in ("genotype", "replicate"):
+            df = pd.DataFrame(
+                [["A", "A", 1.0]],
+                columns=(
+                    [role, role, "trait"]
+                    if role != "genotype"
+                    else ["genotype", "genotype", "trait"]
+                ),
+            )
+            result = validate_analysis_input(df)  # must not raise
+            assert result.ok is False
+            assert any("duplicate" in i.message.lower() for i in result.errors)
+
+    def test_duplicate_trait_column_is_error_not_misclassified(self):
+        """A duplicated trait column is reported, not silently mis-rejected."""
+        df = pd.DataFrame(
+            [["A", "s1", 1.0, 2.0]], columns=["genotype", "sample_id", "t", "t"]
+        )
+        result = validate_analysis_input(df)
+        assert result.ok is False
+        assert any("duplicate" in i.message.lower() for i in result.errors)
+
+    def test_complex_dtype_column_is_not_a_trait(self):
+        """A complex-dtype column does not satisfy the >=1 real-number-trait rule."""
+        df = _df(
+            genotype=["A"], sample_id=["s1"], z=pd.Series([1 + 2j], dtype="complex128")
+        )
+        result = validate_analysis_input(df)
+        assert result.ok is False
+        assert any("trait" in i.message.lower() for i in result.errors)
+
+    def test_bool_column_is_not_a_trait(self):
+        """A bool column is excluded from numeric traits (warns as non-numeric)."""
+        df = _df(genotype=["A", "B"], sample_id=["s1", "s2"], flag=[True, False])
+        result = validate_analysis_input(df)
+        assert result.ok is False  # bool doesn't satisfy the >=1-trait rule
+        assert any("trait" in i.message.lower() for i in result.errors)
+        assert any(i.column == "flag" for i in result.warnings)
+
+    def test_all_roles_present_valid(self):
+        """A table exercising every role column (incl. image_path) validates clean."""
+        df = _df(
+            genotype=["A", "B"],
+            sample_id=["s1", "s2"],
+            replicate=["1", "2"],
+            image_path=["a.png", "b.png"],
+            total_length=[1.0, 2.0],
+        )
+        result = validate_analysis_input(df)
+        assert result.ok is True
+        assert result.warnings == []
+
     # --- allowed -----------------------------------------------------------
 
     def test_nan_in_trait_is_allowed(self):
@@ -249,6 +324,10 @@ class TestValidator:
         )
         result = validate_analysis_input(df)
         assert result.ok is True
+        # No per-row NaN issue should fire for the absent rows.
+        assert not any(
+            "nan" in i.message.lower() for i in result.warnings + result.errors
+        )
 
     def test_empty_table_missing_genotype_is_error(self):
         """A zero-row table still errors on a missing genotype column."""
@@ -258,13 +337,19 @@ class TestValidator:
     # --- message quality ---------------------------------------------------
 
     def test_issues_carry_column_and_message(self):
-        """Each recorded issue exposes a column and a non-empty message."""
+        """Each issue exposes a column (or None for table-level) and a message."""
         df = _df(genotype=[1], replicate=[2])  # int genotype + no trait + numeric rep
         result = validate_analysis_input(df)
         assert result.errors
         for issue in result.errors:
             assert issue.message
             assert issue.severity == "error"
+        # The column-attribution contract: the genotype dtype error names genotype,
+        # and the table-level "no trait" error carries column=None.
+        assert any(i.column == "genotype" for i in result.errors)
+        assert any(
+            i.column is None and "trait" in i.message.lower() for i in result.errors
+        )
 
 
 class TestExampleFixtures:
@@ -307,6 +392,20 @@ class TestExampleFixtures:
         assert "Computation.Time.s" in turface.columns
         assert "Total Root Length (mm)" in turface.columns
         assert "Root Count 0cm" in load_analysis_input("field").columns
+
+    def test_fixtures_require_role_dtype_canonicalization(self, analysis_input_dir):
+        """The shipped CSVs validate only after role-dtype canonicalization.
+
+        The real `10_final_data.csv` tables store `Replicate` as integers, so a plain
+        `pd.read_csv` infers a numeric `replicate` (a wrong-dtype error). The conftest
+        loader casts role columns to string — exactly the canonicalization a consumer
+        must do — so make that requirement explicit rather than hidden.
+        """
+        raw = pd.read_csv(analysis_input_dir / "field.csv")  # no astype
+        assert pd.api.types.is_numeric_dtype(raw["replicate"])  # documents the quirk
+        assert validate_analysis_input(raw).ok is False  # raw fails by design
+        canon = raw.astype({"replicate": "string", "genotype": "string"})
+        assert validate_analysis_input(canon).ok is True
 
     def test_numeric_metadata_decoys_are_structurally_traits(self, load_analysis_input):
         """Pin the known limitation: real numeric-metadata cols classify as traits.

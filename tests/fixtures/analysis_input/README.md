@@ -7,7 +7,11 @@ names are left exactly as the real data has them** — units, parens, and dotted
 (`Network Area (mm²)`, `Total Root Length (mm)`, `Computation.Time.s`, `Root Count 0cm`,
 `network_solidity_mean`). That is the point: the contract validates *structure*, not
 trait names. Every file validates via `sleap_roots_contracts.validate_analysis_input`
-(`ok` is true).
+(`ok` is true) **after role-dtype canonicalization** — the real tables store `Replicate`
+as integers, so the pytest loader (`tests/conftest.py`) casts the role columns to string
+(exactly the canonicalization a consumer performs) before validating. A plain
+`pd.read_csv` of these CSVs would infer a numeric `replicate` and fail the role-dtype
+check by design.
 
 These are **the source of truth** for canonical analysis-input examples — downstream
 synthetic fixtures (e.g. `talmolab/sleap-roots-analyze#120`'s

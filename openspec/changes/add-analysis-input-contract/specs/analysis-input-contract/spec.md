@@ -97,6 +97,12 @@ recorded issue SHALL identify the offending column.
   no warning or error is raised for it — the structural validator has no metadata registry, so
   excluding such columns is the consumer's canonicalization responsibility, not the contract's
 
+#### Scenario: Duplicate column names are a table-level error
+- **WHEN** a table has duplicate column names (which would otherwise make per-column lookups
+  ambiguous)
+- **THEN** the result's `ok` is false and a table-level error names the duplicated columns, and the
+  validator does not raise an unhandled exception
+
 #### Scenario: An empty table is validated structurally
 - **WHEN** a table that has the canonical columns but zero rows is validated
 - **THEN** column-presence and dtype checks still apply (e.g. a missing `genotype` column is still an
