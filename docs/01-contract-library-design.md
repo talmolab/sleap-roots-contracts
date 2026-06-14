@@ -192,6 +192,17 @@ library — producers `pip install sleap-roots-contracts==X.Y`, and GHCR is a co
 - **#2 (Bloom):** add jsonb `metadata` to `cyl_trait_sources`; add `source_id` FK to
   `cyl_scan_traits`/`cyl_image_traits`; create intermediates/blob table; service-role
   idempotent write-back RPC; CLI update; backfill Box traits.
+  - **Status (in progress, Bloom repo):** decomposed into changes A–H. **A done** —
+    `cyl_trait_sources` gains jsonb `metadata` + `idempotency_key` (`UNIQUE` + non-empty
+    `CHECK`), merged via Bloom PR #290 (OpenSpec `add-cyl-trait-source-provenance`).
+    Remaining: B (`source_id` on `cyl_image_traits`; `cyl_scan_traits` already had it),
+    C (intermediates/blob table), D (service-role write-back RPC), E (RLS lockdown —
+    must land no later than D), F (pin contract schema + codegen + CI match), G (Python
+    ingest entrypoint; the oclif CLI is not yet migrated to the Bloom repo), H (Box backfill).
+    Key resolution: `scan_key → cyl_scans.id` via `Provenance.inputs.image_ids`, caller-side.
+    *(Point-in-time snapshot; the canonical, live status + change sequencing is the
+    sleap-roots ↔ Bloom integration roadmap, `talmolab/sleap-roots-pipeline`
+    `docs/bloom-integration/roadmap.md`.)*
 - **#3 (predict/traits):** params resolution from Bloom metadata; produce `ResultEnvelope`;
   warm predict worker carrying `worker_request_id`.
 - **#4 (orchestration):** Argo Events ingest→per-scan trigger; populate `argo_*` ids;
