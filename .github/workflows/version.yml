@@ -1,0 +1,99 @@
+# Simple version management workflow.
+#
+# Bumps the single source of version truth (pyproject.toml) via `uv version` and
+# opens a PR. __version__ is resolved dynamically from package metadata, so no
+# other file needs editing. CHANGELOG + schema regeneration happen on that PR.
+name: Version Bump
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump_type:
+        description: "Version bump type"
+        required: true
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+          - alpha
+          - beta
+          - rc
+          - stable
+      custom_version:
+        description: "Custom version (optional, overrides bump_type)"
+        required: false
+        type: string
+
+jobs:
+  bump-version:
+    name: Bump Version
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup UV
+        uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Get current version
+        id: current
+        run: |
+          CURRENT=$(uv version | awk '{print $NF}')
+          echo "version=$CURRENT" >> "$GITHUB_OUTPUT"
+          echo "Current version: $CURRENT"
+
+      - name: Bump version
+        id: bump
+        run: |
+          if [[ -n "${{ inputs.custom_version }}" ]]; then
+            uv version "${{ inputs.custom_version }}"
+          else
+            uv version --bump "${{ inputs.bump_type }}"
+          fi
+          NEW_VERSION=$(uv version | awk '{print $NF}')
+          echo "new_version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
+          echo "New version: $NEW_VERSION"
+
+      - name: Regenerate schemas for the new version
+        # Each schema's $id embeds the package version; regenerate so the bump PR
+        # carries matching schema artifacts and the drift guard stays green.
+        run: |
+          uv sync
+          uv run python -m sleap_roots_contracts.schema
+
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "chore: bump version from ${{ steps.current.outputs.version }} to ${{ steps.bump.outputs.new_version }}"
+          title: "Bump version to ${{ steps.bump.outputs.new_version }}"
+          body: |
+            ## Version Bump
+
+            - **Previous version:** ${{ steps.current.outputs.version }}
+            - **New version:** ${{ steps.bump.outputs.new_version }}
+            - **Bump type:** ${{ inputs.bump_type }}${{ inputs.custom_version && ' (custom)' || '' }}
+
+            ### Checklist
+            - [ ] Update `docs/CHANGELOG.md` (move `[Unreleased]` → the new version section, refresh compare links)
+            - [ ] Confirm regenerated `schema/*.json` `$id` advanced to the new version
+            - [ ] Review version number is correct
+            - [ ] Merge when ready to release
+          branch: version-bump-${{ steps.bump.outputs.new_version }}
+          delete-branch: true
+          labels: |
+            version
+            automated
