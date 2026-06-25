@@ -30,9 +30,31 @@ MODELS = {
 }
 
 
+def _normalize_single_value_enums(node: object) -> object:
+    """Rewrite single-value ``const`` to a one-element ``enum`` in place.
+
+    Pydantic renders a single-value ``Literal`` (e.g. ``BlobKind =
+    Literal["predictions_slp"]``) as JSON Schema ``const``, but a multi-value
+    ``Literal`` renders as ``enum``. Consumers treat a contract's controlled
+    vocabulary as an ``enum`` set regardless of cardinality (Bloom keys on
+    ``BlobRef.kind``'s enum), so normalize ``const`` -> one-element ``enum`` for a
+    uniform "allowed set" shape that does not change when a vocabulary narrows to
+    one value.
+    """
+    if isinstance(node, dict):
+        if "const" in node:
+            node["enum"] = [node.pop("const")]
+        for value in node.values():
+            _normalize_single_value_enums(value)
+    elif isinstance(node, list):
+        for item in node:
+            _normalize_single_value_enums(item)
+    return node
+
+
 def render(name: str) -> str:
     """Render one schema as a deterministic JSON string."""
-    schema = MODELS[name].model_json_schema()
+    schema = _normalize_single_value_enums(MODELS[name].model_json_schema())
     # Make the artifact self-describing so consumers (and jsonschema.validate)
     # select the intended dialect instead of defaulting to Draft 7.
     schema["$schema"] = "https://json-schema.org/draft/2020-12/schema"

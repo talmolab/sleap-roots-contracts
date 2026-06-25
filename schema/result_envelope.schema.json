@@ -63,12 +63,18 @@
         },
         "kind": {
           "enum": [
-            "predictions_slp",
-            "labels",
-            "h5",
-            "qc_image"
+            "predictions_slp"
           ],
           "title": "Kind",
+          "type": "string"
+        },
+        "root_type": {
+          "enum": [
+            "primary",
+            "lateral",
+            "crown"
+          ],
+          "title": "Root Type",
           "type": "string"
         },
         "s3_location": {
@@ -90,6 +96,7 @@
       },
       "required": [
         "kind",
+        "root_type",
         "scan_key"
       ],
       "title": "BlobRef",

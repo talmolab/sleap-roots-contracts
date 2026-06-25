@@ -32,6 +32,18 @@ def test_emitted_schema_declares_draft_2020_12():
         assert schema["$schema"] == "https://json-schema.org/draft/2020-12/schema"
 
 
+def test_blobref_schema_narrows_kind_and_requires_root_type():
+    """The emitted BlobRef reflects the narrowed kind and the root_type vocabulary."""
+    defs = json.loads(render("result_envelope"))["$defs"]["BlobRef"]
+    assert defs["properties"]["kind"]["enum"] == ["predictions_slp"]
+    assert "root_type" in defs["required"]
+    assert set(defs["properties"]["root_type"]["enum"]) == {
+        "primary",
+        "lateral",
+        "crown",
+    }
+
+
 def test_schema_id_carries_package_version():
     """Each emitted schema's $id embeds the live package __version__.
 

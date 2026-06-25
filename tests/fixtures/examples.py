@@ -35,6 +35,11 @@ def example_envelope() -> ResultEnvelope:
         ),
         traits=[TraitValue(name="primary_length", value=12.5, scan_key="scan-1")],
         blobs=[
-            BlobRef(kind="predictions_slp", scan_key="scan-1", s3_location="s3://b/k")
+            BlobRef(
+                kind="predictions_slp",
+                root_type="primary",
+                scan_key="scan-1",
+                s3_location="s3://b/k",
+            )
         ],
     )
