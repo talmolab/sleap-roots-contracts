@@ -36,6 +36,16 @@ def render(name: str) -> str:
     # Make the artifact self-describing so consumers (and jsonschema.validate)
     # select the intended dialect instead of defaulting to Draft 7.
     schema["$schema"] = "https://json-schema.org/draft/2020-12/schema"
+    # The $id embeds the package version. If the package isn't installed,
+    # __version__ falls back to "unknown" (see __init__.py) — refuse rather than
+    # emit a poisoned ".../vunknown/..." $id (the byte Bloom keys on). CI always
+    # installs first; this turns a confusing downstream drift-guard failure into
+    # a clear, local error.
+    if __version__ == "unknown":
+        raise RuntimeError(
+            "refusing to emit a schema with an unresolved package version; "
+            "install the package (e.g. `uv sync`) before regenerating"
+        )
     # Carry the package version as a path segment (not a URI fragment): JSON Schema
     # Draft 2020-12 forbids a non-empty fragment in "$id".
     schema["$id"] = (

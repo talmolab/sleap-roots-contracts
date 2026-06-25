@@ -32,6 +32,32 @@ def test_emitted_schema_declares_draft_2020_12():
         assert schema["$schema"] == "https://json-schema.org/draft/2020-12/schema"
 
 
+def test_schema_id_carries_package_version():
+    """Each emitted schema's $id embeds the live package __version__.
+
+    The whole point of resolving __version__ from package metadata is that the
+    schema $id tracks the released version. The drift guard alone cannot prove
+    this (committed and rendered both derive from the same __version__), so
+    assert the linkage directly.
+    """
+    import sleap_roots_contracts
+
+    expected = f"/schema/v{sleap_roots_contracts.__version__}/"
+    for name in MODELS:
+        schema = json.loads(render(name))
+        assert expected in schema["$id"]
+        assert schema["$id"].endswith(f"/{name}.schema.json")
+
+
+def test_render_refuses_unresolved_version(monkeypatch):
+    """render() refuses to emit a 'vunknown' $id when the version is unresolved."""
+    import sleap_roots_contracts.schema as schema_mod
+
+    monkeypatch.setattr(schema_mod, "__version__", "unknown")
+    with pytest.raises(RuntimeError, match="unresolved"):
+        render("result_envelope")
+
+
 def test_example_envelope_validates_against_schema():
     """A representative envelope validates against the emitted schema."""
     from tests.fixtures.examples import example_envelope

@@ -143,9 +143,11 @@ Read `pyproject.toml` and verify these fields exist and are correct:
 - `license` field matches the LICENSE file (GPLv3)
 - `classifiers` include: Development Status, License, Python version, Topic
 - `keywords` are present and relevant
-- `[project.urls]`: Homepage, Repository, Issues, Changelog
-- `[project.scripts]`: CLI entry point is defined
+- `[project.urls]`: Homepage, Repository, Issues
 - `[build-system]`: uses `uv_build` backend
+
+This package is an **importable library — there is no CLI / `[project.scripts]` entry point**, so
+release validation verifies the wheel *imports* rather than a console command.
 
 Report any missing metadata and fix it.
 
@@ -217,7 +219,22 @@ uv version --bump $ARGUMENTS    # e.g., alpha, beta, rc, patch, minor, major, st
 uv version $NEW_VERSION
 ```
 
-`__init__.py` uses dynamic versioning via `importlib.metadata` — no manual update needed.
+`__init__.py` uses dynamic versioning via `importlib.metadata` — no manual update needed; bumping
+`pyproject.toml` is sufficient.
+
+**Then regenerate the schema artifacts.** Each emitted schema's `$id` embeds the package version
+(`schema.py` reads `__version__`, which now resolves from installed metadata). After the bump you
+must reinstall so the new version is visible, then regenerate, or the committed `$id` stays at the
+old version and CI's schema drift guard fails:
+
+```bash
+# Reinstall so importlib.metadata sees the new version, then regenerate
+uv sync
+uv run python -m sleap_roots_contracts.schema
+
+# Expect ONLY the $id version segment to change in each schema (vOLD -> vNEW)
+git diff schema/
+```
 
 ### Step 8: Build and Test Release Artifacts
 
@@ -233,27 +250,26 @@ ls -lh dist/
 # Should see: sleap_roots_contracts-X.Y.Z-py3-none-any.whl
 #             sleap_roots_contracts-X.Y.Z.tar.gz
 
-# Test wheel installation in isolated environment
-uv run --isolated --with dist/*.whl python -c "import sleap_roots_contracts; print(f'Version: {sleap_roots_contracts.__version__}')"
-
-# Test CLI entry point
-uv run --isolated --with dist/*.whl sleap-roots-contracts --help
+# Test wheel installation in isolated environment (library import, no CLI)
+uv run --isolated --with dist/*.whl python -c "import sleap_roots_contracts as s; print(f'Version: {s.__version__}')"
 ```
 
 ### Step 9: Commit Version Bump and Changelog
 
 ```bash
-# Stage changes (version and changelog)
-git add pyproject.toml docs/CHANGELOG.md
+# Stage changes (version, regenerated schemas, changelog)
+# __init__.py uses dynamic versioning, so only pyproject.toml carries the version,
+# but the regenerated schema/*.json (new $id) MUST be staged too.
+git add pyproject.toml schema/ docs/CHANGELOG.md
 
 # Include any other files fixed during audit (README, etc.)
 # git add README.md  # if updated
 
 # Commit with standard message format
-# Note: __init__.py uses dynamic versioning, only pyproject.toml needs updating
 git commit -m "chore: bump version to v$NEW_VERSION
 
 - Update version in pyproject.toml
+- Regenerate schema/*.json (\$id -> v$NEW_VERSION)
 - Update CHANGELOG.md with release notes"
 
 # Push release branch
@@ -276,8 +292,8 @@ gh pr create \
 - [x] Coverage verified
 - [x] Linting checks pass (uv run black, uv run ruff)
 - [x] Build artifacts verified (uv build)
-- [x] Package installs correctly from wheel
-- [x] CLI entry point works
+- [x] Package installs + imports correctly from wheel
+- [x] Schema artifacts regenerated ($id matches new version); drift guard green
 - [x] CI passing on main branch
 - [x] CHANGELOG.md updated
 
@@ -348,12 +364,6 @@ Or with uv:
 uv add sleap-roots-contracts==$NEW_VERSION
 \`\`\`
 
-One-shot usage (no install needed):
-
-\`\`\`bash
-uvx --from sleap-roots-contracts==$NEW_VERSION sleap-roots-contracts --help
-\`\`\`
-
 ## What's Changed
 
 <INSERT EXTRACTED CHANGELOG SECTION HERE — the content from docs/CHANGELOG.md for this version, excluding the version header line>
@@ -365,12 +375,19 @@ EOF
 )"
 ```
 
-The GitHub Actions workflow `.github/workflows/build.yml` will automatically:
-1. Validate version consistency (tag vs pyproject.toml vs CHANGELOG)
-2. Run the full test suite
-3. Build the wheel and sdist with `uv build`
-4. Test wheel installation
-5. Publish to PyPI with `uv publish` (trusted publishing, no tokens needed)
+The GitHub Actions workflow `.github/workflows/build.yml` runs two jobs automatically:
+
+**`validate-release`** (gate — must pass before anything is published):
+1. Validate the release tag matches `pyproject.toml` version (`vX.Y.Z` → `X.Y.Z`)
+2. Validate a `docs/CHANGELOG.md` entry exists for the version
+3. Lint (`black --check`, `ruff check`)
+4. Schema drift guard (regenerate + `git diff --exit-code schema/`) — blocks a stale/mismatched `$id`
+5. Run the test suite
+
+**`build-and-publish`** (only after the gate passes):
+6. Build the wheel + sdist with `uv build`
+7. Verify the wheel imports and reports the released `__version__`
+8. Publish to PyPI with `uv publish` (trusted publishing via OIDC, no tokens needed)
 
 ### Step 12: Verify Release
 
@@ -382,11 +399,8 @@ gh run watch
 echo "Checking PyPI..."
 curl -s https://pypi.org/pypi/sleap-roots-contracts/json | python -c "import sys,json; vers=json.load(sys.stdin)['releases'].keys(); print([v for v in vers if '$NEW_VERSION' in v])"
 
-# Test installation from PyPI (uvx for one-off test, no local install)
-uvx --from "sleap-roots-contracts==$NEW_VERSION" sleap-roots-contracts --help
-
-# Or test with uv add in a scratch project
-uv run --isolated --with "sleap-roots-contracts==$NEW_VERSION" python -c "import sleap_roots_contracts; print(f'Installed {sleap_roots_contracts.__version__} from PyPI')"
+# Test installation from PyPI (isolated import, no local install — this is a library, no CLI)
+uv run --isolated --with "sleap-roots-contracts==$NEW_VERSION" python -c "import sleap_roots_contracts as s; print(f'Installed {s.__version__} from PyPI')"
 ```
 
 ### Step 13: Post-Release Tasks
