@@ -35,7 +35,8 @@ Tracks `talmolab/sleap-roots-contracts#5`.
 - Update the shared test fixture (`example_envelope`) so its `BlobRef` supplies `root_type`.
 - Regenerate `schema/result_envelope.schema.json` from the models (drift-guarded; never hand-edited):
   `BlobRef.kind` becomes a single-value enum, `root_type` becomes a required enum property.
-- Release **`v0.1.0a2`**: bump `__version__`, update `docs/CHANGELOG.md`.
+- Release **`v0.1.0a2`**: bump `pyproject.toml` version (single source as of #6), update
+  `docs/CHANGELOG.md`.
 
 ## Impact
 
@@ -43,13 +44,10 @@ Tracks `talmolab/sleap-roots-contracts#5`.
 - Affected code:
   - `src/sleap_roots_contracts/models.py` — narrow `BlobKind`; add `RootType`; add required
     `BlobRef.root_type`; leave `ModelRef.root_type` unchanged.
-  - `src/sleap_roots_contracts/__init__.py` — export `RootType`, `BlobKind`; bump `__version__` to
-    `0.1.0a2`.
-  - `pyproject.toml` — bump `version` to `0.1.0a2`. **This repo currently carries the version in TWO
-    independent static places** (`pyproject.toml` and `__init__.__version__`); for this release they
-    must be bumped together (one-time manual lockstep), and nothing in CI cross-checks them. The
-    underlying defect — hardcoded `__version__` instead of analyze-style dynamic versioning — is
-    tracked separately in #6 and is **out of scope here** (see `design.md`).
+  - `src/sleap_roots_contracts/__init__.py` — export `RootType`, `BlobKind`. (No version edit:
+    `__version__` resolves dynamically from package metadata as of #6.)
+  - `pyproject.toml` — bump `version` to `0.1.0a2`. This is now the **single source of version
+    truth** (#6, merged); the schema `$id` tracks it after `uv sync`.
   - `schema/result_envelope.schema.json` **and** `schema/analysis_input.schema.json` — both
     regenerated. The model change touches only `result_envelope`, but each schema's `$id` embeds
     `__version__`, so the version bump restales **both** committed schemas (generated artifacts, CI
@@ -59,8 +57,8 @@ Tracks `talmolab/sleap-roots-contracts#5`.
     omit `root_type` and will raise once it is required; updated to supply it (and to keep each test
     isolating the one rule it names).
   - `tests/test_schema.py` — new RED-first assertions on the narrowed `kind` set, the
-    required/constrained `root_type`, the regenerated schema, and that each schema `$id` carries the
-    bumped version.
+    required/constrained `root_type`, and the regenerated schema. (The `$id`-carries-version
+    assertion already exists on main via `test_schema_id_carries_package_version`, added in #6.)
   - `docs/CHANGELOG.md` — `0.1.0a2` entry (`### Changed`/`### Removed`, breaking-marked) + footer
     compare-link refresh.
 - Intentionally **not** modified: `docs/01-contract-library-design.md` and

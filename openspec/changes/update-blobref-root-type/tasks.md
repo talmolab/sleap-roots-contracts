@@ -1,8 +1,9 @@
 > **Note:** the sub-steps below are the TDD *working-tree* order (RED→GREEN), **not** a commit
 > sequence. The schema drift guard forces two atomic commit units (see `design.md` "Commit
 > grouping"): **Unit A** = model + regenerated `result_envelope.schema.json` + fixture/test updates
-> + exports, still at `v0.1.0a1` (groups 1–4); **Unit B** = the release bump — both version strings,
-> **both** regenerated schemas, and the CHANGELOG (group 5). Never commit a bare RED step.
+> + exports, still at `v0.1.0a1` (groups 1–4); **Unit B** = the release bump — `pyproject.toml`
+> version (single source as of #6), **both** regenerated schemas, and the CHANGELOG (group 5).
+> Never commit a bare RED step.
 
 ## 1. Narrow `BlobKind` (test-first)
 
@@ -52,20 +53,18 @@
       Confirm the drift guard and JSON-Schema meta-validation pass. `analysis_input.schema.json` is
       untouched at this point and still matches.
 
-## 5. Release `v0.1.0a2` (Unit B — bump both versions, regenerate both schemas)
+## 5. Release `v0.1.0a2` (Unit B — bump pyproject, reinstall, regenerate both schemas)
 
-- [ ] 5.1 Bump the version in **both** static places (one-time manual lockstep; the underlying
-      hardcoded-`__version__` defect is tracked in #6, out of scope here):
-      - `src/sleap_roots_contracts/__init__.py` → `__version__ = "0.1.0a2"`
-      - `pyproject.toml` → `version = "0.1.0a2"`
-- [ ] 5.2 Regenerate **both** schemas (`python -m sleap_roots_contracts.schema` writes all `MODELS`):
-      `result_envelope.schema.json` **and** `analysis_input.schema.json` both have their `$id`
-      version segment advance to `v0.1.0a2`. Verify `git diff schema/` shows **only** the two `$id`
-      lines changing (plus the BlobRef shape already committed in 4.2). Re-run the drift guard.
-- [ ] 5.3 Add a test asserting each rendered schema's `$id` carries the current version, e.g.
-      `assert f"v{__version__}" in json.loads(render("result_envelope"))["$id"]` (and for
-      `analysis_input`). Guards the version→`$id` propagation that the drift guard alone does not.
-- [ ] 5.4 Update `docs/CHANGELOG.md`:
+- [ ] 5.1 Bump `pyproject.toml` → `version = "0.1.0a2"` (single source of version truth as of #6;
+      `__init__.__version__` resolves from metadata, so no code edit). Use `uv version 0.1.0a2`.
+- [ ] 5.2 Reinstall so the new version is visible, then regenerate **both** schemas:
+      `uv sync && python -m sleap_roots_contracts.schema` (writes all `MODELS`). Both
+      `result_envelope.schema.json` and `analysis_input.schema.json` have their `$id` version
+      segment advance to `v0.1.0a2`. Verify `git diff schema/` shows **only** the two `$id` lines
+      changing (plus the BlobRef shape already committed in 4.2). Re-run the drift guard.
+      (`test_schema_id_carries_package_version`, on main since #6, already asserts the `$id`/version
+      linkage — no new test needed here.)
+- [ ] 5.3 Update `docs/CHANGELOG.md`:
       - Add a `## [0.1.0a2] - 2026-06-25 (Pre-release)` section under `[Unreleased]` with:
         - `### Changed` — **BREAKING:** `BlobRef.kind` narrowed to `Literal["predictions_slp"]`;
           **BREAKING:** `BlobRef` now requires `root_type` (`RootType = Literal["primary","lateral","crown"]`,
@@ -80,7 +79,7 @@
 
 - [ ] 6.1 Run `/pre-merge-check`: `black --check`, `ruff check`, full `pytest` + coverage, schema
       drift guard green (over **both** schemas). Reinstall the package (`uv sync`) before running so
-      `test_smoke.py`'s `__version__ == importlib.metadata.version(...)` check sees `0.1.0a2`.
+      `test_smoke.py`'s `test_version_matches_pyproject` sees `0.1.0a2`.
 - [ ] 6.2 `openspec validate update-blobref-root-type --strict` passes.
 
 ## 7. Post-merge / post-release (NOT part of this PR)
