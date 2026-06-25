@@ -92,6 +92,11 @@ jobs:
             - [ ] Confirm regenerated `schema/*.json` `$id` advanced to the new version
             - [ ] Review version number is correct
             - [ ] Merge when ready to release
+
+            > **Note:** this PR was opened by `GITHUB_TOKEN`, so `on: pull_request`
+            > CI does **not** run automatically on it. Trigger CI before merging
+            > (e.g. close/reopen the PR, or push an empty commit). The
+            > `build.yml` release gate still validates on `release: published`.
           branch: version-bump-${{ steps.bump.outputs.new_version }}
           delete-branch: true
           labels: |
