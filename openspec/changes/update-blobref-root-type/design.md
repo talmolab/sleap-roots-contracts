@@ -36,11 +36,20 @@ for `talmolab/sleap-roots-contracts#5`.
 ## Why narrow `BlobKind` to a single-value `Literal`
 
 `Literal["predictions_slp"]` is intentional, not a placeholder. The pipeline emits only `.slp`
-prediction blobs; `labels`/`h5`/`qc_image` were speculative and never produced. A single-value
-`Literal` still renders as a one-element `enum` in the JSON Schema, which is exactly what Bloom's
-`kind IN ('predictions_slp')` CHECK and its byte-identity migration-match test compare against.
-`viewer_html` is deferred (add later if/when the pipeline produces it); `traits_csv` is rejected
-permanently — trait numbers are `TraitValue` rows, not blobs.
+prediction blobs; `labels`/`h5`/`qc_image` were speculative and never produced. `viewer_html` is
+deferred (add later if/when the pipeline produces it); `traits_csv` is rejected permanently — trait
+numbers are `TraitValue` rows, not blobs.
+
+**`const` → `enum` normalization (emitter decision).** Pydantic renders a single-value `Literal`
+as JSON Schema `const`, but a multi-value `Literal` renders as `enum`. The previous 4-value `kind`
+was an `enum`, and Bloom keys on `BlobRef.kind`'s **enum** (issue #5) for its `kind IN
+('predictions_slp')` CHECK and byte-identity migration-match test. Emitting `const` would make
+`kind` the sole exception to the "controlled vocabulary = enum" shape and risk breaking Bloom's
+extraction. So `schema.py` normalizes any single-value `const` to a one-element `enum`
+(`_normalize_single_value_enums`), keeping a uniform "allowed set" shape regardless of cardinality.
+This is applied to all `MODELS`; today only `BlobRef.kind` is affected (no other single-value
+`Literal` exists). Recorded here because the obvious assumption — "a single Literal just renders as
+a one-element enum" — is false without this step.
 
 ## Schema regeneration
 
