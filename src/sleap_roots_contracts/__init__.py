@@ -1,5 +1,7 @@
 """Shared result + provenance contract for the sleap-roots <-> Bloom pipeline."""
 
+from importlib.metadata import PackageNotFoundError, version
+
 from .analysis_input import (
     AnalysisInputRow,
     ValidationIssue,
@@ -19,7 +21,14 @@ from .models import (
 )
 from .registry import TraitDefinition, load_registry, validate_trait
 
-__version__ = "0.1.0a1"
+# Single source of version truth is pyproject.toml; resolve it from installed
+# package metadata so the version (and the schema $id derived from it in
+# schema.py) can never drift from what was built/published.
+try:
+    __version__ = version("sleap-roots-contracts")
+except PackageNotFoundError:  # not installed (e.g. running from a bare source tree)
+    __version__ = "unknown"
+
 __all__ = [
     "BlobRef",
     "InputRef",
