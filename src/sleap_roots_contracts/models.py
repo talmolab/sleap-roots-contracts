@@ -126,7 +126,15 @@ class TraitValue(BaseModel):
         return self
 
 
-BlobKind = Literal["predictions_slp", "labels", "h5", "qc_image"]
+# The pipeline produces exactly one SLEAP .slp prediction file per root type per
+# scan; no other artifact kinds exist in this contract's world. (viewer_html is
+# deferred; traits_csv is excluded — trait numbers are TraitValue rows, not blobs.)
+BlobKind = Literal["predictions_slp"]
+
+# Controlled vocabulary for a root type. Required on BlobRef (every predictions
+# artifact names the root type it carries). ModelRef.root_type is deliberately
+# left as a loose `str | None` registry pointer — see the change's design.md.
+RootType = Literal["primary", "lateral", "crown"]
 
 # Single source of truth for BlobRef's "at least one location" rule: both the
 # emitted JSON Schema constraint and the runtime validator derive from this, so a
@@ -157,6 +165,7 @@ class BlobRef(BaseModel):
     model_config = ConfigDict(frozen=True, json_schema_extra=_blob_location_anyof())
 
     kind: BlobKind
+    root_type: RootType
     scan_key: str
     s3_location: str | None = None
     box_link: str | None = None

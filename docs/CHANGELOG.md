@@ -8,6 +8,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0a2] - 2026-06-25 (Pre-release)
+
+Revises the `BlobRef` contract for Bloom's change C (narrow the artifact kind and
+attach a strict root-type vocabulary).
+
+### Changed
+- **BREAKING:** `BlobRef.kind` (`BlobKind`) narrowed to the single value
+  `Literal["predictions_slp"]`; the controlled vocabulary is mirrored in the
+  regenerated JSON Schema as a one-element `enum` (single-value `Literal`s are
+  normalized from `const` to `enum` so a vocabulary's "allowed set" shape is
+  uniform regardless of cardinality).
+- **BREAKING:** `BlobRef` now has a **required** `root_type` field constrained to
+  `RootType = Literal["primary", "lateral", "crown"]` (no default); a `BlobRef`
+  built without `root_type` raises `ValidationError`.
+- Exported `BlobKind` and `RootType` from the package root.
+- `ModelRef.root_type` intentionally left as `str | None` (recorded decision,
+  talmolab/sleap-roots-contracts#5) — it is a forward-looking model-registry
+  pointer, not the artifact's root-type label.
+
+### Removed
+- **BREAKING:** Dropped `labels`, `h5`, and `qc_image` from `BlobKind`; `traits_csv`
+  is permanently excluded (trait numbers are `TraitValue` rows, not blobs).
+
 ## [0.1.0a1] - 2026-06-11 (Pre-release)
 
 ### Added
@@ -60,6 +83,7 @@ sleap-roots ↔ Bloom pipeline integration. Pure, dependency-light, Bloom-agnost
 - CI (lint + drift guard + tests on Python 3.11/3.12) and a PyPI
   trusted-publishing workflow.
 
-[Unreleased]: https://github.com/talmolab/sleap-roots-contracts/compare/v0.1.0a1...HEAD
+[Unreleased]: https://github.com/talmolab/sleap-roots-contracts/compare/v0.1.0a2...HEAD
+[0.1.0a2]: https://github.com/talmolab/sleap-roots-contracts/compare/v0.1.0a1...v0.1.0a2
 [0.1.0a1]: https://github.com/talmolab/sleap-roots-contracts/compare/v0.1.0a0...v0.1.0a1
 [0.1.0a0]: https://github.com/talmolab/sleap-roots-contracts/releases/tag/v0.1.0a0

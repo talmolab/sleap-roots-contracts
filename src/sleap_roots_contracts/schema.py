@@ -30,9 +30,44 @@ MODELS = {
 }
 
 
+def _normalize_single_value_enums(node: object) -> object:
+    """Rewrite a single-value scalar ``const`` to a one-element ``enum`` in place.
+
+    Pydantic renders a single-value ``Literal`` (e.g. ``BlobKind =
+    Literal["predictions_slp"]``) as JSON Schema ``const``, but a multi-value
+    ``Literal`` renders as ``enum``. Consumers treat a contract's controlled
+    vocabulary as an ``enum`` set regardless of cardinality (Bloom keys on
+    ``BlobRef.kind``'s enum), so normalize ``const`` -> one-element ``enum`` for a
+    uniform "allowed set" shape that does not change when a vocabulary narrows to
+    one value.
+
+    The rewrite is deliberately narrow: it fires only on a **scalar** ``const``
+    with no co-existing ``enum``. That keeps it to its one real job (single-value
+    ``Literal`` nodes) and avoids two latent footguns of a blanket "any key named
+    ``const``" sweep over arbitrary JSON Schema — clobbering a co-existing ``enum``,
+    and mistaking a node that merely *contains* a ``const``-keyed child (e.g. a model
+    field literally named ``const``, whose value is a sub-schema dict) for a literal.
+
+    Mutates ``node`` in place and returns that same object for call-site convenience.
+    """
+    if isinstance(node, dict):
+        if (
+            "const" in node
+            and "enum" not in node
+            and not isinstance(node["const"], (dict, list))
+        ):
+            node["enum"] = [node.pop("const")]
+        for value in node.values():
+            _normalize_single_value_enums(value)
+    elif isinstance(node, list):
+        for item in node:
+            _normalize_single_value_enums(item)
+    return node
+
+
 def render(name: str) -> str:
     """Render one schema as a deterministic JSON string."""
-    schema = MODELS[name].model_json_schema()
+    schema = _normalize_single_value_enums(MODELS[name].model_json_schema())
     # Make the artifact self-describing so consumers (and jsonschema.validate)
     # select the intended dialect instead of defaulting to Draft 7.
     schema["$schema"] = "https://json-schema.org/draft/2020-12/schema"

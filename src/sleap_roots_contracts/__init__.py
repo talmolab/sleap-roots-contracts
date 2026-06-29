@@ -11,12 +11,14 @@ from .analysis_input import (
 )
 from .hashing import NonCanonicalizableError, compute_param_hash
 from .models import (
+    BlobKind,
     BlobRef,
     InputRef,
     ModelRef,
     Provenance,
     ResolvedParams,
     ResultEnvelope,
+    RootType,
     TraitValue,
 )
 from .registry import TraitDefinition, load_registry, validate_trait
@@ -37,6 +39,8 @@ __all__ = [
     "ResolvedParams",
     "ResultEnvelope",
     "TraitValue",
+    "BlobKind",
+    "RootType",
     "TraitDefinition",
     "load_registry",
     "validate_trait",
