@@ -31,7 +31,7 @@ MODELS = {
 
 
 def _normalize_single_value_enums(node: object) -> object:
-    """Rewrite single-value ``const`` to a one-element ``enum`` in place.
+    """Rewrite a single-value scalar ``const`` to a one-element ``enum`` in place.
 
     Pydantic renders a single-value ``Literal`` (e.g. ``BlobKind =
     Literal["predictions_slp"]``) as JSON Schema ``const``, but a multi-value
@@ -40,9 +40,22 @@ def _normalize_single_value_enums(node: object) -> object:
     ``BlobRef.kind``'s enum), so normalize ``const`` -> one-element ``enum`` for a
     uniform "allowed set" shape that does not change when a vocabulary narrows to
     one value.
+
+    The rewrite is deliberately narrow: it fires only on a **scalar** ``const``
+    with no co-existing ``enum``. That keeps it to its one real job (single-value
+    ``Literal`` nodes) and avoids two latent footguns of a blanket "any key named
+    ``const``" sweep over arbitrary JSON Schema — clobbering a co-existing ``enum``,
+    and mistaking a node that merely *contains* a ``const``-keyed child (e.g. a model
+    field literally named ``const``, whose value is a sub-schema dict) for a literal.
+
+    Mutates ``node`` in place and returns that same object for call-site convenience.
     """
     if isinstance(node, dict):
-        if "const" in node:
+        if (
+            "const" in node
+            and "enum" not in node
+            and not isinstance(node["const"], (dict, list))
+        ):
             node["enum"] = [node.pop("const")]
         for value in node.values():
             _normalize_single_value_enums(value)
