@@ -64,7 +64,11 @@ Full design + decisions:
   - `tests/` — new `ModelCard`, idempotency, `Provenance`, and schema tests (real TDD, no mocks);
     the shared `example_envelope` fixture is untouched (both new fields default to `None`, so the
     existing envelope stays valid).
-  - `docs/CHANGELOG.md` — `0.1.0a3` entry + footer compare-link refresh.
+  - `docs/CHANGELOG.md` — `0.1.0a3` entry (`### Added` + a short `### Changed` note for the
+    `compute_idempotency_key` signature/behavior extension) + footer compare-link refresh.
+  - `openspec/project.md` — Purpose updated from "**two** contracts" to **three** (name the
+    model-selection contract); add `sleap-roots-training` to consumers as the ModelCard writer.
+  - `README.md` — name the model-selection contract / `ModelCard` alongside the existing contracts.
 - **`contract_version`** is a producer-set field value, not a package constant. This change is
   additive and backward-compatible, so no forced bump; producers may set it to `0.1.0a3` when they
   adopt the new fields.

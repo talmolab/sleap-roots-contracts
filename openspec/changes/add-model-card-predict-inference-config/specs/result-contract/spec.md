@@ -8,6 +8,12 @@ hardware/throughput knobs such as `device` and `batch_size`), and a `predict_out
 holding the **output-defining** subset (e.g. `peak_threshold`). Both fields SHALL default to absent,
 so a `Provenance` built without them remains valid and unchanged. These two fields SHALL be reflected
 in the emitted `result_envelope` JSON Schema as optional properties (an additive change).
+Hardware/throughput knobs (e.g. `device`, `batch_size`) SHALL be recorded only in
+`predict_inference_config` and SHALL NOT appear in `predict_output_params`, so that two runs
+differing only in hardware derive the same `idempotency_key`. Because `predict_output_params`
+participates in the key, its values SHALL be canonicalizable (finite numbers, strings, booleans, and
+nested mappings/lists thereof); a non-finite (`NaN`/`inf`) value SHALL be rejected, consistent with
+`param_hash`.
 
 #### Scenario: Effective config and output params are recorded
 - **WHEN** a `Provenance` is built with a `predict_inference_config` (full effective config) and a
@@ -22,6 +28,12 @@ in the emitted `result_envelope` JSON Schema as optional properties (an additive
 - **WHEN** the `result_envelope` JSON Schema is generated
 - **THEN** the `Provenance` definition exposes `predict_inference_config` and `predict_output_params`
   as optional properties, and they are absent from `Provenance`'s required list
+
+#### Scenario: Non-canonicalizable output params are rejected
+- **WHEN** a `Provenance` is built with a `predict_output_params` containing a non-finite value
+  (`NaN` or `inf`)
+- **THEN** construction raises an error, consistent with `param_hash`'s rejection of non-finite
+  values
 
 ## MODIFIED Requirements
 

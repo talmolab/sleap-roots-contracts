@@ -183,8 +183,13 @@ Noted so it is not lost when the predict slice resumes.
 
 - `pyproject` version `0.1.0a2 → 0.1.0a3`. The schema `$id` derives from the package version and
   tracks automatically.
-- Regenerate `schema/result_envelope.schema.json`: `Provenance` gains two optional properties. This
-  is an **additive** schema change — Bloom codegen simply gains two optional fields (safe).
+- Regenerate **both** emitted schemas. `schema/result_envelope.schema.json` changes shape:
+  `Provenance` gains two optional properties (an **additive** change — Bloom codegen simply gains two
+  optional fields, safe). `schema/analysis_input.schema.json` does not change shape, but its `$id`
+  embeds the package version, so the `0.1.0a3` bump restales it too; the CI drift guard renders all
+  `MODELS` together, so both committed files must be regenerated in the release commit or the guard
+  goes red on `analysis_input`. (See the OpenSpec `design.md` "version / `$id` coupling" for the
+  commit sequencing.)
 - `contract_version` is a producer-set field value, **not** a package constant. The change is additive
   and backward-compatible, so no forced bump is required; producers may set it to the new release when
   they adopt the fields. Noted in the changelog.
@@ -239,8 +244,10 @@ Write failing tests first, then implement minimally.
   (ADDED: predict inference config recording + hashing requirement; MODIFIED: "Provenance And Run
   Identity" to include the output-params contribution to `idempotency_key`).
 - **Affected code:** `src/sleap_roots_contracts/models.py` (`ModelCard`, two `Provenance` fields),
-  `identity.py` (new kwarg), `__init__.py` (exports), `schema/result_envelope.schema.json` (regen),
-  `pyproject.toml` (version), `docs/CHANGELOG.md`.
+  `identity.py` (new kwarg), `__init__.py` (exports), `schema/result_envelope.schema.json` (regen,
+  shape change) **and** `schema/analysis_input.schema.json` (regen, `$id`-only from the version bump),
+  `pyproject.toml` (version), `docs/CHANGELOG.md`, `openspec/project.md` + `README.md` (contract
+  inventory: two → three contracts).
 
 ## Consumers to keep in sync (mention in the PR; do not edit here)
 

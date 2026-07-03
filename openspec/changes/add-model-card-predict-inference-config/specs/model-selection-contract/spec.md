@@ -26,6 +26,10 @@ emitted JSON Schema.
 - **WHEN** a `ModelCard` is built with a negative `age_min` or `age_max`
 - **THEN** validation raises an error
 
+#### Scenario: A single-age, zero-inclusive window is valid
+- **WHEN** a `ModelCard` is built with `age_min` equal to `age_max` (e.g. both `0`, or both `7`)
+- **THEN** construction succeeds, because the window is inclusive and `0` is an allowed bound
+
 #### Scenario: root_type is controlled
 - **WHEN** a `ModelCard` is built with a `root_type` outside `{primary, lateral, crown}`
 - **THEN** validation raises an error

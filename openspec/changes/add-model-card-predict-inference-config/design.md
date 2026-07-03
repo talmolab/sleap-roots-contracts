@@ -25,7 +25,14 @@ knob later is just another key in that dict — no contract change, no schema ed
 
 *Hygiene (predict's job, not the contract's):* the contract hashes whatever is in
 `predict_output_params`; it cannot stop a producer from putting `device` there. Predict guarantees
-`device`/`batch_size` land only in `predict_inference_config`.
+`device`/`batch_size` land only in `predict_inference_config`. Predict must also pass **plain Python**
+`int`/`float` into `predict_output_params`: a `numpy.float32` raises `TypeError` during
+canonicalization (a `numpy.float64` happens to subclass `float` and works, but relying on that is
+fragile — cast numpy scalars first). Non-finite (`NaN`/`inf`) values raise `NonCanonicalizableError`,
+consistent with `param_hash`. The spec states this rejection normatively so it is fail-loud, not
+silent. The library keeps the field permissive (like `ResolvedParams.values`) rather than enforcing a
+hardware-key denylist — the reproducibility guarantee is structural (only `predict_output_params` is
+handed to the hasher), and a denylist cannot know every hardware knob.
 
 ## Decision: byte-identical backward compatibility of `idempotency_key`
 
@@ -35,9 +42,18 @@ absent/empty value yields a payload string **byte-identical** to today's — so 
 that does not record output params gets the exact same key it got before.
 
 This is pinned two ways in tests: (1) a self-consistency test that `predict_output_params=None`
-equals the prior six-arg call; and (2) a **golden test** that a fixed `Provenance` (built without the
-new fields) hashes to an exact hardcoded hex digest captured from pre-change behavior. The golden
-digest is what proves byte-identity rather than mere internal consistency.
+equals the prior six-arg call; and (2) a **golden test** that a fixed `Provenance` hashes to an exact
+hardcoded hex digest **captured from pre-change `main`** (this branch's `identity.py`/`models.py` are
+unmodified until implementation, so "current" == "pre-change"). Only a pre-change digest proves
+byte-identity; a digest captured from the post-change green run would only re-prove self-consistency
+and would silently bake in a truthy-gate bug (e.g. appending `predict_output_params: null` when the
+value is `None`). The golden `Provenance` is built from **inlined literal inputs local to the test**,
+not the shared `make_provenance` fixture, so a later fixture edit cannot re-baseline it. Captured
+values: `compute_idempotency_key(**BASE)` (the `test_identity` `BASE`) =
+`913e6492c459a4475231badb54c073243f98cfb0fed03db60b8bb507e2387e09`; the self-contained golden
+`Provenance` = `42f67605ab4eac398f6c7c331cb4f267b6c5864a609bedc741b8dca8ea5f98d3`. A golden is also
+pinned at the `compute_idempotency_key` level (not only on `Provenance`) so the six-key payload's
+byte-stability is anchored directly.
 
 ## Decision: `ModelCard.sleap_nn_version` is optional; identity fields are artifact-intrinsic
 
@@ -96,14 +112,36 @@ linkage — no new `$id` test needed.
 ## Commit grouping (tasks.md is an implementation sequence, not a commit sequence)
 
 The RED-first sub-steps in `tasks.md` are TDD *working-tree* order; a committed bare RED step is red
-CI. The drift guard forces two atomic commit units, each green on its own:
+CI. The change splits into four commits along the capability seam + the schema/version coupling, each
+green on its own (`ModelCard` is never referenced by `ResultEnvelope`, so it regenerates no schema —
+only the `Provenance` change touches `result_envelope.schema.json`):
 
-- **Unit A — the contract change, still at `v0.1.0a2`:** `models.py` (`ModelCard`, two `Provenance`
-  fields), `identity.py` (new kwarg), `__init__.py` (export `ModelCard`), `tests/*`, and the
-  regenerated `result_envelope.schema.json` (`$id` still `v0.1.0a2`; content gains the two optional
-  `Provenance` properties). `analysis_input.schema.json` is untouched and still matches. Green.
-- **Unit B — the release bump:** `pyproject.toml:version` → `0.1.0a3`, `uv sync`, **both** regenerated
-  schemas (`$id` → `v0.1.0a3`), and the `docs/CHANGELOG.md` entry. Green only if both schemas are
-  regenerated together.
+- **Commit 1 (`feat:` ModelCard) — group 1:** `models.py` (`ModelCard` + `to_model_ref` + age
+  validator, `Field` import), `__init__.py` (export `ModelCard`), `tests/test_model_card.py`,
+  `tests/test_envelope.py` (root-import assertion). **No schema files** — the drift guard is untouched.
+  Green.
+- **Commit 2 (`feat:` predict inference config) — groups 2–4:** `models.py` (two `Provenance` fields;
+  `_fill_idempotency_key` passes `predict_output_params`), `identity.py` (new kwarg), `tests/*`
+  (incl. the pre-change goldens), and the regenerated `result_envelope.schema.json` (`$id` still
+  `v0.1.0a2`; gains the two optional `Provenance` props). `analysis_input.schema.json` untouched and
+  still matches. Green (drift guard, and `test_version_matches_pyproject` — no bump yet).
+- **Commit 3 (`chore(release):`) — group 5:** `pyproject.toml:version` → `0.1.0a3` (+ `uv.lock` if
+  `uv version`/`uv sync` rewrites it), `uv sync`, **both** regenerated schemas (`$id` → `v0.1.0a3`),
+  `docs/CHANGELOG.md`. Green only if both schemas move together (a partial regen leaves
+  `analysis_input` red).
+- **Commit 4 (`docs:`) — group 6:** `openspec/project.md` (two→three contracts + add training as
+  ModelCard writer) and `README.md` (name the model-selection contract). Docs-only; may fold into
+  Commit 3.
 
-Single PR; proposal/spec committed first; archive only after merge.
+Commits 1 and 2 are order-independent. Single PR (see below); proposal/spec committed first; archive
+only after merge.
+
+## Decision: single PR, not two
+
+The two capabilities are independent, but they share one `0.1.0a3` release — the version bump, the
+`analysis_input.schema.json` `$id` flip, `result_envelope.schema.json`, and the single `[0.1.0a3]`
+CHANGELOG section are common. Two PRs would force either two releases (a3 + a4) or contention over the
+same version bump and shared files (merge conflicts on the `$id`/changelog lines) for a change that is
+one model class, two fields, one kwarg, a handful of test files, and two schema regens. The downstream
+`sleap-roots-predict` consumer pins to a single `0.1.0a3` expecting **both** features. Reviewability is
+recovered by the per-capability commit split (Commits 1 vs 2), not by splitting the PR.
