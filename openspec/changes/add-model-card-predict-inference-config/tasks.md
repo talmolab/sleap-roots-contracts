@@ -174,14 +174,14 @@
 
 ## 6. Docs — capability inventory (Commit 4; docs-only, CI-green)
 
-- [ ] 6.1 `openspec/project.md`: update the Purpose from "defines **two** contracts" to **three**,
+- [x] 6.1 `openspec/project.md`: update the Purpose from "defines **two** contracts" to **three**,
       naming the new **model-selection contract** — the Python-side `ModelCard` shape shared by
       `sleap-roots-training` (writer) and `sleap-roots-predict` (reader), **not** emitted to JSON
       Schema. Add `sleap-roots-training` as a **coordinating writer** (it emits the `ModelCard` fields
       as wandb artifact metadata at promotion; it does not necessarily import this package), distinct
       from the code consumers that `import` the contract; and note predict's new model-selection reader
       role.
-- [ ] 6.2 `README.md`: name the model-selection contract / `ModelCard` alongside the result +
+- [x] 6.2 `README.md`: name the model-selection contract / `ModelCard` alongside the result +
       provenance and analysis-input contracts, noting it is a producer↔producer contract not in the
       emitted schema. (README hardcodes no version and does not enumerate model classes, so only the
       contract-inventory framing needs updating.)

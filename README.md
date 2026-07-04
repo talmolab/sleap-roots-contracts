@@ -18,6 +18,13 @@ pydantic + pyyaml. Canonical example tables ship in the package
 (`sleap_roots_contracts.examples.load_analysis_input_example(...)`) so consumers can load a
 validating frame straight from the released wheel.
 
+It also defines the **model-selection contract** — `ModelCard`, the Python-side shape shared
+by `sleap-roots-training` (which writes a production model's selection metadata as wandb
+artifact metadata at promotion) and `sleap-roots-predict` (which reads cards to choose a model
+per root type and calls `to_model_ref(runtime_sleap_nn_version)`). Unlike the other two, it is
+a producer↔producer contract that never crosses the Bloom boundary, so it is **not** emitted to
+the JSON Schema.
+
 It is sub-project #1 of the sleap-roots ↔ Bloom integration program. Design and plan:
 `docs/01-contract-library-design.md` and `docs/02-contract-library-plan.md`.
 
