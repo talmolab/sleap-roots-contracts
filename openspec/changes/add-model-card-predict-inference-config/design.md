@@ -34,10 +34,13 @@ it is fail-loud, not silent. The library keeps the field permissive (like `Resol
 rather than enforcing a hardware-key denylist — the reproducibility guarantee is structural (only
 `predict_output_params` is handed to the hasher), and a denylist cannot know every hardware knob.
 
-Asymmetry to note: `predict_inference_config` is **audit-only and never canonicalized**, so a `NaN`
-there does **not** raise at construction — but `model_dump_json()` would then emit a bare `NaN`
-(invalid JSON that strict parsers reject). Keeping non-finite values out of the *full* config is
-therefore also predict's hygiene responsibility; the contract fails loud only on the hashed subset.
+Asymmetry to note: `predict_inference_config` is **audit-only and never canonicalized**, so a
+`NaN`/`inf` there does **not** raise at construction. Under pydantic v2's default
+`ser_json_inf_nan="null"`, `model_dump_json()` then **silently coerces** it to `null` — the audit
+record loses the value (it reads `null` even though predict ran with a non-finite value), with no
+loud signal. (A bare invalid-`NaN` only appears on the *other* path — `model_dump()` in python mode
+fed to stdlib `json.dumps`.) So keeping non-finite values out of the *full* config is predict's
+hygiene responsibility; the contract fails loud only on the hashed `predict_output_params`.
 
 ## Decision: byte-identical backward compatibility of `idempotency_key`
 

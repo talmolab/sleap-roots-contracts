@@ -1,6 +1,7 @@
 """Tests for the ModelCard model-selection contract."""
 
 import json
+import warnings
 
 import pytest
 from pydantic import ValidationError
@@ -102,6 +103,18 @@ def test_to_model_ref_when_card_version_none():
     assert ref.sleap_nn_version == "9.9.9"
 
 
+def test_to_model_ref_is_pure_and_silent():
+    """to_model_ref emits no warning even on a trained-vs-runtime mismatch.
+
+    The mismatch warning is the reader's (predict's) responsibility; this method is
+    pure. The card here has trained-with 0.1.0 while runtime is 9.9.9.
+    """
+    c = make_card(sleap_nn_version="0.1.0")
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")  # any warning becomes an error
+        c.to_model_ref("9.9.9")
+
+
 def test_to_model_ref_carries_none_weights_checksum():
     """A card with no weights_checksum yields a ModelRef with None checksum."""
     c = make_card(weights_checksum=None)
@@ -122,7 +135,8 @@ def test_model_card_from_merged_metadata():
     )
     artifact_identity = dict(registry_id="reg-primary", version="v1")
     c = ModelCard.model_validate({**selection_metadata, **artifact_identity})
-    assert c.registry_id == "reg-primary" and c.age_max == 5
+    assert c.registry_id == "reg-primary"
+    assert c.age_max == 5
 
 
 def test_model_card_tolerates_extra_keys():

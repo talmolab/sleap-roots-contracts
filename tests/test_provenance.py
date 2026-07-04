@@ -1,5 +1,7 @@
 """Tests for the Provenance model and its auto-derived idempotency_key."""
 
+import pytest
+
 from sleap_roots_contracts.identity import compute_idempotency_key
 from sleap_roots_contracts.models import InputRef, ModelRef, Provenance, ResolvedParams
 
@@ -197,6 +199,21 @@ def test_hardware_knobs_do_not_change_the_key():
     assert a.idempotency_key == b.idempotency_key
 
 
+def test_inference_config_alone_preserves_the_golden_key():
+    """Recording the full config but no output params leaves the key byte-identical.
+
+    Guards the byte-identity guarantee directly at the Provenance layer (not only via
+    transitivity through the hardware-knob comparison).
+    """
+    p = _golden_provenance(predict_inference_config={"device": "cuda", "batch_size": 4})
+    assert p.idempotency_key == _GOLDEN_KEY
+
+
+def test_empty_output_params_preserves_the_golden_key():
+    """An empty output-params dict is truthy-gated out at the Provenance layer too."""
+    assert _golden_provenance(predict_output_params={}).idempotency_key == _GOLDEN_KEY
+
+
 def test_output_param_value_changes_the_key():
     """Two runs differing only in a peak_threshold get different keys."""
     a = _golden_provenance(predict_output_params={"peak_threshold": 0.2})
@@ -204,10 +221,10 @@ def test_output_param_value_changes_the_key():
     assert a.idempotency_key != b.idempotency_key
 
 
-def test_nonfinite_output_param_raises():
-    """A NaN in output params fails loud at construction, like param_hash."""
-    import pytest
+@pytest.mark.parametrize("bad", [float("nan"), float("inf"), float("-inf")])
+def test_nonfinite_output_param_raises(bad):
+    """A non-finite (NaN/inf) output param fails loud at construction, like param_hash."""
     from pydantic import ValidationError
 
     with pytest.raises(ValidationError):
-        _golden_provenance(predict_output_params={"peak_threshold": float("nan")})
+        _golden_provenance(predict_output_params={"peak_threshold": bad})

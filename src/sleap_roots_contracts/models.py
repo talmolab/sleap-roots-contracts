@@ -177,12 +177,14 @@ class ModelCard(BaseModel):
     scan's age — running a model outside its window is handled by predict's explicit
     override, not by this contract.
 
-    Extra keys are ignored (pydantic's default), so a card validates straight from a
-    raw wandb metadata blob (boolean tag flags, the spread training config, eval
-    metrics) merged with the artifact identity.
+    Extra keys are ignored, so a card validates straight from a raw wandb metadata
+    blob (boolean tag flags, the spread training config, eval metrics) merged with the
+    artifact identity. ``extra="ignore"`` is set explicitly (not merely relied on as
+    pydantic's default) because tolerating that blob is a load-bearing contract here —
+    a future ``extra="forbid"`` would silently break predict's registry lister.
     """
 
-    model_config = _FROZEN
+    model_config = ConfigDict(frozen=True, extra="ignore")
 
     # selection dimensions (training-written metadata)
     species: str

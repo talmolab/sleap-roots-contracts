@@ -1,5 +1,7 @@
 """Deterministic idempotency-key derivation (producer-side only)."""
 
+from typing import Any
+
 from .hashing import canonical_json, sha256_hex
 
 
@@ -11,7 +13,7 @@ def compute_idempotency_key(
     param_hash: str,
     predict_code_sha: str,
     traits_code_sha: str,
-    predict_output_params: dict | None = None,
+    predict_output_params: dict[str, Any] | None = None,
 ) -> str:
     """Derive the run identity from inputs, models, params, and code versions.
 
@@ -52,10 +54,8 @@ def compute_idempotency_key(
         "predict_code_sha": predict_code_sha,
         "traits_code_sha": traits_code_sha,
     }
-    # Truthy-gate the output-params contribution: an absent/empty mapping adds no
-    # key, so canonical_json emits the exact bytes it did before this field existed
-    # and previously computed keys stay identical. canonical_json normalizes the
-    # nested mapping (sorted keys, int-valued floats collapsed) and rejects NaN/inf.
+    # Truthy-gate: an absent/empty mapping adds no key, so the canonical payload is
+    # byte-identical to before this field existed (see the Args note for the rest).
     if predict_output_params:
         payload["predict_output_params"] = predict_output_params
     return sha256_hex(canonical_json(payload))
