@@ -221,6 +221,16 @@ def test_output_param_value_changes_the_key():
     assert a.idempotency_key != b.idempotency_key
 
 
+def test_present_but_falsy_output_param_changes_the_key():
+    """A present-but-falsy 0.0 still changes the Provenance key (presence, not truth).
+
+    Pins the result-contract scenario at the Provenance layer where it is phrased,
+    not only transitively via the compute-layer test.
+    """
+    p = _golden_provenance(predict_output_params={"peak_threshold": 0.0})
+    assert p.idempotency_key != _golden_provenance().idempotency_key
+
+
 @pytest.mark.parametrize("bad", [float("nan"), float("inf"), float("-inf")])
 def test_nonfinite_output_param_raises(bad):
     """A non-finite (NaN/inf) output param fails loud at construction, like param_hash."""

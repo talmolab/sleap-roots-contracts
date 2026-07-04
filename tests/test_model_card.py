@@ -71,6 +71,18 @@ def test_model_card_rejects_bad_root_type():
         make_card(root_type="seedling")
 
 
+@pytest.mark.parametrize("rt", ["primary", "lateral", "crown"])
+def test_model_card_accepts_all_root_types(rt):
+    """Every RootType vocabulary member constructs and carries through to_model_ref.
+
+    Guards the vocabulary against silent narrowing (positive coverage; the negative
+    case is test_model_card_rejects_bad_root_type).
+    """
+    c = make_card(root_type=rt)
+    assert c.root_type == rt
+    assert c.to_model_ref("9.9.9").root_type == rt
+
+
 def test_model_card_sleap_nn_version_optional():
     """The trained-with sleap_nn_version defaults to None when absent."""
     c = make_card(sleap_nn_version=None)

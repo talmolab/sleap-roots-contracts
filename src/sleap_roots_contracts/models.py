@@ -149,11 +149,12 @@ BlobKind = Literal["predictions_slp"]
 RootType = Literal["primary", "lateral", "crown"]
 
 
-# Defined after RootType (and ModelRef) on purpose: this module has no
-# `from __future__ import annotations`, so the `root_type: RootType` field and the
-# `-> ModelRef` return annotation are evaluated at class-definition time and both
-# names must already exist. ModelCard is conceptually a model-registry sibling of
-# ModelRef; the file order is forced by that forward reference.
+# Defined after RootType on purpose: this module has no `from __future__ import
+# annotations`, so the `root_type: RootType` field and the `-> ModelRef` return
+# annotation are evaluated at class-definition time and both names must already exist
+# (RootType is the binding constraint; ModelRef at line ~18 is never at risk). So
+# ModelCard must come *after* RootType; it is placed here, adjacent to it. Conceptually
+# it is a model-registry sibling of ModelRef.
 class ModelCard(BaseModel):
     """Model-selection metadata + identity for one production model.
 

@@ -129,3 +129,10 @@ def test_output_params_distinct_values_differ():
     k1 = compute_idempotency_key(**BASE, predict_output_params={"peak_threshold": 0.2})
     k2 = compute_idempotency_key(**BASE, predict_output_params={"peak_threshold": 0.3})
     assert k1 != k2
+
+
+@pytest.mark.parametrize("bad", [float("nan"), float("inf"), float("-inf")])
+def test_output_params_nonfinite_raises(bad):
+    """Non-finite output-params values fail loud at the compute layer, like param_hash."""
+    with pytest.raises(ValueError):  # NonCanonicalizableError subclasses ValueError
+        compute_idempotency_key(**BASE, predict_output_params={"peak_threshold": bad})
