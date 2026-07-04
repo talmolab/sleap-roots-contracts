@@ -188,12 +188,12 @@
 
 ## 7. Verify
 
-- [ ] 7.1 Run `/pre-merge-check`: `black --check`, `ruff check`, full `pytest` + coverage, schema
+- [x] 7.1 Run `/pre-merge-check`: `black --check`, `ruff check`, full `pytest` + coverage, schema
       drift guard green (over **both** schemas). Reinstall the package (`uv sync`) before running so
       `test_smoke.py::test_version_matches_pyproject` sees `0.1.0a3`. **Also run `uv lock --check`**
       (mirrors the release `build.yml`, which PR `ci.yml` does not) so a stale `uv.lock` fails here
       instead of at release.
-- [ ] 7.2 `openspec validate add-model-card-predict-inference-config --strict` passes.
+- [x] 7.2 `openspec validate add-model-card-predict-inference-config --strict` passes.
 
 ## 8. Post-merge / post-release (NOT part of this PR)
 
