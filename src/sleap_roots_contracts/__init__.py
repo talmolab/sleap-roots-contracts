@@ -14,6 +14,7 @@ from .models import (
     BlobKind,
     BlobRef,
     InputRef,
+    ModelCard,
     ModelRef,
     Provenance,
     ResolvedParams,
@@ -34,6 +35,7 @@ except PackageNotFoundError:  # not installed (e.g. running from a bare source t
 __all__ = [
     "BlobRef",
     "InputRef",
+    "ModelCard",
     "ModelRef",
     "Provenance",
     "ResolvedParams",

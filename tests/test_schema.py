@@ -167,3 +167,30 @@ def test_schema_rejects_blobref_without_location():
     instance["blobs"][0]["box_link"] = None
     with pytest.raises(jsonschema.ValidationError):
         jsonschema.Draft202012Validator(schema).validate(instance)
+
+
+def test_provenance_schema_exposes_inference_config_props():
+    """The emitted Provenance schema exposes the two new optional properties.
+
+    They are additive: present in `properties`, absent from `required`, so Bloom
+    codegen only gains two optional fields.
+    """
+    prov = json.loads(render("result_envelope"))["$defs"]["Provenance"]
+    assert "predict_inference_config" in prov["properties"]
+    assert "predict_output_params" in prov["properties"]
+    assert "predict_inference_config" not in prov["required"]
+    assert "predict_output_params" not in prov["required"]
+
+
+def test_envelope_with_inference_config_validates_against_schema():
+    """An envelope carrying both new fields validates against the emitted schema."""
+    from tests.fixtures.examples import example_envelope
+
+    schema = json.loads(render("result_envelope"))
+    instance = json.loads(example_envelope().model_dump_json())
+    instance["provenance"]["predict_inference_config"] = {
+        "device": "cuda",
+        "batch_size": 4,
+    }
+    instance["provenance"]["predict_output_params"] = {"peak_threshold": 0.2}
+    jsonschema.Draft202012Validator(schema).validate(instance)

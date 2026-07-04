@@ -2,11 +2,15 @@
 
 ## Purpose
 `sleap-roots-contracts` is the shared **data contract** library for the sleap-roots ↔ Bloom
-pipeline. It is a small, dependency-light, **Bloom-agnostic** leaf library that defines two
+pipeline. It is a small, dependency-light, **Bloom-agnostic** leaf library that defines three
 contracts: (1) the **result + provenance contract** — the shape of a per-scan pipeline result
-and its provenance (Pydantic v2 models) — and (2) the **analysis-input contract** — the
-canonical wide trait table, with a structural `validate_analysis_input` validator. It emits
-versioned JSON Schema artifacts and ships a trait-definitions registry.
+and its provenance (Pydantic v2 models); (2) the **analysis-input contract** — the canonical
+wide trait table, with a structural `validate_analysis_input` validator; and (3) the
+**model-selection contract** — `ModelCard`, the Python-side model-selection shape shared by
+`sleap-roots-training` (writer) and `sleap-roots-predict` (reader). Contracts (1) and (2) emit
+versioned JSON Schema artifacts (Bloom consumes them); contract (3) is a producer↔producer
+shape that never crosses the Bloom boundary and is **not** emitted to JSON Schema. It also ships
+a trait-definitions registry.
 
 Producers (`sleap-roots-predict`, `sleap-roots-traits`) import it; **Bloom consumes the emitted
 JSON Schema** (codegen + migration-match). It is sub-project #1 of the sleap-roots ↔ Bloom
@@ -65,5 +69,9 @@ values are stored in Bloom long-format (`cyl_scan_traits(scan_id, name, value)`)
 ## External Dependencies
 Runtime core is pydantic + pyyaml; pandas is an optional `[pandas]` extra (only
 `validate_analysis_input` needs it). Downstream consumers: `sleap-roots-predict`,
-`sleap-roots-traits` (import the result contract), `sleap-roots-analyze` + `bloom-mcp`
-(call `validate_analysis_input`), and Bloom (consumes `schema/*.json`).
+`sleap-roots-traits` (import the result contract); `sleap-roots-predict` also reads the
+model-selection contract (`ModelCard` → `ModelRef`); `sleap-roots-analyze` + `bloom-mcp`
+(call `validate_analysis_input`); and Bloom (consumes `schema/*.json`). `sleap-roots-training`
+is a **coordinating writer**: at model promotion it emits the `ModelCard` selection fields as
+wandb artifact metadata (field names must match this contract), so it participates by
+coordination even if it does not import the package.
