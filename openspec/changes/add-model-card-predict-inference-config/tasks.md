@@ -144,19 +144,19 @@
 
 ## 5. Release `v0.1.0a3` (Unit B — bump pyproject, reinstall, regenerate both schemas)
 
-- [ ] 5.1 Bump `pyproject.toml` → `version = "0.1.0a3"` via `uv version 0.1.0a3` (single source of
+- [x] 5.1 Bump `pyproject.toml` → `version = "0.1.0a3"` via `uv version 0.1.0a3` (single source of
       truth; `__init__.__version__` resolves from metadata, so no code edit).
-- [ ] 5.2 `uv sync && python -m sleap_roots_contracts.schema` (writes all `MODELS`). Both
+- [x] 5.2 `uv sync && python -m sleap_roots_contracts.schema` (writes all `MODELS`). Both
       `result_envelope.schema.json` and `analysis_input.schema.json` advance their `$id` version
       segment to `v0.1.0a3`. Verify `git diff schema/` shows the two `$id` lines changing (plus the
       `Provenance` shape already committed in 4.2). Re-run the drift guard.
-- [ ] 5.3 **Stage the bumped `uv.lock` (MANDATORY).** `uv.lock` pins this project's own version
+- [x] 5.3 **Stage the bumped `uv.lock` (MANDATORY).** `uv.lock` pins this project's own version
       (`sleap-roots-contracts == 0.1.0a2`), so the bump stales it. `uv sync` in 5.2 re-locks it to
       `0.1.0a3`; commit that `uv.lock`. This is required, not conditional: PR `ci.yml` runs plain
       `uv sync` (non-frozen) and stays **green with a stale lock**, but the release `build.yml` runs
       `uv lock --check` + `uv sync --frozen` and **hard-fails** — so a forgotten `uv.lock` bump first
       surfaces at release, not in PR CI. Confirm with `uv lock --check` locally (see 7.1).
-- [ ] 5.4 Update `docs/CHANGELOG.md` (use the **actual release date**, not a hardcoded placeholder):
+- [x] 5.4 Update `docs/CHANGELOG.md` (use the **actual release date**, not a hardcoded placeholder):
       - Add a `## [0.1.0a3] - <release date> (Pre-release)` section under `[Unreleased]`, split into:
         - `### Added` — the `ModelCard` model-selection contract (selection + identity fields, optional
           trained-with `sleap_nn_version`, `to_model_ref` runtime stamping, not emitted to JSON Schema);

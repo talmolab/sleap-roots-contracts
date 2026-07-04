@@ -8,6 +8,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0a3] - 2026-07-04 (Pre-release)
+
+Adds the model-selection contract (`ModelCard`) and records the predict inference
+config in `Provenance`, folding its output-defining subset into `idempotency_key`.
+Unblocks the `sleap-roots-predict` warm-model-worker slice (roadmap A3-predict).
+
+### Added
+- **`ModelCard`** — a new **model-selection contract** (frozen Pydantic model) carrying a
+  production model's selection metadata (`species`, `mode`, an inclusive **approved
+  selection window** `age_min`/`age_max` with `age_min <= age_max` and `ge=0`, and
+  `root_type: RootType`) plus its concrete artifact identity (`registry_id`, `version`,
+  optional `weights_checksum`) and an optional trained-with `sleap_nn_version`.
+  `to_model_ref(runtime_sleap_nn_version)` returns a `ModelRef` stamped with the **runtime**
+  sleap-nn version. Written by `sleap-roots-training` (as wandb artifact metadata) and read
+  by `sleap-roots-predict`; it is a Python-side producer↔producer contract and is **not**
+  emitted to the JSON Schema. Exported from the package root.
+- **`Provenance.predict_inference_config`** and **`Provenance.predict_output_params`** — two
+  optional mappings recording the predict inference config: the full effective config for
+  audit (including hardware/throughput knobs like `device`/`batch_size`) and the
+  output-defining subset (e.g. `peak_threshold`), respectively. Reflected in the regenerated
+  `result_envelope.schema.json` as two **additive** optional properties.
+
+### Changed
+- `compute_idempotency_key` gains an optional `predict_output_params` argument, whose
+  non-empty contents are folded into the derived key — output-defining knobs
+  (`peak_threshold`) participate; hardware/throughput knobs recorded only in
+  `predict_inference_config` do **not** (preserving cross-node dedup). When absent or empty,
+  the derived `idempotency_key` is **byte-identical** to the pre-existing derivation, so
+  previously computed keys never change. `contract_version` is producer-set and needs no
+  forced bump for this additive, backward-compatible change.
+
+### Fixed
+- Corrected the `[0.1.0a0]` note below: `compute_idempotency_key` is **not** exported from the
+  package root (only `compute_param_hash` and `NonCanonicalizableError` are; the idempotency
+  key is derived via `Provenance`, not a public helper).
+
 ## [0.1.0a2] - 2026-06-25 (Pre-release)
 
 Revises the `BlobRef` contract for Bloom's change C (narrow the artifact kind and
@@ -70,7 +106,9 @@ sleap-roots ↔ Bloom pipeline integration. Pure, dependency-light, Bloom-agnost
 - Producer-side, canonical-JSON `compute_param_hash` (recursively sorted keys,
   fixed numeric representation, `NaN`/`inf` rejected) and a deterministic,
   model-order-independent `compute_idempotency_key` that is injective over models.
-  Both are exported from the package root along with `NonCanonicalizableError`.
+  `compute_param_hash` is exported from the package root along with
+  `NonCanonicalizableError` (`compute_idempotency_key` is producer-internal, applied
+  via `Provenance` — corrected in 0.1.0a3).
 - Trait-definitions registry (`TraitDefinition`, `load_registry`,
   `validate_trait`) seeded from `trait_definitions.yaml`, with numeric/dtype/range
   validation and warn-on-unknown (default) or strict behavior.
@@ -83,7 +121,8 @@ sleap-roots ↔ Bloom pipeline integration. Pure, dependency-light, Bloom-agnost
 - CI (lint + drift guard + tests on Python 3.11/3.12) and a PyPI
   trusted-publishing workflow.
 
-[Unreleased]: https://github.com/talmolab/sleap-roots-contracts/compare/v0.1.0a2...HEAD
+[Unreleased]: https://github.com/talmolab/sleap-roots-contracts/compare/v0.1.0a3...HEAD
+[0.1.0a3]: https://github.com/talmolab/sleap-roots-contracts/compare/v0.1.0a2...v0.1.0a3
 [0.1.0a2]: https://github.com/talmolab/sleap-roots-contracts/compare/v0.1.0a1...v0.1.0a2
 [0.1.0a1]: https://github.com/talmolab/sleap-roots-contracts/compare/v0.1.0a0...v0.1.0a1
 [0.1.0a0]: https://github.com/talmolab/sleap-roots-contracts/releases/tag/v0.1.0a0

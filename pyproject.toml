@@ -1,6 +1,6 @@
 [project]
 name = "sleap-roots-contracts"
-version = "0.1.0a2"
+version = "0.1.0a3"
 description = "Shared result + provenance contract for the sleap-roots <-> Bloom pipeline."
 readme = "README.md"
 license = "GPL-3.0-or-later"
