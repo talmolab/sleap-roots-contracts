@@ -1,21 +1,12 @@
 ## Why
 
-`sleap-roots-predict` is building a warm, in-memory model worker (design:
-`sleap-roots-predict/docs/superpowers/specs/2026-07-03-warm-model-worker-design.md`, roadmap tier
-A3-predict). It fetches root models from the wandb registry, chooses one per root type from Bloom
-scan metadata, and keeps them resident across scans. That slice is **blocked** on two additions to
-this contracts library, after which it pins to the new release:
-
-1. There is no shared **model-selection contract**. `sleap-roots-training` writes selection metadata
-   at promotion and `sleap-roots-predict` reads it to choose models, but they have no agreed shape to
-   coordinate on. Predict's pure matcher needs `list[ModelCard] -> dict[RootType, ModelRef]`.
-2. `Provenance` cannot record the **inference config predict actually used**. Reproducibility
-   requires that the output-defining knobs (e.g. `peak_threshold`) participate in `idempotency_key`,
-   while hardware/throughput knobs (`device`, `batch_size`) are recorded but **not** hashed — hashing
-   them would break cross-node idempotency dedup (a rerun on a different GPU must still dedup).
-
-Full design + decisions:
-`docs/superpowers/specs/2026-07-03-model-card-and-predict-inference-config-design.md`.
+The `sleap-roots-predict` warm-model-worker slice (roadmap tier A3-predict) is **blocked** on two
+gaps in this library: there is no shared **model-selection contract** for `sleap-roots-training`
+(writer) and `sleap-roots-predict` (reader) to coordinate on, and `Provenance` cannot record the
+**inference config predict actually used** with the output-defining knobs folded into
+`idempotency_key` while hardware knobs stay out (so cross-node dedup survives). Full rationale and
+decisions: `docs/superpowers/specs/2026-07-03-model-card-and-predict-inference-config-design.md` and
+this change's `design.md`.
 
 ## What Changes
 
@@ -79,7 +70,14 @@ Full design + decisions:
   - `sleap-roots-training` — writes the `ModelCard` selection fields (`species, mode, age_min,
     age_max, root_type`, optional trained-with `sleap_nn_version`) as flat wandb artifact metadata at
     promotion; field names must match this contract exactly.
-- **Not modified here:** the A3/A4 reproducibility notes in
-  `sleap-roots-pipeline/docs/bloom-integration/roadmap.md` are updated post-merge by the predict
-  slice (which owns the roadmap), to reflect the `predict_output_params` → `idempotency_key`
-  contribution. **This session does not modify the predict, training, or pipeline repos.**
+- **Not modified here (living contract surface is updated; historical records are not):**
+  - `docs/01-contract-library-design.md` and `docs/02-contract-library-plan.md` are dated,
+    point-in-time design/plan records (already carrying pre-a2 content, e.g. docs/01's §5 fixed
+    6-tuple run-identity and its stale 4-value `BlobKind` list at line 99). Consistent with the
+    `update-blobref-root-type` precedent, they are **intentionally left frozen** — the living surface
+    (Pydantic models, emitted JSON Schema, the `result-contract` + `model-selection-contract` specs)
+    is what this change updates; the historical records are not chased.
+  - The A3/A4 reproducibility notes in `sleap-roots-pipeline/docs/bloom-integration/roadmap.md` are
+    updated post-merge by the predict slice (which owns the roadmap), to reflect the
+    `predict_output_params` → `idempotency_key` contribution. **This session does not modify the
+    predict, training, or pipeline repos.**

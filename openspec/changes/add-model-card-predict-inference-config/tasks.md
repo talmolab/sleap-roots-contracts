@@ -6,8 +6,9 @@
 > - **Commit 2 (`feat:` predict inference config)** — groups 2–4: the two `Provenance` fields, the
 >   `identity.py` kwarg, tests, and the regenerated `result_envelope.schema.json` (`$id` still
 >   `v0.1.0a2`). Green.
-> - **Commit 3 (`chore(release):`)** — group 5: `pyproject.toml` → `0.1.0a3`, `uv sync`, **both**
->   regenerated schemas (`$id` → `v0.1.0a3`), CHANGELOG. Green only if both schemas move together.
+> - **Commit 3 (`chore(release):`)** — group 5: `pyproject.toml` → `0.1.0a3`, `uv sync`, the re-locked
+>   **`uv.lock`** (mandatory — it pins the project's own version), **both** regenerated schemas
+>   (`$id` → `v0.1.0a3`), CHANGELOG. Green only if both schemas move together and `uv.lock` is bumped.
 > - **Commit 4 (`docs:`)** — group 6: capability-inventory doc updates (`project.md`, README).
 >   Docs-only; may fold into Commit 3.
 >
@@ -22,12 +23,18 @@
       constructs successfully (inclusive window boundary); a `root_type` outside
       `{primary, lateral, crown}` raises; a card built without `sleap_nn_version` has
       `sleap_nn_version is None`; reassigning a field raises (frozen).
-- [ ] 1.2 GREEN: add `ModelCard` to `models.py` next to `ModelRef` — `model_config = _FROZEN`; fields
+- [ ] 1.2 GREEN: add `ModelCard` to `models.py` — `model_config = _FROZEN`; fields
       `species: str`, `mode: str`, `age_min: int = Field(ge=0)`, `age_max: int = Field(ge=0)`,
       `root_type: RootType`, `registry_id: str`, `version: str`, `weights_checksum: str | None = None`,
       `sleap_nn_version: str | None = None`; a `@model_validator(mode="after")` enforcing
       `age_min <= age_max`. Import `Field` from pydantic. Google-style docstring documenting the
       metadata-vs-artifact-intrinsic field split and the contiguous approved-window semantics.
+      **Placement:** `models.py` has NO `from __future__ import annotations`, so annotations evaluate
+      at class-definition time. `ModelCard.root_type: RootType` and `to_model_ref -> ModelRef` require
+      **both** `ModelRef` (line ~18) and `RootType` (line ~137) to already be defined — so define
+      `ModelCard` AFTER the `RootType` alias (e.g. just above `BlobRef`), not physically next to
+      `ModelRef`. (It is conceptually a model-registry sibling of `ModelRef`; the file order is forced
+      by the forward-reference.) Placing it at line ~18 raises `NameError` on import.
 - [ ] 1.3 RED: assert `card.to_model_ref("runtime-x")` returns a `ModelRef` with
       `sleap_nn_version == "runtime-x"` (the RUNTIME value, not the card's trained-with value) that
       carries the card's `registry_id`, `version`, `root_type`, and `weights_checksum`; that it works
@@ -67,12 +74,33 @@
 
 ## 3. Idempotency contribution + byte-identical backward compat (test-first)
 
-      > **Golden digests were captured from PRE-CHANGE `main` (this branch's `identity.py`/`models.py`
-      > are still unmodified until 3.2/3.4), so they prove BYTE-IDENTITY with existing producers' keys
-      > — not mere post-change self-consistency. Do NOT re-derive them from the green run.**
-      > `compute_idempotency_key(**BASE)` (the `test_identity.py` `BASE`) =
-      > `913e6492c459a4475231badb54c073243f98cfb0fed03db60b8bb507e2387e09`. The self-contained golden
-      > `Provenance` (inlined literals below) = `42f67605ab4eac398f6c7c331cb4f267b6c5864a609bedc741b8dca8ea5f98d3`.
+      > **GOLDEN DIGESTS — the single source of truth for the byte-identity tests (this block owns
+      > them; other docs reference here, do not re-print the hex).** Captured from PRE-CHANGE code
+      > (this branch's `identity.py`/`models.py` are unmodified until 3.2/3.4), so they prove
+      > BYTE-IDENTITY with existing producers' keys — not post-change self-consistency. Do NOT
+      > re-derive them from the green run; if a green run disagrees, a truthy-gate/canonicalization bug
+      > has been introduced — investigate, do not re-baseline.
+      >
+      > (A) `compute_idempotency_key(**BASE)` — the exact `test_identity.py` `BASE` dict (`scan_key=
+      > "scan-1"`, `images_checksum="img-abc"`, `models=[("reg-primary","v1","wc1"),("reg-lateral",
+      > "v2",None)]`, `param_hash="ph-1"`, `predict_code_sha="p-sha"`, `traits_code_sha="t-sha"`) =
+      > **`913e6492c459a4475231badb54c073243f98cfb0fed03db60b8bb507e2387e09`**.
+      >
+      > (B) The self-contained golden `Provenance` — build it from THESE EXACT inlined literals (NOT
+      > `make_provenance`, so a fixture edit can't re-baseline it), which reproduce the digest on
+      > pre-change code:
+      > ```python
+      > Provenance(
+      >     contract_version="0.1.0a2", scan_key="golden-scan",
+      >     inputs=InputRef(image_ids=["img-1", "img-2"], images_checksum="golden-images"),
+      >     predict_models=[ModelRef(registry_id="reg-primary", version="v1",
+      >         sleap_nn_version="0.1.0", root_type="primary", weights_checksum="wc-primary")],
+      >     predict_container_digest="sha256:pred", predict_code_sha="predict-sha",
+      >     traits_sleap_roots_version="1.0.0", traits_container_digest="sha256:traits",
+      >     traits_code_sha="traits-sha",
+      >     params=ResolvedParams(values={"species": "rice", "age": 7}),
+      > ).idempotency_key == "42f67605ab4eac398f6c7c331cb4f267b6c5864a609bedc741b8dca8ea5f98d3"
+      > ```
 
 - [ ] 3.1 RED: in `tests/test_identity.py`, assert `compute_idempotency_key(**BASE,
       predict_output_params=None)` equals `compute_idempotency_key(**BASE)` (append-nothing); that an
@@ -122,27 +150,37 @@
       `result_envelope.schema.json` and `analysis_input.schema.json` advance their `$id` version
       segment to `v0.1.0a3`. Verify `git diff schema/` shows the two `$id` lines changing (plus the
       `Provenance` shape already committed in 4.2). Re-run the drift guard.
-- [ ] 5.3 Update `docs/CHANGELOG.md`:
-      - Add a `## [0.1.0a3] - 2026-07-03 (Pre-release)` section under `[Unreleased]` with an `### Added`
-        entry: the `ModelCard` model-selection contract (selection + identity fields, optional
-        trained-with `sleap_nn_version`, `to_model_ref` runtime stamping, not emitted to JSON Schema);
-        and `Provenance.predict_inference_config` + `predict_output_params`, the latter folded into
-        `idempotency_key` (output-defining knobs hashed; hardware knobs recorded but not hashed;
-        byte-identical when absent). Note `contract_version` is producer-set and needs no forced bump.
+- [ ] 5.3 **Stage the bumped `uv.lock` (MANDATORY).** `uv.lock` pins this project's own version
+      (`sleap-roots-contracts == 0.1.0a2`), so the bump stales it. `uv sync` in 5.2 re-locks it to
+      `0.1.0a3`; commit that `uv.lock`. This is required, not conditional: PR `ci.yml` runs plain
+      `uv sync` (non-frozen) and stays **green with a stale lock**, but the release `build.yml` runs
+      `uv lock --check` + `uv sync --frozen` and **hard-fails** — so a forgotten `uv.lock` bump first
+      surfaces at release, not in PR CI. Confirm with `uv lock --check` locally (see 7.1).
+- [ ] 5.4 Update `docs/CHANGELOG.md` (use the **actual release date**, not a hardcoded placeholder):
+      - Add a `## [0.1.0a3] - <release date> (Pre-release)` section under `[Unreleased]`, split into:
+        - `### Added` — the `ModelCard` model-selection contract (selection + identity fields, optional
+          trained-with `sleap_nn_version`, `to_model_ref` runtime stamping, not emitted to JSON Schema);
+          and `Provenance.predict_inference_config` + `predict_output_params`.
+        - `### Changed` — `compute_idempotency_key` gains an optional `predict_output_params`, folded
+          into the key (output-defining knobs hashed; hardware knobs recorded but not hashed);
+          **existing keys are byte-identical when the field is absent** — mirroring the MODIFIED spec
+          requirement honestly. Note `contract_version` is producer-set and needs no forced bump.
       - Footer links: repoint `[Unreleased]` → `compare/v0.1.0a3...HEAD`; add
         `[0.1.0a3]: .../compare/v0.1.0a2...v0.1.0a3`.
-      - Split the body into `### Added` (the `ModelCard` model-selection contract; the two
-        `Provenance` fields) **and** a short `### Changed` note that `compute_idempotency_key` gains an
-        optional `predict_output_params` and folds it into the key, with existing keys unchanged when
-        absent (byte-identical) — mirroring the MODIFIED spec requirement honestly.
+      - While editing this file, reconcile the **pre-existing** inaccurate `[0.1.0a0]` line claiming
+        `compute_idempotency_key` is "exported from the package root" — it is not in `__all__`
+        (only `compute_param_hash` + `NonCanonicalizableError` are). Minimal factual correction only;
+        flag to the maintainer rather than expanding scope.
 
 ## 6. Docs — capability inventory (Commit 4; docs-only, CI-green)
 
 - [ ] 6.1 `openspec/project.md`: update the Purpose from "defines **two** contracts" to **three**,
       naming the new **model-selection contract** — the Python-side `ModelCard` shape shared by
       `sleap-roots-training` (writer) and `sleap-roots-predict` (reader), **not** emitted to JSON
-      Schema. Add `sleap-roots-training` to the External Dependencies / consumers list as the ModelCard
-      **writer** (it is currently absent), and note predict's new model-selection reader role.
+      Schema. Add `sleap-roots-training` as a **coordinating writer** (it emits the `ModelCard` fields
+      as wandb artifact metadata at promotion; it does not necessarily import this package), distinct
+      from the code consumers that `import` the contract; and note predict's new model-selection reader
+      role.
 - [ ] 6.2 `README.md`: name the model-selection contract / `ModelCard` alongside the result +
       provenance and analysis-input contracts, noting it is a producer↔producer contract not in the
       emitted schema. (README hardcodes no version and does not enumerate model classes, so only the
@@ -152,7 +190,9 @@
 
 - [ ] 7.1 Run `/pre-merge-check`: `black --check`, `ruff check`, full `pytest` + coverage, schema
       drift guard green (over **both** schemas). Reinstall the package (`uv sync`) before running so
-      `test_smoke.py::test_version_matches_pyproject` sees `0.1.0a3`.
+      `test_smoke.py::test_version_matches_pyproject` sees `0.1.0a3`. **Also run `uv lock --check`**
+      (mirrors the release `build.yml`, which PR `ci.yml` does not) so a stale `uv.lock` fails here
+      instead of at release.
 - [ ] 7.2 `openspec validate add-model-card-predict-inference-config --strict` passes.
 
 ## 8. Post-merge / post-release (NOT part of this PR)

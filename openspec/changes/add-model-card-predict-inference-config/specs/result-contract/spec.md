@@ -8,12 +8,14 @@ hardware/throughput knobs such as `device` and `batch_size`), and a `predict_out
 holding the **output-defining** subset (e.g. `peak_threshold`). Both fields SHALL default to absent,
 so a `Provenance` built without them remains valid and unchanged. These two fields SHALL be reflected
 in the emitted `result_envelope` JSON Schema as optional properties (an additive change).
-Hardware/throughput knobs (e.g. `device`, `batch_size`) SHALL be recorded only in
-`predict_inference_config` and SHALL NOT appear in `predict_output_params`, so that two runs
-differing only in hardware derive the same `idempotency_key`. Because `predict_output_params`
-participates in the key, its values SHALL be canonicalizable (finite numbers, strings, booleans, and
-nested mappings/lists thereof); a non-finite (`NaN`/`inf`) value SHALL be rejected, consistent with
-`param_hash`.
+Producers SHALL record hardware/throughput knobs (e.g. `device`, `batch_size`) only in
+`predict_inference_config` and SHALL NOT place them in `predict_output_params`, so that two runs
+differing only in hardware derive the same `idempotency_key`; the library records
+`predict_output_params` as given and does not itself enforce this partition (it is a producer
+obligation, and only the enforceable consequence — hardware not changing the key — is tested). Because
+`predict_output_params` participates in the key, its values SHALL be canonicalizable (finite numbers,
+strings, booleans, and nested mappings/lists thereof); a non-finite (`NaN`/`inf`) value SHALL be
+rejected, consistent with `param_hash`.
 
 #### Scenario: Effective config and output params are recorded
 - **WHEN** a `Provenance` is built with a `predict_inference_config` (full effective config) and a
@@ -67,6 +69,12 @@ this field existed, so previously computed keys never change.
 - **WHEN** two `Provenance` instances have identical `predict_output_params` but differ in their
   `predict_inference_config` (e.g. a different `device` or `batch_size`)
 - **THEN** their `idempotency_key` values are equal
+
+#### Scenario: A present-but-falsy output param still changes the key
+- **WHEN** a `Provenance` records a `predict_output_params` whose only value is present but falsy
+  (e.g. `{"peak_threshold": 0.0}`)
+- **THEN** its `idempotency_key` differs from the same `Provenance` with no `predict_output_params`
+  (a non-empty subset participates by presence, regardless of the truthiness of its values)
 
 #### Scenario: Absent inference config preserves the prior key
 - **WHEN** a `Provenance` is built without a `predict_output_params` (or with an empty one)

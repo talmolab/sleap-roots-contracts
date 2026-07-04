@@ -28,11 +28,16 @@ knob later is just another key in that dict — no contract change, no schema ed
 `device`/`batch_size` land only in `predict_inference_config`. Predict must also pass **plain Python**
 `int`/`float` into `predict_output_params`: a `numpy.float32` raises `TypeError` during
 canonicalization (a `numpy.float64` happens to subclass `float` and works, but relying on that is
-fragile — cast numpy scalars first). Non-finite (`NaN`/`inf`) values raise `NonCanonicalizableError`,
-consistent with `param_hash`. The spec states this rejection normatively so it is fail-loud, not
-silent. The library keeps the field permissive (like `ResolvedParams.values`) rather than enforcing a
-hardware-key denylist — the reproducibility guarantee is structural (only `predict_output_params` is
-handed to the hasher), and a denylist cannot know every hardware knob.
+fragile — cast numpy scalars first). Non-finite (`NaN`/`inf`) values in `predict_output_params` raise
+`NonCanonicalizableError`, consistent with `param_hash`. The spec states this rejection normatively so
+it is fail-loud, not silent. The library keeps the field permissive (like `ResolvedParams.values`)
+rather than enforcing a hardware-key denylist — the reproducibility guarantee is structural (only
+`predict_output_params` is handed to the hasher), and a denylist cannot know every hardware knob.
+
+Asymmetry to note: `predict_inference_config` is **audit-only and never canonicalized**, so a `NaN`
+there does **not** raise at construction — but `model_dump_json()` would then emit a bare `NaN`
+(invalid JSON that strict parsers reject). Keeping non-finite values out of the *full* config is
+therefore also predict's hygiene responsibility; the contract fails loud only on the hashed subset.
 
 ## Decision: byte-identical backward compatibility of `idempotency_key`
 
@@ -48,12 +53,11 @@ unmodified until implementation, so "current" == "pre-change"). Only a pre-chang
 byte-identity; a digest captured from the post-change green run would only re-prove self-consistency
 and would silently bake in a truthy-gate bug (e.g. appending `predict_output_params: null` when the
 value is `None`). The golden `Provenance` is built from **inlined literal inputs local to the test**,
-not the shared `make_provenance` fixture, so a later fixture edit cannot re-baseline it. Captured
-values: `compute_idempotency_key(**BASE)` (the `test_identity` `BASE`) =
-`913e6492c459a4475231badb54c073243f98cfb0fed03db60b8bb507e2387e09`; the self-contained golden
-`Provenance` = `42f67605ab4eac398f6c7c331cb4f267b6c5864a609bedc741b8dca8ea5f98d3`. A golden is also
-pinned at the `compute_idempotency_key` level (not only on `Provenance`) so the six-key payload's
-byte-stability is anchored directly.
+not the shared `make_provenance` fixture, so a later fixture edit cannot re-baseline it. A golden is
+pinned at both the `compute_idempotency_key` level (the six-key payload's byte-stability, anchored
+directly) and the `Provenance` level. **The exact digests and the literal inputs that reproduce them
+are recorded once, authoritatively, in `tasks.md` group 3 (the golden-digests note)** — this file
+does not re-print the hex, to keep a single owner and avoid drift across three hand-maintained copies.
 
 ## Decision: `ModelCard.sleap_nn_version` is optional; identity fields are artifact-intrinsic
 
