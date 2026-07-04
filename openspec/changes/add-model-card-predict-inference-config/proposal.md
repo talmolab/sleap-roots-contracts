@@ -74,9 +74,11 @@ this change's `design.md`.
   - `docs/01-contract-library-design.md` and `docs/02-contract-library-plan.md` are dated,
     point-in-time design/plan records (already carrying pre-a2 content, e.g. docs/01's §5 fixed
     6-tuple run-identity and its stale 4-value `BlobKind` list at line 99). Consistent with the
-    `update-blobref-root-type` precedent, they are **intentionally left frozen** — the living surface
+    `update-blobref-root-type` precedent, their bodies are **left frozen** — the living surface
     (Pydantic models, emitted JSON Schema, the `result-contract` + `model-selection-contract` specs)
-    is what this change updates; the historical records are not chased.
+    is what this change updates; the historical records are not chased. This change adds a one-line
+    **point-in-time / superseded banner** at the top of each so a standalone reader is not misled by
+    the stale specifics (rather than only noting the status here, where it archives away).
   - The A3/A4 reproducibility notes in `sleap-roots-pipeline/docs/bloom-integration/roadmap.md` are
     updated post-merge by the predict slice (which owns the roadmap), to reflect the
     `predict_output_params` → `idempotency_key` contribution. **This session does not modify the

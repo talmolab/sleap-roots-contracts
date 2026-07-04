@@ -5,6 +5,16 @@
 **Program:** [README.md](./README.md) — sleap-roots ↔ Bloom pipeline integration
 **Sub-project:** #1 of the decomposition (the result & provenance contract — the spine)
 
+> **⚠️ Point-in-time design record (2026-06-03) — superseded in specifics; kept as history.**
+> This is a dated design document, **not** the living API reference. For current truth see the
+> Pydantic models (`src/sleap_roots_contracts/`), the emitted `schema/*.json`, the OpenSpec specs
+> (`result-contract`, `analysis-input-contract`, `model-selection-contract`), and
+> `docs/CHANGELOG.md`. Known points where this doc is now stale: `BlobRef.kind` was narrowed to
+> `Literal["predictions_slp"]` and a required `root_type` added (v0.1.0a2); the §5 run-identity
+> tuple gained a `predict_output_params` contributor, and `ModelCard` +
+> `Provenance.predict_inference_config`/`predict_output_params` were added (v0.1.0a3). The body is
+> otherwise left as written.
+
 ---
 
 ## 1. Purpose
