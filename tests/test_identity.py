@@ -82,3 +82,50 @@ def test_idempotency_sensitive_to_each_component(field, newval):
     """Changing any component changes the key."""
     changed = {**BASE, field: newval}
     assert compute_idempotency_key(**changed) != compute_idempotency_key(**BASE)
+
+
+# --- predict_output_params contribution + byte-identity -----------------------
+
+# Golden captured from PRE-CHANGE code over the BASE payload above. Pins the
+# byte-stability of the six-key payload itself, independent of any Provenance.
+_BASE_GOLDEN = "913e6492c459a4475231badb54c073243f98cfb0fed03db60b8bb507e2387e09"
+
+
+def test_idempotency_base_golden():
+    """The six-key BASE payload hashes to its pinned pre-change digest."""
+    assert compute_idempotency_key(**BASE) == _BASE_GOLDEN
+
+
+def test_output_params_none_equals_absent():
+    """predict_output_params=None appends nothing (byte-identical to the old call)."""
+    assert compute_idempotency_key(**BASE, predict_output_params=None) == (
+        compute_idempotency_key(**BASE)
+    )
+
+
+def test_output_params_empty_equals_absent():
+    """An empty output-params dict is truthy-gated out — same key as absent."""
+    assert compute_idempotency_key(**BASE, predict_output_params={}) == (
+        compute_idempotency_key(**BASE)
+    )
+
+
+def test_output_params_populated_differs():
+    """A populated output-params subset changes the key."""
+    assert compute_idempotency_key(
+        **BASE, predict_output_params={"peak_threshold": 0.2}
+    ) != compute_idempotency_key(**BASE)
+
+
+def test_output_params_present_but_falsy_differs():
+    """A present-but-falsy value (0.0) still changes the key (presence, not truth)."""
+    assert compute_idempotency_key(
+        **BASE, predict_output_params={"peak_threshold": 0.0}
+    ) != compute_idempotency_key(**BASE)
+
+
+def test_output_params_distinct_values_differ():
+    """Distinct output-params dicts yield distinct keys."""
+    k1 = compute_idempotency_key(**BASE, predict_output_params={"peak_threshold": 0.2})
+    k2 = compute_idempotency_key(**BASE, predict_output_params={"peak_threshold": 0.3})
+    assert k1 != k2

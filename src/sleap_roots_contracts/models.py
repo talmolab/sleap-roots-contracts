@@ -73,6 +73,17 @@ class Provenance(BaseModel):
     predict_code_sha: str
     worker_request_id: str | None = None
 
+    # Effective predict inference config. `predict_inference_config` is the FULL
+    # config recorded for audit (including hardware/throughput knobs like device and
+    # batch_size) and is NEVER hashed. `predict_output_params` is the output-defining
+    # subset (e.g. peak_threshold) that participates in `idempotency_key`. Both are
+    # optional; when `predict_output_params` is absent/empty the key is byte-identical
+    # to the pre-existing derivation. Producers keep hardware knobs out of
+    # `predict_output_params` (the library records it as given and does not enforce
+    # the partition).
+    predict_inference_config: dict[str, Any] | None = None
+    predict_output_params: dict[str, Any] | None = None
+
     # traits stage
     traits_sleap_roots_version: str
     traits_container_digest: str
@@ -97,6 +108,7 @@ class Provenance(BaseModel):
             param_hash=self.params.param_hash,
             predict_code_sha=self.predict_code_sha,
             traits_code_sha=self.traits_code_sha,
+            predict_output_params=self.predict_output_params,
         )
         if self.idempotency_key and self.idempotency_key != key:
             raise ValueError(

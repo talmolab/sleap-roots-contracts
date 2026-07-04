@@ -60,13 +60,13 @@
 
 ## 2. `Provenance` inference-config fields (test-first)
 
-- [ ] 2.1 RED: in `tests/test_provenance.py`, assert a `Provenance` accepts `predict_inference_config`
+- [x] 2.1 RED: in `tests/test_provenance.py`, assert a `Provenance` accepts `predict_inference_config`
       and `predict_output_params` mappings and retains them; and that a `Provenance` built without
       either field constructs fine with both defaulting to `None`.
-- [ ] 2.2 GREEN: add `predict_inference_config: dict[str, Any] | None = None` and
+- [x] 2.2 GREEN: add `predict_inference_config: dict[str, Any] | None = None` and
       `predict_output_params: dict[str, Any] | None = None` to `Provenance` (in the predict-stage
       block). `Any` is already imported.
-- [ ] 2.3 RED→GREEN: assert both new fields survive a JSON round-trip — build a `Provenance` with
+- [x] 2.3 RED→GREEN: assert both new fields survive a JSON round-trip — build a `Provenance` with
       `predict_inference_config={"device": "cuda", "batch_size": 4}` and
       `predict_output_params={"peak_threshold": 0.2}`, re-parse via `Provenance.model_validate_json(
       p.model_dump_json())`, and assert the two mappings and the `idempotency_key` are preserved.
@@ -102,17 +102,17 @@
       > ).idempotency_key == "42f67605ab4eac398f6c7c331cb4f267b6c5864a609bedc741b8dca8ea5f98d3"
       > ```
 
-- [ ] 3.1 RED: in `tests/test_identity.py`, assert `compute_idempotency_key(**BASE,
+- [x] 3.1 RED: in `tests/test_identity.py`, assert `compute_idempotency_key(**BASE,
       predict_output_params=None)` equals `compute_idempotency_key(**BASE)` (append-nothing); that an
       empty `{}` equals `None`; that a populated `{"peak_threshold": 0.2}` yields a **different** key;
       that two distinct output-param dicts yield distinct keys; that a **present-but-falsy** value
       `{"peak_threshold": 0.0}` still changes the key (guards the truthy-gate against a mistaken
       `if any(values)`); and a **golden**: `compute_idempotency_key(**BASE) == "913e64…387e09"`
       (pins byte-stability of the six-key payload itself).
-- [ ] 3.2 GREEN: add `predict_output_params: dict | None = None` to `compute_idempotency_key`; add
+- [x] 3.2 GREEN: add `predict_output_params: dict | None = None` to `compute_idempotency_key`; add
       `payload["predict_output_params"] = predict_output_params` **only when truthy** so an
       absent/empty value keeps the canonical payload byte-identical to today. Extend the docstring.
-- [ ] 3.3 RED: in `tests/test_provenance.py`, assert (a) a `Provenance` without the new fields has an
+- [x] 3.3 RED: in `tests/test_provenance.py`, assert (a) a `Provenance` without the new fields has an
       `idempotency_key` equal to `compute_idempotency_key(...)` with no output-params arg; (b) a
       **golden byte-identity** test — a `Provenance` built from **inlined literal inputs local to the
       test** (NOT `make_provenance`, so a later fixture edit cannot silently re-baseline it) hashes to
@@ -123,7 +123,7 @@
       (`peak_threshold`) produce different keys; (f) a `predict_output_params` with a non-finite value
       (`float("nan")`) raises `ValidationError` at construction (canonicalization runs in the
       validator, consistent with `param_hash`).
-- [ ] 3.4 GREEN: in `Provenance._fill_idempotency_key`, pass
+- [x] 3.4 GREEN: in `Provenance._fill_idempotency_key`, pass
       `predict_output_params=self.predict_output_params` into `compute_idempotency_key`. The golden
       digests in 3.1/3.3 were already captured from pre-change code (see the note above) — they must
       stay green unchanged; if either moves, the byte-identity guarantee has been broken, so
@@ -131,13 +131,13 @@
 
 ## 4. Regenerate + drift-guard `result_envelope.schema.json` (test-first), still at v0.1.0a2
 
-- [ ] 4.1 RED: in `tests/test_schema.py`, assert the rendered `result_envelope` `Provenance` `$def`
+- [x] 4.1 RED: in `tests/test_schema.py`, assert the rendered `result_envelope` `Provenance` `$def`
       exposes `predict_inference_config` and `predict_output_params` as properties **not** listed in
       its `required` array; and that an `example`-style envelope with both fields populated validates
       against the emitted schema. (The genuine RED signal for this group is the pre-existing
       `test_committed_schema_matches_models` drift guard going red against the stale committed file
       until 4.2 regenerates.)
-- [ ] 4.2 GREEN: regenerate with `python -m sleap_roots_contracts.schema`; commit the updated
+- [x] 4.2 GREEN: regenerate with `python -m sleap_roots_contracts.schema`; commit the updated
       `schema/result_envelope.schema.json` (`$id` still `v0.1.0a2` — version not yet bumped). Confirm
       the drift guard and JSON-Schema meta-validation pass; `analysis_input.schema.json` is untouched
       and still matches.
