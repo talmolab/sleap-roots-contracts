@@ -17,13 +17,13 @@
 
 ## 1. `ModelCard` model-selection contract (test-first)
 
-- [ ] 1.1 RED: in a new `tests/test_model_card.py`, assert a valid `ModelCard` constructs and retains
+- [x] 1.1 RED: in a new `tests/test_model_card.py`, assert a valid `ModelCard` constructs and retains
       its fields; `age_min > age_max` raises `ValidationError`; a negative `age_min`/`age_max` raises;
       a **single-age, zero-inclusive window** (`age_min == age_max`, incl. both `0` and both `7`)
       constructs successfully (inclusive window boundary); a `root_type` outside
       `{primary, lateral, crown}` raises; a card built without `sleap_nn_version` has
       `sleap_nn_version is None`; reassigning a field raises (frozen).
-- [ ] 1.2 GREEN: add `ModelCard` to `models.py` — `model_config = _FROZEN`; fields
+- [x] 1.2 GREEN: add `ModelCard` to `models.py` — `model_config = _FROZEN`; fields
       `species: str`, `mode: str`, `age_min: int = Field(ge=0)`, `age_max: int = Field(ge=0)`,
       `root_type: RootType`, `registry_id: str`, `version: str`, `weights_checksum: str | None = None`,
       `sleap_nn_version: str | None = None`; a `@model_validator(mode="after")` enforcing
@@ -35,25 +35,25 @@
       `ModelCard` AFTER the `RootType` alias (e.g. just above `BlobRef`), not physically next to
       `ModelRef`. (It is conceptually a model-registry sibling of `ModelRef`; the file order is forced
       by the forward-reference.) Placing it at line ~18 raises `NameError` on import.
-- [ ] 1.3 RED: assert `card.to_model_ref("runtime-x")` returns a `ModelRef` with
+- [x] 1.3 RED: assert `card.to_model_ref("runtime-x")` returns a `ModelRef` with
       `sleap_nn_version == "runtime-x"` (the RUNTIME value, not the card's trained-with value) that
       carries the card's `registry_id`, `version`, `root_type`, and `weights_checksum`; that it works
       when the card's `sleap_nn_version is None`; and that a card with `weights_checksum is None`
       yields `ModelRef.weights_checksum is None` (the None-card path that could regress
       `ModelRef`'s required `sleap_nn_version`).
-- [ ] 1.4 GREEN: implement `ModelCard.to_model_ref(runtime_sleap_nn_version)` — pure, no warning.
-- [ ] 1.5 RED: assert `ModelCard.model_validate({**selection_metadata, **artifact_identity})`
+- [x] 1.4 GREEN: implement `ModelCard.to_model_ref(runtime_sleap_nn_version)` — pure, no warning.
+- [x] 1.5 RED: assert `ModelCard.model_validate({**selection_metadata, **artifact_identity})`
       succeeds (merged-dict round-trip), where the **7 required** fields are the selection metadata
       (`species`, `mode`, `age_min`, `age_max`, `root_type`) merged with the artifact identity
       (`registry_id`, `version`); and that `model_validate({...those 7 fields..., "soybean": True,
       "oks_map": 0.8, "training_config": {...}})` succeeds and ignores the extras.
-- [ ] 1.6 GREEN: confirm the model tolerates extras (pydantic v2 default `extra="ignore"`); do **not**
+- [x] 1.6 GREEN: confirm the model tolerates extras (pydantic v2 default `extra="ignore"`); do **not**
       set `extra="forbid"`. No code change expected beyond 1.2 if the default holds — the test pins it.
-- [ ] 1.7 Export `ModelCard` from `src/sleap_roots_contracts/__init__.py` (`__all__` + import). Add an
+- [x] 1.7 Export `ModelCard` from `src/sleap_roots_contracts/__init__.py` (`__all__` + import). Add an
       assertion to `tests/test_envelope.py::test_public_exports_importable` (or a new root-import test)
       that `ModelCard` imports from the package root. (`test_all_lists_exported_symbols` already guards
       `__all__ ↔ attr` consistency.)
-- [ ] 1.8 RED→GREEN: in `tests/test_model_card.py` (or `test_schema.py`), assert `"ModelCard"` is
+- [x] 1.8 RED→GREEN: in `tests/test_model_card.py` (or `test_schema.py`), assert `"ModelCard"` is
       **absent** from `json.loads(render("result_envelope"))["$defs"]` — pins that the selection
       contract does not leak into the Bloom-facing schema. Passes as soon as `ModelCard` is unreferenced
       by `ResultEnvelope` (no emitter change needed).

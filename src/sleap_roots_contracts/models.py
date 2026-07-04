@@ -4,7 +4,7 @@ import math
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .hashing import compute_param_hash
 from .identity import compute_idempotency_key
@@ -135,6 +135,91 @@ BlobKind = Literal["predictions_slp"]
 # artifact names the root type it carries). ModelRef.root_type is deliberately
 # left as a loose `str | None` registry pointer — see the change's design.md.
 RootType = Literal["primary", "lateral", "crown"]
+
+
+# Defined after RootType (and ModelRef) on purpose: this module has no
+# `from __future__ import annotations`, so the `root_type: RootType` field and the
+# `-> ModelRef` return annotation are evaluated at class-definition time and both
+# names must already exist. ModelCard is conceptually a model-registry sibling of
+# ModelRef; the file order is forced by that forward reference.
+class ModelCard(BaseModel):
+    """Model-selection metadata + identity for one production model.
+
+    Written by ``sleap-roots-training`` at promotion (the selection fields, as flat
+    wandb artifact metadata) and read by ``sleap-roots-predict`` to choose a model
+    per root type. The fields come from two sources:
+
+    * **Selection fields** — written by training as flat wandb metadata keys:
+      ``species``, ``mode``, ``age_min``, ``age_max``, ``root_type`` (and optionally
+      the trained-with ``sleap_nn_version``).
+    * **Identity fields** — intrinsic to the wandb artifact object, *not* metadata:
+      ``registry_id``, ``version``, ``weights_checksum``. Predict's registry lister
+      composes these from the artifact and merges them with the metadata before
+      validating, so a bare ``model_validate(training_metadata)`` cannot build a full
+      card (it lacks the identity fields).
+
+    ``age_min``/``age_max`` is the *approved selection window*, curated at promotion
+    (it MAY be set wider than the raw training ages to cover the data people actually
+    scan). It is inclusive and assumed **contiguous** (``[age_min, age_max]``;
+    non-contiguous approved sets are not expressible). The card never observes a
+    scan's age — running a model outside its window is handled by predict's explicit
+    override, not by this contract.
+
+    Extra keys are ignored (pydantic's default), so a card validates straight from a
+    raw wandb metadata blob (boolean tag flags, the spread training config, eval
+    metrics) merged with the artifact identity.
+    """
+
+    model_config = _FROZEN
+
+    # selection dimensions (training-written metadata)
+    species: str
+    mode: str
+    age_min: int = Field(ge=0)
+    age_max: int = Field(ge=0)
+    root_type: RootType
+
+    # identity of the concrete production artifact (artifact-intrinsic)
+    registry_id: str
+    version: str
+    weights_checksum: str | None = None
+
+    # trained-with sleap-nn version; optional — used only for predict's mismatch
+    # warning (present -> predict can warn; absent -> predict skips the warning).
+    sleap_nn_version: str | None = None
+
+    @model_validator(mode="after")
+    def _check_age_range(self) -> "ModelCard":
+        if self.age_min > self.age_max:
+            raise ValueError(
+                f"age_min ({self.age_min}) must be <= age_max ({self.age_max})"
+            )
+        return self
+
+    def to_model_ref(self, runtime_sleap_nn_version: str) -> ModelRef:
+        """Build a fully-pinned ``ModelRef``, stamping the RUNTIME sleap-nn version.
+
+        The runtime version (what actually runs inference) is pinned into
+        ``ModelRef.sleap_nn_version``, so that required field is always satisfied
+        regardless of whether the card carried a trained-with value. Predict compares
+        the card's trained-with value against the runtime version and warns on
+        mismatch; this method is pure and does not warn.
+
+        Args:
+            runtime_sleap_nn_version: The sleap-nn version actually running inference.
+
+        Returns:
+            A ``ModelRef`` carrying the card's ``registry_id``, ``version``,
+            ``root_type``, and ``weights_checksum``, with the runtime version stamped.
+        """
+        return ModelRef(
+            registry_id=self.registry_id,
+            version=self.version,
+            sleap_nn_version=runtime_sleap_nn_version,
+            root_type=self.root_type,
+            weights_checksum=self.weights_checksum,
+        )
+
 
 # Single source of truth for BlobRef's "at least one location" rule: both the
 # emitted JSON Schema constraint and the runtime validator derive from this, so a
