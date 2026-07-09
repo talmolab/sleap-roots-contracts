@@ -45,7 +45,7 @@ pure, dependency-light leaf.
 - **WHEN** `species_name` is present but blank (`""`, `"   "`, `None`, or a `NaN`) with no `species`
   override
 - **THEN** `resolve_params` raises a `ValueError` naming `species` (the blank is treated as missing,
-  not resolved to an empty species), and does not crash
+  not resolved to an empty species)
 
 ### Requirement: Species Name Normalization
 
@@ -154,7 +154,7 @@ resolved `age` of `0` SHALL be valid (validation checks key presence, not truthi
 - **THEN** `resolve_params` raises a `ValueError` naming `age` as **missing** (treated as not
   provided — the same as a blank `species_name`), rather than a "not a whole number" error
 
-### Requirement: Override Merge And Strict Post-Override Validation
+### Requirement: Override Merge Semantics
 
 The optional `overrides` argument SHALL be a param-space dict merged last so a supplied field
 replaces the derived one (**override wins per field**). Override keys SHALL be restricted to the
@@ -162,11 +162,8 @@ resolvable params `{species, mode, age}`; an unrecognized override key SHALL rai
 naming the offending key. Override **values** SHALL be canonicalized by the same per-field rules as
 derived values (`species` via `_normalize_species`, `mode` via `_normalize_mode`, `age` via
 `_coerce_age`), so a logically identical run produces an identical `param_hash` regardless of whether
-a value arrived derived or as an override. A blank override value is treated as not provided (the
-field is dropped, then named by validation). After merging and canonicalizing, `resolve_params` SHALL
-require that `species`, `mode`, and `age` are all present (by key) and SHALL raise a clear
-`ValueError` naming every missing param when any is absent. It SHALL NOT return a half-resolved
-`ResolvedParams`.
+a value arrived derived or as an override. A blank override value is treated as not provided: the
+field is dropped, deferring to the post-override validation requirement below.
 
 #### Scenario: Override wins per field
 
@@ -206,6 +203,13 @@ require that `species`, `mode`, and `age` are all present (by key) and SHALL rai
 - **WHEN** `resolve_params(row, overrides={"mode": ""})` is called
 - **THEN** it raises a `ValueError` whose message names `mode`
 
+### Requirement: Strict Post-Override Validation
+
+After merging and canonicalizing, `resolve_params` SHALL require that `species`, `mode`, and `age`
+are all present (by key) and SHALL raise a clear `ValueError` naming **every** missing param when any
+is absent. It SHALL NOT return a half-resolved `ResolvedParams`. Presence is checked by key, not by
+truthiness, so a resolved `age` of `0` satisfies validation.
+
 #### Scenario: Missing required fields raise naming each missing param
 
 - **WHEN** `resolve_params` is called with a row missing both `species_name` and `plant_age_days` and
@@ -240,14 +244,24 @@ by consumers) but SHALL NOT be added to the package `__all__`.
 - **WHEN** a caller runs `from sleap_roots_contracts import resolve_params`
 - **THEN** the import succeeds and `"resolve_params"` is present in `sleap_roots_contracts.__all__`
 
-### Requirement: Resolved Params Hash Stability
+#### Scenario: Bloom column-name constants are module-public but not package API
 
-The `param_hash` computed from a resolved `values` mapping SHALL be stable across releases and
-independent of the package version, so that `Provenance.idempotency_key` (first-writer-wins) is
-comparable across producers and across time. The library SHALL pin this with a known-answer test over
-a canonical resolved row, so that any change to the resolver's normalization or to
-`compute_param_hash`'s canonicalization fails loudly rather than silently rotating every previously
-computed key.
+- **WHEN** the `params` module is imported and the package `__all__` is inspected
+- **THEN** `SPECIES_NAME_FIELD` and `PLANT_AGE_DAYS_FIELD` are readable on the module, and neither
+  name appears in `sleap_roots_contracts.__all__`
+
+### Requirement: Resolved Params Known-Answer Anchor
+
+The library SHALL pin the resolver's end-to-end output with a known-answer test over a canonical
+resolved row — the row's `param_hash`, not merely its `values` — so that any change to the resolver's
+normalization fails loudly rather than silently rotating every previously computed
+`Provenance.idempotency_key` (first-writer-wins). Comparing two resolved rows to each other is
+insufficient: both sides move together under a canonicalization change, so only a literal anchor
+detects it.
+
+The hashing algorithm itself, and its independence from the package version, remain owned by the
+`result-contract` capability's producer-side hashing requirement; this requirement pins only the
+composition of `resolve_params` with that hash.
 
 #### Scenario: The canonical row hashes to its known answer
 
@@ -255,9 +269,3 @@ computed key.
   `{"species": "pennycress", "mode": "cylinder", "age": 14}`
 - **THEN** the resulting `param_hash` is exactly
   `d7562d09b93a57ba6c1a128f27c6c8022c023365a3243e7508423b45756faecb`
-
-#### Scenario: The known answer is unaffected by the version bump
-
-- **WHEN** the package version is bumped from `0.1.0a3` to `0.1.0a4`
-- **THEN** the canonical row's `param_hash` is unchanged (`compute_param_hash` does not ingest
-  `__version__`)

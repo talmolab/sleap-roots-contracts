@@ -42,20 +42,30 @@ program tracker talmolab/sleap-roots-pipeline#14).
   `tests/test_params.py` — **32 of its 34** tests verbatim (the `_ALIASES` monkeypatch test
   re-points to `sleap_roots_contracts.params`).
 - Add two tests predict's suite lacks: `resolve_params` is importable from the package root and in
-  `__all__`; and a **known-answer `param_hash` anchor** pinning
-  `{"species": "pennycress", "mode": "cylinder", "age": 14}` →
-  `d7562d09b93a57ba6c1a128f27c6c8022c023365a3243e7508423b45756faecb`.
+  `__all__` (while the two column-name constants are **not**); and a **known-answer `param_hash`
+  anchor** over the canonical resolved row. The digest literal lives in one normative place — the
+  spec's *Resolved Params Known-Answer Anchor* requirement — and is copied from there into the test.
 - Release **`v0.1.0a4`**: bump `pyproject.toml` (single source of truth), re-lock `uv.lock`,
   regenerate **both** schemas (each `$id` embeds the version), update `docs/CHANGELOG.md`.
-- Record in `openspec/project.md` that contracts knowingly owns the **soft, documented** coupling to
-  Bloom's column names (dict keys only — no Bloom import, no DB/network/filesystem I/O).
+- Record in `openspec/project.md` (and, identically, `README.md`) that contracts knowingly owns a
+  **soft, documented** coupling to Bloom's column names: dict keys only — no Bloom import, no
+  DB/network/filesystem I/O. The library stays **code-agnostic** toward Bloom but is no longer
+  **vocabulary**-agnostic, so the bare adjective "Bloom-agnostic" is corrected **in place** in both
+  files rather than merely qualified further down.
+- Add a `uv lock --check` step to PR `ci.yml` (approved scope addition). Today a stale `uv.lock`
+  passes PR CI (non-frozen `uv sync`) and only hard-fails at release in `build.yml` — after merge,
+  while bloom#411 waits. This change bumps the version, so it is precisely the change that trips that
+  trap; the guard lands with it.
 
 ## Impact
 
 - **Affected specs:**
   - `param-resolution` (NEW capability) — ADDED: scan-metadata → params resolution; species
-    normalization; the imaging-mode seam; age resolution in days; override merge + strict
-    post-override validation; public API export; resolved-params hash stability.
+    normalization; the imaging-mode seam; age resolution in days; override merge semantics; strict
+    post-override validation; public API export; resolved-params known-answer anchor.
+  - No other capability is touched. The hashing algorithm and its version-independence stay owned by
+    `result-contract`'s producer-side hashing requirement; this capability pins only the composition
+    of `resolve_params` with that hash.
 - **Affected code:**
   - `src/sleap_roots_contracts/params.py` — **NEW**; the ported oracle. Imports only `math`,
     `typing`, and `.models.ResolvedParams`.
@@ -65,12 +75,25 @@ program tracker talmolab/sleap-roots-pipeline#14).
   - `uv.lock` — re-locked (it pins this project's own version).
   - `schema/result_envelope.schema.json` **and** `schema/analysis_input.schema.json` — both
     regenerated. **`$id`-only diff**: `schema.py` stamps `$id` from `__version__`, so the bytes change
-    while the structure does not. `resolve_params` is a function and `ModelCard` was never emitted, so
-    this change adds **no schema surface at all**. This is *not* "schema unchanged."
+    while the structure does not — the version string occurs exactly once per file, so exactly one
+    line per file moves. `resolve_params` is a function and `ModelCard` was never emitted, so this
+    change adds **no schema surface at all**. This is *not* "schema unchanged."
+  - `.github/workflows/ci.yml` — add `uv lock --check` after `uv sync`.
   - `docs/CHANGELOG.md` — `0.1.0a4` entry + footer compare-link refresh.
-  - `openspec/project.md` — Purpose updated from "**three** contracts" to name the param-resolution
-    oracle; record the documented soft coupling to Bloom column names; add `bloomctl` as a consumer.
-  - `README.md` — name `resolve_params` alongside the existing contracts.
+  - `openspec/project.md` — correct "Bloom-agnostic" in place; name the param-resolution oracle;
+    record the documented soft coupling to Bloom column names; add `bloomctl` as a consumer.
+  - `README.md` — same in-place correction of "Bloom-agnostic"; name `resolve_params` alongside the
+    existing contracts.
+  - `docs/01-contract-library-design.md`, `docs/02-contract-library-plan.md` — **banner lines only;
+    bodies left frozen**, per the `2026-07-04-add-model-card-predict-inference-config` precedent.
+    `docs/01` §1 and §5 currently state that Bloom-metadata → params resolution is out of scope and
+    belongs to the producer/#3 — this change **reverses** that boundary, so the existing point-in-time
+    banner is extended to say so. `docs/02`'s banner advances `v0.1.0a1–a3` → `a1–a4`.
+  - **Out of scope, follow-up issues:** the `__init__.py` module docstring's stale one-line inventory
+    (under-describing since `0.1.0a1`), `docs/02`'s superseded `#v{version}` `$id` fragment format,
+    `uv publish` lacking `--skip-existing`, and `.claude/commands/review-openspec.md` asserting facts
+    from a different repo. None are made newly wrong by this change; fixing them here would be scope
+    creep on a release-blocking PR.
 - **Scope decision — ship #15 alone.** The sibling issues #13 (shared `card_matches` selection
   predicate) and #14 (`PipelineCard` selection type + matcher) stay **open siblings**, not folded in.
   `resolve_params` is self-contained; both siblings carry unsettled design questions of their own

@@ -75,6 +75,10 @@ Predict's suite has **34** test functions (several parametrized). Contracts ends
   not exist here (it is #13). They stay in predict, where the predicate lives and where an
   integration test belongs. A stub predicate here would assert against a fiction and create a second
   untracked copy of exactly the logic #13 exists to de-duplicate. When #13 lands, they can migrate.
+  **Hand-off hazard:** predict#28 must *re-point*, not delete, those two tests. They are the only
+  remaining assertion of the metadata → params → model wiring, and deleting
+  `test_param_resolution.py` wholesale would drop that coverage from **both** repos silently. This is
+  recorded as a checklist line in `tasks.md` §7.2.
 - **Kept:** `test_mode_matches_seeded_card_vocabulary` — needs only `ModelCard`, which contracts has,
   so the mode↔card vocabulary coupling stays asserted here.
 - **Added (2):** `resolve_params` in `__all__`; and a **known-answer `param_hash` anchor**.
@@ -82,24 +86,46 @@ Predict's suite has **34** test functions (several parametrized). Contracts ends
 On the anchor: predict's suite only ever compares hashes to *each other*. Because both repos
 construct `ResolvedParams` from this same package, identical `values` already imply an identical
 `param_hash` — so those relative assertions **cannot detect** a change to `compute_param_hash`'s
-canonicalization, which would rotate every `idempotency_key` in the fleet at once. The literal
-`d7562d09b93a57ba6c1a128f27c6c8022c023365a3243e7508423b45756faecb` (for
-`{"species": "pennycress", "mode": "cylinder", "age": 14}`) is the anchor that does.
+canonicalization, which would rotate every `idempotency_key` in the fleet at once. A literal digest
+for `{"species": "pennycress", "mode": "cylinder", "age": 14}` is the anchor that does.
 
-> **GOLDEN DIGEST — captured from the PRE-CHANGE installed package (`0.1.0a3`)**, so it proves
-> cross-release stability, not post-change self-consistency. `compute_param_hash` does not ingest
-> `__version__`, so the bump cannot move it. If a green run disagrees, a canonicalization bug has
-> been introduced — investigate, do **not** re-baseline.
+> **GOLDEN DIGEST — the literal lives in exactly one normative place:** the `param-resolution` spec's
+> *Resolved Params Known-Answer Anchor* requirement. Do not re-paste the hex here or in `proposal.md`
+> — a 64-char literal duplicated across five files must match forever, and will not.
+>
+> It was **captured from the PRE-CHANGE installed package (`0.1.0a3`)**, so it proves cross-release
+> stability, not post-change self-consistency. `compute_param_hash` does not ingest `__version__`, so
+> the bump cannot move it. If a green run disagrees, a canonicalization bug has been introduced —
+> investigate, do **not** re-baseline.
+
+The *version-independence* of the hash is a property of `compute_param_hash`, owned by
+`result-contract`. It is deliberately **not** restated as a `param-resolution` requirement: a future
+change to the hashing internals (a result-contract change) must not break a param-resolution spec.
+Nor is it expressible as a scenario — "bump the version" cannot happen inside a unit test, and a
+scenario naming `0.1.0a3 → 0.1.0a4` would be stale history the moment it archived.
 
 ### 6. The Bloom coupling is real, soft, and documented
 
-`openspec/project.md` calls this a "Bloom-agnostic leaf library," and this oracle reads Bloom column
-names. The coupling is **soft** — dict keys only; no Bloom import, no DB, no network, no filesystem
-I/O — but it is a genuine narrowing of "Bloom-agnostic" and is recorded rather than glossed. The two
-column names are hoisted into module constants (greppable across repos, as in predict), and
-`project.md` gains a sentence stating that contracts knowingly owns this documented coupling, because
-both the oracle's input vocabulary and its selection target (`ModelCard`) already live here. The
-alternative — a Bloom-side resolver — is precisely the drift this change exists to prevent.
+`openspec/project.md` and `README.md` both call this a "Bloom-agnostic leaf library," and this oracle
+reads Bloom column names. The coupling is **soft** — dict keys only; no Bloom import, no DB, no
+network, no filesystem I/O — but it is a genuine narrowing of "Bloom-agnostic" and is recorded rather
+than glossed. The library stays **code-agnostic** toward Bloom; it is no longer
+**vocabulary**-agnostic.
+
+The two column names are hoisted into module constants (greppable across repos, as in predict), and
+the adjective is corrected **in place** in both files — appending a qualifier further down would
+leave each file contradicting its own opening sentence. `project.md`'s constraint "does not touch
+Bloom, the DB, Argo, or model code" remains true and is left alone.
+
+`docs/01-contract-library-design.md` goes further than an adjective: §1 lists "No Bloom-metadata →
+params *resolution* logic → **#3**" under *Explicitly NOT in scope*, and §5 says resolution "lives in
+the producer / Bloom client (#3), keeping the contract Bloom-agnostic and light." This change
+**reverses that boundary**. Per the `2026-07-04-add-model-card-predict-inference-config` precedent,
+the body of that dated design record stays **frozen**; its existing point-in-time banner is extended
+to name the reversal so a standalone reader is not misled.
+
+The alternative — a Bloom-side resolver, or one copy per consumer — is precisely the drift this
+change exists to prevent. Accepting a documented soft coupling here is the cheaper failure mode.
 
 ### 7. Release is a `$id`-only structural no-op — not "schema unchanged"
 
@@ -110,32 +136,53 @@ https://github.com/talmolab/sleap-roots-contracts/schema/v{__version__}/{name}.s
 ```
 
 Bumping to `0.1.0a4` restamps **both** `schema/analysis_input.schema.json` and
-`schema/result_envelope.schema.json` — bytes change, structure does not (one `$id` line each).
+`schema/result_envelope.schema.json` — bytes change, structure does not. The version string occurs
+exactly once per file (all internal `$ref`s are relative `#/$defs/…`), so exactly **one line per
+file** moves; `render()` sorts keys and the substitution is same-length, so nothing reorders.
 `resolve_params` is a function and `ModelCard` was never emitted, so this change adds no schema
 surface at all. Downstream consumers do the **standard full re-pin** (`pin.json` + vendored schema +
 regenerated TS), accepting the `$id`-only diff — not merely a pip-floor bump.
 
-`uv.lock` pins this project's own version, so the bump stales it. PR `ci.yml` runs plain `uv sync`
-(non-frozen) and stays **green with a stale lock**, but the release `build.yml` runs `uv lock --check`
-+ `uv sync --frozen` and **hard-fails**. The lock bump is therefore mandatory, and `uv lock --check`
-must be run locally.
+**The regeneration order is load-bearing.** `__version__` resolves from *installed* metadata
+(`importlib.metadata`), not from `pyproject.toml`. Bumping `pyproject.toml` and regenerating without
+an intervening `uv sync` re-emits the **old** `$id`, leaving the local drift guard green-but-wrong.
+Always `uv version … && uv sync && python -m sleap_roots_contracts.schema`.
+
+`uv.lock` pins this project's own version, so the bump stales it. Today PR `ci.yml` runs plain
+`uv sync` (non-frozen) and stays **green with a stale lock**, while the release `build.yml` runs
+`uv lock --check` + `uv sync --frozen` and **hard-fails** — so the failure first surfaces after merge,
+while bloom#411 waits. This change therefore adds `uv lock --check` to PR `ci.yml` (approved scope
+addition; the repo's memory records this trap already breaking a release). The lock bump remains
+mandatory either way.
 
 ## Commit grouping
 
-Each commit is green on its own. Never commit a bare RED step.
+Each commit is green on its own. Never commit a bare RED step. Prefixes follow this repo's real
+history — `feat:`, bare `chore:`, `docs:`. There is **no `chore(release):` precedent**; the only
+scoped commit in the log is `docs(commands):`.
 
-- **Commit 1 (`feat:`)** — `params.py` + export + `tests/test_params.py`. Pure Python; touches **no
-  schema**, so the drift guard is untouched.
-- **Commit 2 (`chore(release):`)** — `pyproject.toml` → `0.1.0a4`, `uv sync`, the re-locked
-  `uv.lock`, **both** regenerated schemas (`$id` → `v0.1.0a4`), CHANGELOG. Green only if both schemas
-  move together and `uv.lock` is bumped.
-- **Commit 3 (`docs:`)** — `openspec/project.md`, `README.md`. Docs-only; may fold into Commit 2.
+- **Commit 1 (`feat:`)** — `params.py` + export + `tests/test_params.py`. Pure Python; touches no
+  schema and no version, so the drift guard and `test_version_matches_pyproject` are unaffected.
+- **Commit 2 (`chore: release v0.1.0a4`)** — `pyproject.toml`, the re-locked `uv.lock`, **both**
+  regenerated schemas, CHANGELOG, and `ci.yml`'s lock check. The version, both schemas, and the lock
+  are genuinely coupled: bumping without regenerating both turns the drift guard red, and (once the
+  `ci.yml` check lands) a stale lock turns PR CI red too.
+- **Commit 3 (`docs:`)** — `openspec/project.md`, `README.md`, and the two frozen-doc banners.
+  Docs-only; `ci.yml` has no `paths:` filter, so CI still runs. May fold into Commit 2.
+
+The branch is **squash-merged** (history is fully linear; `git log --merges` is empty), so this split
+buys pre-merge reviewability, not `main` history. The squash title should carry the version like its
+predecessors (#8 `(v0.1.0a2)`, #10 `(v0.1.0a3)`). The OpenSpec archive is a **separate** follow-up
+`chore:` PR, matching #9 / #11 — never folded into the feature PR.
 
 ## Risks
 
 | Risk | Mitigation |
 | --- | --- |
 | Silent behavioral drift from predict breaks `idempotency_key` | Port verbatim; 32 ported tests + a golden `param_hash` anchor captured pre-change |
-| Forgotten `uv.lock` bump passes PR CI, fails the release build | Task 4.1 runs `uv lock --check` locally, mirroring `build.yml` |
+| Forgotten `uv.lock` bump passes PR CI, fails the release build | Task 3.5 adds `uv lock --check` to PR `ci.yml`; task 5.1 also runs it locally |
+| Regenerating the schema without `uv sync` re-emits the old `$id`, drift guard green-but-wrong | Task 3.2 chains `uv sync && … schema`; PR CI regenerates from a fresh install and would catch it |
 | Reviewer reads "no schema change" and skips regeneration | Spec, proposal, and design all state the `$id`-only restamp explicitly; drift guard enforces it |
 | Two copies of the oracle coexist during the predict#28 window | Expected and bounded; contracts is declared the source of truth, predict deletes its copy on re-pin |
+| predict#28 deletes the round-trip tests wholesale, silently dropping metadata→params→model coverage from both repos | Explicit "re-point, do NOT delete" checklist line in `tasks.md` §7.2 |
+| The golden digest is duplicated across docs and drifts | The literal lives only in the spec's known-answer requirement; all other docs point at it |
