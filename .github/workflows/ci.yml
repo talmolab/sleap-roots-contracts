@@ -16,6 +16,11 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - run: uv sync
+      # `uv sync` above is non-frozen, so it silently tolerates a stale lock. The
+      # release workflow runs `uv lock --check` + `uv sync --frozen` and hard-fails,
+      # so without this step a forgotten `uv.lock` bump first surfaces at release.
+      - name: Verify lockfile is current
+        run: uv lock --check
       - name: Lint
         run: |
           uv run black --check src tests

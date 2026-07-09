@@ -1,5 +1,5 @@
 {
-  "$id": "https://github.com/talmolab/sleap-roots-contracts/schema/v0.1.0a3/analysis_input.schema.json",
+  "$id": "https://github.com/talmolab/sleap-roots-contracts/schema/v0.1.0a4/analysis_input.schema.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": {
     "type": [
