@@ -17,7 +17,10 @@ import math
 
 import pytest
 from sleap_roots_contracts import ModelCard, ResolvedParams
-from sleap_roots_contracts import params
+
+# Aliased to upstream's module name so the ported tests stay byte-diffable
+# against sleap-roots-predict/tests/test_param_resolution.py.
+from sleap_roots_contracts import params as param_resolution
 from sleap_roots_contracts.params import (
     PLANT_AGE_DAYS_FIELD,
     SPECIES_NAME_FIELD,
@@ -107,7 +110,7 @@ def test_blank_or_nonstring_species_returns_empty(blank):
 
 def test_alias_map_substitutes_a_non_identity_alias(monkeypatch):
     """The (normally empty) _ALIASES seam maps a non-trivial name when populated."""
-    monkeypatch.setitem(params._ALIASES, "thlaspi arvense", "pennycress")
+    monkeypatch.setitem(param_resolution._ALIASES, "thlaspi arvense", "pennycress")
     assert _normalize_species("Thlaspi arvense") == "pennycress"
 
 
@@ -172,10 +175,10 @@ def test_non_whole_or_non_coercible_age_raises_naming_age(bad_age):
 
 def test_sample_row_resolves_to_species_mode_age():
     """The oracle: a sample Bloom row -> {pennycress, cylinder, 14} + hash."""
-    params_ = resolve_params(_row(species_name="Pennycress", plant_age_days=14))
-    assert isinstance(params_, ResolvedParams)
-    assert params_.values == {"species": "pennycress", "mode": "cylinder", "age": 14}
-    assert params_.param_hash  # populated by the contract
+    params = resolve_params(_row(species_name="Pennycress", plant_age_days=14))
+    assert isinstance(params, ResolvedParams)
+    assert params.values == {"species": "pennycress", "mode": "cylinder", "age": 14}
+    assert params.param_hash  # populated by the contract
 
 
 def test_extra_columns_ignored_and_input_not_mutated():
@@ -188,8 +191,8 @@ def test_extra_columns_ignored_and_input_not_mutated():
         captured_at="2026-07-06T00:00:00Z",
     )
     before = dict(row)
-    params_ = resolve_params(row)
-    assert set(params_.values) == {"species", "mode", "age"}
+    params = resolve_params(row)
+    assert set(params.values) == {"species", "mode", "age"}
     assert row == before  # not mutated
 
 
@@ -203,8 +206,8 @@ def test_string_age_row_hashes_identically_to_int_age_row():
 
 def test_row_age_zero_resolves():
     """A row with plant_age_days=0 resolves (0 is not treated as missing)."""
-    params_ = resolve_params(_row(species_name="Rice", plant_age_days=0))
-    assert params_.values["age"] == 0
+    params = resolve_params(_row(species_name="Rice", plant_age_days=0))
+    assert params.values["age"] == 0
 
 
 def test_row_non_whole_age_raises_naming_age():
@@ -218,11 +221,11 @@ def test_row_non_whole_age_raises_naming_age():
 
 def test_override_wins_per_field():
     """Overrides replace derived fields; non-overridden fields stay derived."""
-    params_ = resolve_params(
+    params = resolve_params(
         _row(species_name="Rice", plant_age_days=3),
         overrides={"mode": "graviscan", "species": "canola"},
     )
-    assert params_.values == {"species": "canola", "mode": "graviscan", "age": 3}
+    assert params.values == {"species": "canola", "mode": "graviscan", "age": 3}
 
 
 def test_empty_overrides_equals_no_overrides():
@@ -290,10 +293,10 @@ def test_blank_age_treated_as_missing_naming_age(blank):
 
 def test_blank_age_can_be_supplied_by_override():
     """A blank plant_age_days is satisfied by an age override (defer, not raise)."""
-    params_ = resolve_params(
+    params = resolve_params(
         _row(species_name="Rice", plant_age_days=math.nan), overrides={"age": 5}
     )
-    assert params_.values["age"] == 5
+    assert params.values["age"] == 5
 
 
 def test_both_blank_fields_name_each_missing_param():
@@ -316,8 +319,8 @@ def test_blank_mode_override_raises_naming_mode():
 def test_missing_species_supplied_by_override_succeeds():
     """A missing species_name compensated by an override resolves."""
     row = {PLANT_AGE_DAYS_FIELD: 3}  # no species_name
-    params_ = resolve_params(row, overrides={"species": "rice"})
-    assert params_.values["species"] == "rice"
+    params = resolve_params(row, overrides={"species": "rice"})
+    assert params.values["species"] == "rice"
 
 
 @pytest.mark.parametrize("blank", ["", "   ", None, math.nan])
@@ -356,6 +359,6 @@ def test_canonical_row_hashes_to_known_answer():
     Comparing two resolved rows to each other cannot catch a canonicalization
     change -- both sides move together. Only a literal anchor detects it.
     """
-    params_ = resolve_params(_row(species_name="Pennycress", plant_age_days=14))
-    assert params_.values == {"species": "pennycress", "mode": "cylinder", "age": 14}
-    assert params_.param_hash == _CANONICAL_PARAM_HASH
+    params = resolve_params(_row(species_name="Pennycress", plant_age_days=14))
+    assert params.values == {"species": "pennycress", "mode": "cylinder", "age": 14}
+    assert params.param_hash == _CANONICAL_PARAM_HASH
