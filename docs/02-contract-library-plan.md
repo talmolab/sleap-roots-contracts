@@ -1,7 +1,7 @@
 # sleap-roots-contracts Implementation Plan
 
 > **⚠️ Point-in-time implementation plan (2026-06-03) — historical build record.** The library
-> shipped and has since evolved (v0.1.0a1–a3). This is not the living reference; for current truth
+> shipped and has since evolved (v0.1.0a1–a4). This is not the living reference; for current truth
 > see the Pydantic models, the emitted `schema/*.json`, the OpenSpec specs, and `docs/CHANGELOG.md`.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

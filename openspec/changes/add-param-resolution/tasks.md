@@ -26,7 +26,7 @@
 
 ## 1. Port the oracle (test-first)
 
-- [ ] 1.1 RED: create `tests/test_params.py` by porting `sleap-roots-predict/tests/test_param_resolution.py`
+- [x] 1.1 RED: create `tests/test_params.py` by porting `sleap-roots-predict/tests/test_param_resolution.py`
       at HEAD — **32 of its 34** test functions, verbatim. Adaptations, and only these:
       - imports become, mirroring upstream (which imports the oracle from the **module**, not the
         package root — this keeps the 32 ported tests independent of the export step in 2.2, so 1.3
@@ -47,7 +47,7 @@
         helper it uses; drop the `choose_models` import.
       Confirm RED: `uv run pytest tests/test_params.py` fails at collection
       (`sleap_roots_contracts.params` does not exist).
-- [ ] 1.2 GREEN: create `src/sleap_roots_contracts/params.py` by porting
+- [x] 1.2 GREEN: create `src/sleap_roots_contracts/params.py` by porting
       `sleap_roots_predict/param_resolution.py` at HEAD. The **only** logic edit:
       `from sleap_roots_contracts import ResolvedParams` → `from .models import ResolvedParams`
       (a self-import would be circular; `params.py` is imported by `__init__.py` after `models.py`).
@@ -58,22 +58,22 @@
       `_PARAM_KEYS`, `_ALIASES` (empty), `_is_blank`, `_normalize_text`, `_normalize_species`,
       `_normalize_mode`, `_mode_for_scan`, `_coerce_age`, `_canonicalize_text`, `resolve_params`.
       Docstrings are google-convention (ruff pydocstyle applies to `src/`).
-- [ ] 1.3 Verify GREEN: `uv run pytest tests/test_params.py -v` — all 32 test **functions** pass
+- [x] 1.3 Verify GREEN: `uv run pytest tests/test_params.py -v` — all 32 test **functions** pass
       (≈48 test *items*, since 5 are parametrized). No package-root export is needed yet.
 
 ## 2. Public API export + the added tests (test-first)
 
-- [ ] 2.1 RED: add `test_resolve_params_is_exported` to `tests/test_params.py` — `from
+- [x] 2.1 RED: add `test_resolve_params_is_exported` to `tests/test_params.py` — `from
       sleap_roots_contracts import resolve_params` succeeds and `"resolve_params" in
       sleap_roots_contracts.__all__`. Also assert `SPECIES_NAME_FIELD`/`PLANT_AGE_DAYS_FIELD` are
       **absent** from `__all__` (module-public, not package API — mirrors predict).
       Note: `tests/test_envelope.py::test_all_lists_exported_symbols` only checks the
       `__all__ → hasattr` direction (no dangling names); it does **not** assert membership, so this
       test is complementary, not redundant.
-- [ ] 2.2 GREEN: export `resolve_params` from `src/sleap_roots_contracts/__init__.py` (import +
+- [x] 2.2 GREEN: export `resolve_params` from `src/sleap_roots_contracts/__init__.py` (import +
       `__all__`, grouped with a short comment like the existing sections).
       `tests/test_envelope.py::test_all_lists_exported_symbols` must stay green.
-- [ ] 2.3 RED→GREEN: add `test_canonical_row_hashes_to_known_answer` — resolving a row to
+- [x] 2.3 RED→GREEN: add `test_canonical_row_hashes_to_known_answer` — resolving a row to
       `{"species": "pennycress", "mode": "cylinder", "age": 14}` yields the `param_hash` literal
       pinned in the `param-resolution` spec's **Resolved Params Known-Answer Anchor** requirement
       (the single normative source for the digest; copy it from there, do not re-derive it).
@@ -81,28 +81,28 @@
       cross-release stability rather than post-change self-consistency. It passes as soon as 1.2
       lands. **If it ever goes red, a normalization or `compute_param_hash` canonicalization bug has
       been introduced — investigate, do NOT re-baseline.**
-- [ ] 2.4 Verify: `uv run pytest -v` (full suite) green; `uv run black --check src tests` and
+- [x] 2.4 Verify: `uv run pytest -v` (full suite) green; `uv run black --check src tests` and
       `uv run ruff check src tests` clean.
 
 ## 3. Release `v0.1.0a4` (bump, re-lock, regenerate both schemas)
 
-- [ ] 3.1 Bump `pyproject.toml` → `version = "0.1.0a4"` via `uv version 0.1.0a4` (single source of
+- [x] 3.1 Bump `pyproject.toml` → `version = "0.1.0a4"` via `uv version 0.1.0a4` (single source of
       truth; `__init__.__version__` resolves from installed metadata, so no code edit).
-- [ ] 3.2 `uv sync && uv run python -m sleap_roots_contracts.schema` (writes all `MODELS`).
+- [x] 3.2 `uv sync && uv run python -m sleap_roots_contracts.schema` (writes all `MODELS`).
       **The `uv sync` is load-bearing and must precede the regen:** `__version__` resolves from
       *installed* metadata, not from `pyproject.toml`, so regenerating without reinstalling re-emits
       the OLD `$id`, leaving the drift guard green-but-wrong locally. Both
       `result_envelope.schema.json` and `analysis_input.schema.json` advance their `$id` version
       segment to `v0.1.0a4`. Verify `git diff schema/` changes **exactly one line per file — the
       `$id` — and nothing else** (a `$id`-only structural no-op). Re-run the drift guard.
-- [ ] 3.3 **Stage the bumped `uv.lock` (MANDATORY).** `uv.lock` pins this project's own version
+- [x] 3.3 **Stage the bumped `uv.lock` (MANDATORY).** `uv.lock` pins this project's own version
       (`sleap-roots-contracts == 0.1.0a3`), so the bump stales it. `uv sync` in 3.2 re-locks it to
       `0.1.0a4`; commit that `uv.lock`. Required, not conditional: **today** PR `ci.yml` runs plain
       `uv sync` (non-frozen) and stays **green with a stale lock**, while the release `build.yml`
       runs `uv lock --check` + `uv sync --frozen` and **hard-fails** — so a forgotten lock bump first
       surfaces at release, after merge, while bloom#411 waits. Task 3.5 closes that gap permanently.
       Confirm with `uv lock --check` locally regardless (see 5.1).
-- [ ] 3.4 Update `docs/CHANGELOG.md` (use the **actual release date**, not a placeholder):
+- [x] 3.4 Update `docs/CHANGELOG.md` (use the **actual release date**, not a placeholder):
       - Add `## [0.1.0a4] - <release date> (Pre-release)` under `[Unreleased]`, opening with a
         one-line intro in house style (a3 does this), e.g. "Promotes the param-resolution oracle from
         `sleap-roots-predict` so predict and `bloomctl` share one implementation."
@@ -120,7 +120,7 @@
           accepting the `$id`-only diff — **not** a pip-floor bump.
       - Footer links: repoint `[Unreleased]` → `compare/v0.1.0a4...HEAD`; add
         `[0.1.0a4]: .../compare/v0.1.0a3...v0.1.0a4`.
-- [ ] 3.5 **Close the stale-lock gap in PR CI** (approved scope addition; two reviewers flagged it,
+- [x] 3.5 **Close the stale-lock gap in PR CI** (approved scope addition; two reviewers flagged it,
       and `MEMORY.md/release-uv-lock-bump` records it already broke a release). In
       `.github/workflows/ci.yml`, immediately after the `- run: uv sync` step, add:
       ```yaml
@@ -138,7 +138,7 @@
 > `$id` fragment format at ~L1017) is **out of scope** — file follow-up issues, do not smuggle
 > cleanup into a release-blocking PR.
 
-- [ ] 4.1 `openspec/project.md`: the Purpose currently reads "dependency-light, **Bloom-agnostic**
+- [x] 4.1 `openspec/project.md`: the Purpose currently reads "dependency-light, **Bloom-agnostic**
       leaf library that defines three contracts." Edit that adjective **in place** — appending a
       qualifier later in the section would leave the file contradicting itself. Replace with wording
       that keeps the honest distinction: the library remains **code-agnostic** toward Bloom (no Bloom
@@ -148,11 +148,11 @@
       alongside the three contracts, and add `bloomctl` (bloom repo) to the consumer list as an
       importer of `resolve_params`. The Important-Constraints line "does not touch Bloom, the DB,
       Argo, or model code" stays **true** and unedited.
-- [ ] 4.2 `README.md`: line 5 carries the same unqualified "Bloom-agnostic" adjective — apply the
+- [x] 4.2 `README.md`: line 5 carries the same unqualified "Bloom-agnostic" adjective — apply the
       same in-place softening, or the two files disagree. Also name `resolve_params` alongside the
       result + provenance, analysis-input, and model-selection contracts, noting it is a pure
       producer-side function (not part of the emitted JSON Schema).
-- [ ] 4.3 `docs/01-contract-library-design.md`: this change **reverses an explicit scope boundary**
+- [x] 4.3 `docs/01-contract-library-design.md`: this change **reverses an explicit scope boundary**
       written in the body — §1 "Explicitly NOT in scope" says *"No Bloom-metadata → params resolution
       logic → #3 (producer / Bloom client)"*, and §5 says the resolution *"lives in the producer /
       Bloom client (#3), keeping the contract Bloom-agnostic and light."* Per the repo's established
@@ -161,7 +161,7 @@
       reader is not misled, e.g.: "§1 and §5 are now **reversed** on one point: the Bloom-metadata →
       params resolver (`resolve_params`) was promoted **into** this library in v0.1.0a4 (#15) as a
       soft, code-agnostic coupling (dict keys only); resolution no longer lives only in #3."
-- [ ] 4.4 `docs/02-contract-library-plan.md`: its banner says the library "has since evolved
+- [x] 4.4 `docs/02-contract-library-plan.md`: its banner says the library "has since evolved
       (v0.1.0a1–a3)" — bump to `a1–a4`. Banner line only; the body stays frozen.
 
 ## 5. Verify

@@ -2,15 +2,26 @@
 
 ## Purpose
 `sleap-roots-contracts` is the shared **data contract** library for the sleap-roots ↔ Bloom
-pipeline. It is a small, dependency-light, **Bloom-agnostic** leaf library that defines three
-contracts: (1) the **result + provenance contract** — the shape of a per-scan pipeline result
-and its provenance (Pydantic v2 models); (2) the **analysis-input contract** — the canonical
-wide trait table, with a structural `validate_analysis_input` validator; and (3) the
-**model-selection contract** — `ModelCard`, the Python-side model-selection shape shared by
-`sleap-roots-training` (writer) and `sleap-roots-predict` (reader). Contracts (1) and (2) emit
-versioned JSON Schema artifacts (Bloom consumes them); contract (3) is a producer↔producer
-shape that never crosses the Bloom boundary and is **not** emitted to JSON Schema. It also ships
-a trait-definitions registry.
+pipeline. It is a small, dependency-light leaf library — **code-agnostic toward Bloom** (no Bloom
+import, no DB/network/filesystem I/O), though since `0.1.0a4` no longer **vocabulary**-agnostic
+(see the param-resolution note below). It defines three contracts: (1) the **result + provenance
+contract** — the shape of a per-scan pipeline result and its provenance (Pydantic v2 models);
+(2) the **analysis-input contract** — the canonical wide trait table, with a structural
+`validate_analysis_input` validator; and (3) the **model-selection contract** — `ModelCard`, the
+Python-side model-selection shape shared by `sleap-roots-training` (writer) and
+`sleap-roots-predict` (reader). Contracts (1) and (2) emit versioned JSON Schema artifacts (Bloom
+consumes them); contract (3) is a producer↔producer shape that never crosses the Bloom boundary
+and is **not** emitted to JSON Schema. It also ships a trait-definitions registry and, since
+`0.1.0a4`, the **param-resolution oracle** `resolve_params` (Bloom scan metadata → `ResolvedParams`).
+
+`resolve_params` reads Bloom's `cyl_scans_extended` column names (`species_name`,
+`plant_age_days`) as dict keys. This is the library's single, deliberate **soft coupling** to
+Bloom's vocabulary: the names are hoisted into module constants (`SPECIES_NAME_FIELD`,
+`PLANT_AGE_DAYS_FIELD`) so the cross-repo coupling is explicit and greppable, and there is no
+Bloom import and no DB, network, or filesystem dependency. Contracts owns it because the oracle's
+resolved values feed `param_hash` → `idempotency_key`, so a copy per consumer would silently
+break first-writer-wins idempotency; both its input vocabulary and its selection target
+(`ModelCard`) already live here.
 
 Producers (`sleap-roots-predict`, `sleap-roots-traits`) import it; **Bloom consumes the emitted
 JSON Schema** (codegen + migration-match). It is sub-project #1 of the sleap-roots ↔ Bloom
@@ -70,8 +81,10 @@ values are stored in Bloom long-format (`cyl_scan_traits(scan_id, name, value)`)
 Runtime core is pydantic + pyyaml; pandas is an optional `[pandas]` extra (only
 `validate_analysis_input` needs it). Downstream consumers: `sleap-roots-predict`,
 `sleap-roots-traits` (import the result contract); `sleap-roots-predict` also reads the
-model-selection contract (`ModelCard` → `ModelRef`); `sleap-roots-analyze` + `bloom-mcp`
-(call `validate_analysis_input`); and Bloom (consumes `schema/*.json`). `sleap-roots-training`
+model-selection contract (`ModelCard` → `ModelRef`) and imports `resolve_params`; `bloomctl`
+(in the `bloom` repo) imports `resolve_params` to author each scan's `params` sidecar;
+`sleap-roots-analyze` + `bloom-mcp` (call `validate_analysis_input`); and Bloom (consumes
+`schema/*.json`). `sleap-roots-training`
 is a **coordinating writer**: at model promotion it emits the `ModelCard` selection fields as
 wandb artifact metadata (field names must match this contract), so it participates by
 coordination even if it does not import the package.
