@@ -13,8 +13,13 @@ logical scan, both "win" the first-writer race, and dedup would be lost **with n
 anywhere**. The failure is invisible at the call site and only shows up as duplicate rows in Bloom.
 
 Therefore: no cleanups, no "while I'm here" improvements, no signature changes during the port. The
-one required edit is the import (below). Refactors, if any, come in a later change with the tests
-already in place.
+one required edit is the import (below).
+
+**One deliberate exception**, added after adversarial review found it (Decision 8): the sentinel
+hardening. It is *not* a cleanup — it fixes cases where predict's guards let a corrupt value into the
+hash. Parity is preserved **exactly where parity matters**: every well-formed input resolves
+identically (2,268-case differential, zero mismatches). Divergence is confined to inputs where
+predict is provably wrong.
 
 ## Decisions
 
@@ -54,22 +59,25 @@ capability 1:1, making predict#28's eventual spec removal a clean subtraction in
 | --- | --- | --- |
 | `resolve_params` | package `__all__` | the oracle |
 | `SPECIES_NAME_FIELD`, `PLANT_AGE_DAYS_FIELD` | module-public, **not** in `__all__` | Bloom column names |
-| `_PARAM_KEYS` | private | `("species", "mode", "age")` |
+| `_PARAM_KEYS`, `_AGE_TYPES` | private | param keys; the accepted-age-type allowlist |
 | `_ALIASES` | private | species alias seam; ships **empty** |
-| `_is_blank` | private | `None` / `NaN` / blank-string → absent |
-| `_normalize_text` | private | shared strip+lower |
+| `_is_na_sentinel` | private | duck-typed missing-sentinel test (**added**, Decision 8) |
+| `_is_blank` | private | `None` / missing sentinel / blank-string → absent |
+| `_normalize_text` | private | shared strip+lower; rejects non-`str` (**hardened**, Decision 8) |
 | `_normalize_species`, `_normalize_mode` | private | delegate to `_normalize_text` |
 | `_mode_for_scan` | private | the single mode-decision point |
-| `_coerce_age` | private | whole-number `int` coercion |
+| `_coerce_age` | private | whole-number `int` coercion; type allowlist + finiteness (**hardened**, Decision 8) |
 | `_canonicalize_text` | private | in-place normalize-or-drop |
 
 `_normalize_text`, `_mode_for_scan`, `_PARAM_KEYS`, and the two field constants are **absent from
 issue #15's summary** but present in the live file; the constants are asserted by a ported test. The
 module-public/not-in-`__all__` split mirrors predict exactly.
 
-### 5. Test port: 32 verbatim, 2 dropped, 2 added
+### 5. Test port: 32 verbatim, 2 dropped, 18 added
 
-Predict's suite has **34** test functions (several parametrized). Contracts ends with 34 as well.
+Predict's suite has **34** test functions (several parametrized). Contracts ends with **50**. The 32
+shared tests have **AST-identical bodies** to upstream (docstrings ignored), so port fidelity is
+mechanically checkable rather than asserted.
 
 - **Dropped (2):** the `choose_models(resolve_params(row), cards)` round-trips. `choose_models` does
   not exist here (it is #13). They stay in predict, where the predicate lives and where an
@@ -78,10 +86,13 @@ Predict's suite has **34** test functions (several parametrized). Contracts ends
   **Hand-off hazard:** predict#28 must *re-point*, not delete, those two tests. They are the only
   remaining assertion of the metadata → params → model wiring, and deleting
   `test_param_resolution.py` wholesale would drop that coverage from **both** repos silently. This is
-  recorded as a checklist line in `tasks.md` §7.2.
+  recorded as a checklist line in `tasks.md` §8.2.
 - **Kept:** `test_mode_matches_seeded_card_vocabulary` — needs only `ModelCard`, which contracts has,
   so the mode↔card vocabulary coupling stays asserted here.
-- **Added (2):** `resolve_params` in `__all__`; and a **known-answer `param_hash` anchor**.
+- **Added (18):** `resolve_params` in `__all__`; a **known-answer `param_hash` anchor**; the
+  blank-age-override drop path (dead in both suites); and 15 covering the sentinel hardening of
+  Decision 8, including regression guards that `numpy.int64`/`numpy.float64`/`numpy.str_` and very
+  large ints keep working.
 
 On the anchor: predict's suite only ever compares hashes to *each other*. Because both repos
 construct `ResolvedParams` from this same package, identical `values` already imply an identical
@@ -155,6 +166,59 @@ while bloom#411 waits. This change therefore adds `uv lock --check` to PR `ci.ym
 addition; the repo's memory records this trap already breaking a release). The lock bump remains
 mandatory either way.
 
+### 8. Sentinel hardening — a deliberate, specced divergence from predict
+
+Adversarial review of the PR found that predict's guards are written against **Python** types
+(`float` NaN, `bool`), while the documented input is a **pandas-parsed CSV row**. pandas/numpy native
+scalars slip past them:
+
+| Input | predict (and the naive port) | Severity |
+| --- | --- | --- |
+| `pandas.NA` / `NaT` species | `str()` → `species="<na>"`, **silently hashed** | silent hash corruption |
+| `numpy.bool_(True)` age | `int()` → `age=1`, **silently hashed** | silent hash corruption |
+| non-string species (`123`) | `str()` → `"123"`, **silently hashed** | silent hash corruption |
+| `Decimal("14.5")` age | truncates to `14`, **silently hashed** | silent hash corruption |
+| `float("inf")` age | uncaught `OverflowError` | wrong exception type |
+
+`pandas.NA` is reachable from ordinary consumer code: a `DataFrame` with nullable/arrow dtypes
+iterated via `iterrows()` yields a raw `pandas.NA`. (The bloomcli path — `read_csv` with default
+dtypes → `to_dict("records")` — is safe today, and `to_dict` coerces `NA` to `None`.)
+
+**Why fix it here rather than defer.** Contracts is now the single source of truth, and `bloomctl`
+(bloom#411) is a *new* consumer about to adopt it. Shipping a known silent-corruption path to a new
+consumer, to preserve bug-for-bug parity with an implementation that predict#28 deletes anyway, is
+the wrong trade. The spec already promised the correct behavior ("a non-string sentinel such as a
+`NaN`" is treated as absent) — the implementation simply didn't deliver it, so this closes a
+spec/impl gap rather than changing the contract.
+
+**How the idempotency guarantee survives.** The differential against predict is partitioned:
+
+- **Well-formed inputs (2,268 cases): zero mismatches.** Identical `values`, `param_hash`, exception
+  type, and exception message. Any input a correct producer emits hashes identically in both.
+- **Malformed sentinels (10 cases): contracts raises `ValueError`; predict does not.** Divergence
+  occurs only where predict silently corrupts the hash or raises the wrong exception — i.e. only on
+  rows that should never have produced an `idempotency_key` at all.
+
+So no scan that predict resolved *correctly* resolves differently here. The rows that change are the
+rows predict was getting wrong.
+
+**Implementation notes** (each verified by probe, not assumed):
+
+- Sentinel detection is duck-typed on self-inequality, because pandas is an optional extra and must
+  not be imported. `NaN`, `numpy.float64("nan")`, `Decimal("NaN")`, and `NaT` all satisfy
+  `value != value`; `pandas.NA` instead raises `TypeError` on truth-testing, which is treated as
+  positive evidence of a sentinel.
+- Age types are an **allowlist**, not a denylist: `numpy.bool_` is not a subclass of `bool`, `int`,
+  `numbers.Integral`, or `numbers.Real`, so `isinstance(x, bool)` alone cannot exclude it. The
+  allowlist admits `numpy.int64` (via `numbers.Integral`) and `numpy.float64` (via `float`), which a
+  naive `(int, float, str)` allowlist would have wrongly rejected — real pandas columns produce both.
+- The finiteness check is gated on `float`, **not** `numbers.Real`: `math.isfinite(10**400)` raises
+  `OverflowError` converting a large int to float. Gating on `Real` would reintroduce, on a different
+  path, the exact exception the check exists to eliminate. This was caught by a regression test after
+  the first implementation attempt did precisely that.
+- `inf` is **not** blank. An infinite age is a bad value, not a missing one, so it is rejected rather
+  than silently dropped and re-reported as "missing".
+
 ## Commit grouping
 
 Each commit is green on its own. Never commit a bare RED step. Prefixes follow this repo's real
@@ -180,9 +244,11 @@ predecessors (#8 `(v0.1.0a2)`, #10 `(v0.1.0a3)`). The OpenSpec archive is a **se
 | Risk | Mitigation |
 | --- | --- |
 | Silent behavioral drift from predict breaks `idempotency_key` | Port verbatim; 32 ported tests + a golden `param_hash` anchor captured pre-change |
-| Forgotten `uv.lock` bump passes PR CI, fails the release build | Task 3.5 adds `uv lock --check` to PR `ci.yml`; task 5.1 also runs it locally |
+| Forgotten `uv.lock` bump passes PR CI, fails the release build | Task 3.5 adds `uv lock --check` to PR `ci.yml`; task 6.1 also runs it locally |
 | Regenerating the schema without `uv sync` re-emits the old `$id`, drift guard green-but-wrong | Task 3.2 chains `uv sync && … schema`; PR CI regenerates from a fresh install and would catch it |
 | Reviewer reads "no schema change" and skips regeneration | Spec, proposal, and design all state the `$id`-only restamp explicitly; drift guard enforces it |
 | Two copies of the oracle coexist during the predict#28 window | Expected and bounded; contracts is declared the source of truth, predict deletes its copy on re-pin |
 | predict#28 deletes the round-trip tests wholesale, silently dropping metadata→params→model coverage from both repos | Explicit "re-point, do NOT delete" checklist line in `tasks.md` §7.2 |
 | The golden digest is duplicated across docs and drifts | The literal lives only in the spec's known-answer requirement; all other docs point at it |
+| Sentinel hardening silently changes a hash for a well-formed input | Partitioned differential: 2,268 well-formed cases identical to predict; divergence only where predict corrupts |
+| Hardening diverges contracts from predict during the #28 window | Bounded and intentional: only on rows predict resolves *wrongly*; predict adopts the fix by importing on #28 |

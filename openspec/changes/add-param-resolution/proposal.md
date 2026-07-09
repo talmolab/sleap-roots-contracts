@@ -27,7 +27,8 @@ program tracker talmolab/sleap-roots-pipeline#14).
 
 - Add a new **`param-resolution` capability** implemented in a new pure module
   `src/sleap_roots_contracts/params.py`, ported from predict's implementation at HEAD with
-  **behavior identical byte-for-byte**:
+  **behavior identical on every well-formed input** (2,268-case differential, zero mismatches), plus
+  a deliberate, specced **sentinel hardening** where predict is provably wrong (see below):
   - `resolve_params(metadata, overrides=None) -> ResolvedParams` — exported from the package root
     (`__all__`), giving drop-in parity with `ResolvedParams` so predict and `bloomctl` swap the
     import with **no call-site changes**.
@@ -52,6 +53,17 @@ program tracker talmolab/sleap-roots-pipeline#14).
   DB/network/filesystem I/O. The library stays **code-agnostic** toward Bloom but is no longer
   **vocabulary**-agnostic, so the bare adjective "Bloom-agnostic" is corrected **in place** in both
   files rather than merely qualified further down.
+- **Harden the pandas/numpy missing-data sentinels** (found by adversarial review of the PR).
+  Predict's guards are written against Python types (`float` NaN, `bool`), but the documented input is
+  a pandas-parsed CSV row. `pandas.NA`/`NaT` species is stringified to `"<na>"` and **silently
+  hashed**; `numpy.bool_(True)` age silently becomes `age=1`; a non-string species becomes `"123"`;
+  `Decimal("14.5")` truncates to `14`; `float("inf")` age raises an uncaught `OverflowError`. All are
+  silent `param_hash` corruption or a wrong exception type. Contracts rejects them with a
+  `ValueError` naming the field. The spec already promised this ("a non-string sentinel such as a
+  `NaN`" is treated as absent), so this closes a spec/implementation gap rather than changing the
+  contract. `bloomctl` is a **new** consumer about to adopt this oracle; shipping it a known
+  silent-corruption path to preserve bug-for-bug parity with a copy predict#28 deletes anyway is the
+  wrong trade. Detection is duck-typed so pandas is never imported (it is an optional extra).
 - Add a `uv lock --check` step to PR `ci.yml` (approved scope addition). Today a stale `uv.lock`
   passes PR CI (non-frozen `uv sync`) and only hard-fails at release in `build.yml` — after merge,
   while bloom#411 waits. This change bumps the version, so it is precisely the change that trips that

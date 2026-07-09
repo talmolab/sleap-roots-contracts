@@ -6,15 +6,23 @@ Real, no-mock, offline tests. ``resolve_params`` maps a single Bloom
 a ``ModelCard`` from real Bloom metadata.
 
 Ported from ``sleap-roots-predict/tests/test_param_resolution.py`` (predict#18),
-which remains the behavioral oracle: the resolved values feed
-``ResolvedParams.param_hash`` -> ``Provenance.idempotency_key``, so any drift
-between the two implementations would silently break cross-producer idempotency.
-The two ``choose_models`` round-trip tests are intentionally NOT ported --
-``choose_models`` lives in predict (contracts issue #13); they stay there.
+which was the behavioral oracle for every well-formed input: the resolved values
+feed ``ResolvedParams.param_hash`` -> ``Provenance.idempotency_key``, so drift
+between implementations would silently break cross-producer idempotency. The two
+``choose_models`` round-trip tests are intentionally NOT ported -- ``choose_models``
+lives in predict (contracts issue #13); they stay there.
+
+The final section covers a **deliberate, specced divergence** from predict: the
+pandas/numpy missing-data sentinels (``pd.NA``, ``pd.NaT``, ``np.bool_``) and
+non-finite ages that predict's Python-type guards let through, silently corrupting
+``param_hash`` or raising an uncaught ``OverflowError``. Contracts rejects them.
 """
 
 import math
+from decimal import Decimal
 
+import numpy as np
+import pandas as pd
 import pytest
 from sleap_roots_contracts import ModelCard, ResolvedParams
 
@@ -25,6 +33,7 @@ from sleap_roots_contracts.params import (
     PLANT_AGE_DAYS_FIELD,
     SPECIES_NAME_FIELD,
     _coerce_age,
+    _is_blank,
     _mode_for_scan,
     _normalize_mode,
     _normalize_species,
@@ -362,3 +371,141 @@ def test_canonical_row_hashes_to_known_answer():
     params = resolve_params(_row(species_name="Pennycress", plant_age_days=14))
     assert params.values == {"species": "pennycress", "mode": "cylinder", "age": 14}
     assert params.param_hash == _CANONICAL_PARAM_HASH
+
+
+# --- pandas/numpy sentinel hardening ---------------------------------------
+#
+# A deliberate, specced divergence from predict's implementation. Predict guards
+# against PYTHON types (float NaN, bool), but the documented input is a
+# pandas-parsed CSV row, and pandas/numpy native scalars slip past those guards:
+#   * pd.NA / pd.NaT species -> str() -> species="<na>" / "nat", SILENTLY hashed
+#   * np.bool_(True) age     -> int() -> age=1, SILENTLY hashed
+#   * float("inf") age       -> uncaught OverflowError, not the contract ValueError
+# Each is a silent param_hash corruption or a wrong exception type. Contracts is
+# now the single source of truth, so it rejects them here.
+
+
+def test_is_blank_recognizes_pandas_and_numpy_missing_sentinels():
+    """Every missing-data sentinel a pandas row can carry reads as absent."""
+    for sentinel in (None, math.nan, np.float64("nan"), pd.NA, pd.NaT, Decimal("NaN")):
+        assert _is_blank(sentinel) is True, sentinel
+
+
+def test_is_blank_does_not_swallow_real_values():
+    """Real values -- including infinities and zero -- are never 'blank'."""
+    for value in (0, 0.0, 14, "rice", float("inf"), float("-inf"), np.int64(3)):
+        assert _is_blank(value) is False, value
+
+
+@pytest.mark.parametrize("sentinel", [pd.NA, pd.NaT])
+def test_pandas_na_species_is_missing_not_stringified(sentinel):
+    """pd.NA/pd.NaT species is treated as absent, never stringified to '<na>'."""
+    with pytest.raises(ValueError, match="species"):
+        resolve_params(_row(species_name=sentinel, plant_age_days=21))
+
+
+@pytest.mark.parametrize("sentinel", [pd.NA, pd.NaT])
+def test_pandas_na_age_is_missing_not_a_coercion_error(sentinel):
+    """pd.NA/pd.NaT age is treated as absent (missing), like a blank cell."""
+    with pytest.raises(ValueError, match="Missing required scan param"):
+        resolve_params(_row(species_name="Rice", plant_age_days=sentinel))
+
+
+def test_numpy_bool_age_is_rejected_like_a_python_bool():
+    """np.bool_ is not a bool subclass; it must not coerce to age=1."""
+    with pytest.raises(ValueError, match="age"):
+        _coerce_age(np.bool_(True))
+    with pytest.raises(ValueError, match="age"):
+        resolve_params(_row(species_name="Rice", plant_age_days=np.bool_(True)))
+
+
+@pytest.mark.parametrize("nonfinite", [float("inf"), float("-inf")])
+def test_non_finite_age_raises_valueerror_not_overflowerror(nonfinite):
+    """An inf age raises the contract's ValueError, not an uncaught OverflowError."""
+    with pytest.raises(ValueError, match="age"):
+        _coerce_age(nonfinite)
+    with pytest.raises(ValueError, match="age"):
+        resolve_params(_row(species_name="Rice", plant_age_days=nonfinite))
+
+
+def test_fractional_decimal_age_is_not_silently_truncated():
+    """Decimal('14.5') must not truncate to 14 (the whole-float guard misses it)."""
+    with pytest.raises(ValueError, match="age"):
+        _coerce_age(Decimal("14.5"))
+
+
+@pytest.mark.parametrize("bad_species", [123, [1, 2], 4.5])
+def test_non_string_species_is_rejected_not_stringified(bad_species):
+    """A non-blank, non-string species raises rather than becoming '123'/'[1, 2]'."""
+    with pytest.raises(ValueError, match="species"):
+        _normalize_species(bad_species)
+
+
+def test_non_string_mode_override_is_rejected():
+    """A non-string mode override raises rather than being stringified."""
+    with pytest.raises(ValueError, match="mode"):
+        resolve_params(_row(), overrides={"mode": 7})
+
+
+# --- numpy scalars that MUST keep working (regression guards) ---------------
+
+
+def test_numpy_integer_age_still_coerces():
+    """np.int64 is not a Python int but is a real age -- a pandas int column."""
+    result = _coerce_age(np.int64(14))
+    assert result == 14
+    assert isinstance(result, int)
+
+
+def test_numpy_whole_float_age_still_coerces():
+    """np.float64(14.0) -- a pandas float column with a NaN gap -- still coerces."""
+    assert _coerce_age(np.float64(14.0)) == 14
+
+
+def test_numpy_fractional_float_age_still_raises():
+    """np.float64(14.5) is still rejected by the whole-number guard."""
+    with pytest.raises(ValueError, match="age"):
+        _coerce_age(np.float64(14.5))
+
+
+def test_numpy_string_species_still_normalizes():
+    """np.str_ subclasses str, so a pandas string column normalizes normally."""
+    assert _normalize_species(np.str_("  Rice ")) == "rice"
+
+
+# --- the reachability path that motivated the hardening ---------------------
+
+
+def test_nullable_dtype_row_via_iterrows_fails_loud():
+    """The real corruption path: nullable dtypes + iterrows() yields pd.NA.
+
+    With numpy-backed dtypes a missing cell arrives as float NaN (caught), and
+    ``to_dict('records')`` coerces pd.NA to None (caught). Only a nullable/arrow
+    dtype reached through a Series leaks a raw pd.NA -- which predict resolves to
+    species='<na>' and hashes. It must fail loud instead.
+    """
+    frame = pd.DataFrame(
+        {
+            SPECIES_NAME_FIELD: pd.array(["rice", None], dtype="string"),
+            PLANT_AGE_DAYS_FIELD: pd.array([14, 21], dtype="Int64"),
+        }
+    )
+    rows = [dict(row) for _, row in frame.iterrows()]
+
+    good = resolve_params(rows[0])
+    assert good.values == {"species": "rice", "mode": "cylinder", "age": 14}
+
+    assert rows[1][SPECIES_NAME_FIELD] is pd.NA  # the leaked sentinel
+    with pytest.raises(ValueError, match="species"):
+        resolve_params(rows[1])
+
+
+def test_very_large_int_age_is_not_rejected_by_the_finiteness_guard():
+    """A huge int age still coerces: ints are always finite.
+
+    Regression guard. ``math.isfinite(10**400)`` raises ``OverflowError`` (the int
+    cannot convert to float), so gating finiteness on ``numbers.Real`` rather than
+    ``float`` would crash on a large int -- reintroducing, on a different path, the
+    very exception the finiteness check exists to eliminate.
+    """
+    assert _coerce_age(10**400) == 10**400

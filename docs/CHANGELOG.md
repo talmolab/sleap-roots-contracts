@@ -34,6 +34,23 @@ Promotes the param-resolution oracle from `sleap-roots-predict` into this librar
   `PLANT_AGE_DAYS_FIELD` are module-public (so consumers can reference them) but are
   deliberately not part of the package `__all__`.
 
+### Fixed
+- **`resolve_params` rejects pandas/numpy missing-data sentinels instead of silently hashing
+  them.** The oracle's guards were written against Python types, but its documented input is a
+  pandas-parsed CSV row. A `pandas.NA`/`NaT` species was stringified to `"<na>"`, a
+  `numpy.bool_(True)` age became `1`, a non-string species became `"123"`, and a fractional
+  `decimal.Decimal` truncated — each **silently folded into `param_hash` → `idempotency_key`**
+  with no error raised. A `float("inf")` age raised an uncaught `OverflowError` rather than the
+  documented `ValueError`. All now raise a `ValueError` naming the offending field.
+
+  Behavior is **unchanged for every well-formed input** — verified by a 2,268-case differential
+  against the originating implementation showing identical `values`, `param_hash`, exception type,
+  and exception message. Only rows that previously produced a corrupt hash (or the wrong exception)
+  behave differently. Sentinel detection is duck-typed, so pandas is still never imported.
+
+  Note `sleap-roots-predict` continues to carry the unhardened copy until it consumes this one
+  (predict#28).
+
 ### Changed
 - Both emitted schemas are regenerated and their `$id` advances to `v0.1.0a4`. This is a
   **bytes-only restamp**: no properties are added, removed, or altered (`resolve_params` is a

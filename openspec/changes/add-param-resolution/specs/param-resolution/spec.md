@@ -8,12 +8,12 @@ bloomcli's download writes to `scans.csv`) to a `ResolvedParams` carrying `speci
 `age`. It SHALL read the load-bearing fields via module constants matching bloomcli's column names:
 `species_name` → `species` (normalized), the scan's scanner → `mode` (via the imaging-mode seam),
 and `plant_age_days` → `age`. A load-bearing field that is **absent or blank** (missing key, `None`,
-a non-string sentinel such as a `NaN`, or an empty/whitespace-only string) SHALL be treated as not
-provided — the function SHALL omit that derived param (deferring to `overrides` and then to
-post-override validation) rather than raising at read time or emitting a blank param. It SHALL
-construct `ResolvedParams(values=…)` so the contract computes `param_hash`. The function SHALL be
-pure: it SHALL perform no network access and no filesystem I/O, and SHALL NOT mutate the input
-`metadata`.
+a missing-data sentinel per the sentinel requirement below, or an empty/whitespace-only string)
+SHALL be treated as not provided — the function SHALL omit that derived param (deferring to
+`overrides` and then to post-override validation) rather than raising at read time or emitting a
+blank param. It SHALL construct `ResolvedParams(values=…)` so the contract computes `param_hash`.
+The function SHALL be pure: it SHALL perform no network access and no filesystem I/O, and SHALL NOT
+mutate the input `metadata`.
 
 This is the library's single **soft, documented** coupling to Bloom's column vocabulary: dict keys
 only, hoisted into module constants so the cross-repo coupling is explicit and greppable. It
@@ -47,6 +47,54 @@ pure, dependency-light leaf.
 - **THEN** `resolve_params` raises a `ValueError` naming `species` (the blank is treated as missing,
   not resolved to an empty species)
 
+### Requirement: Missing-Data Sentinel Recognition
+
+The library SHALL treat all of the following as an **absent** load-bearing field: `None`; a float
+`NaN` (including `numpy.float64("nan")`); a `decimal.Decimal("NaN")`; pandas' `NaT`; pandas' `NA`;
+and an empty or whitespace-only string. The documented input is a **pandas-parsed CSV row**, so a
+missing cell may arrive as any of these depending on dtype backend and access pattern.
+
+The check SHALL NOT import pandas — pandas is an optional extra of this library, and the runtime
+core must stay dependency-light. It SHALL instead be duck-typed on self-inequality (`value != value`
+is true for every such sentinel), treating the `TypeError` that `pandas.NA` raises on truth-testing
+as positive evidence of a sentinel rather than as an error.
+
+An infinity SHALL NOT be treated as absent: an infinite age is a **bad** value, not a missing one,
+and is rejected by the age requirement rather than silently dropped.
+
+Rationale: predict's implementation guards only Python `float` `NaN`, so a `pandas.NA` species is
+stringified to `"<na>"` and hashed into `param_hash` → `idempotency_key` with **no error raised**.
+That is silent cross-producer idempotency corruption, which this capability exists to prevent.
+
+#### Scenario: Every pandas/numpy missing sentinel reads as absent
+
+- **WHEN** `_is_blank` is called with `None`, `float("nan")`, `numpy.float64("nan")`,
+  `decimal.Decimal("NaN")`, `pandas.NaT`, or `pandas.NA`
+- **THEN** it returns `True` for each
+
+#### Scenario: Real values, including infinities, are never absent
+
+- **WHEN** `_is_blank` is called with `0`, `0.0`, `14`, `"rice"`, `float("inf")`, or `float("-inf")`
+- **THEN** it returns `False` for each
+
+#### Scenario: A pandas NA species is missing, not stringified
+
+- **WHEN** a row carries `species_name` of `pandas.NA` or `pandas.NaT`
+- **THEN** `resolve_params` raises a `ValueError` naming `species`, and the resolved species is never
+  the string `"<na>"` or `"nat"`
+
+#### Scenario: A pandas NA age is missing rather than a coercion error
+
+- **WHEN** a row carries `plant_age_days` of `pandas.NA`
+- **THEN** `resolve_params` raises a `ValueError` reporting `age` as a **missing** required param,
+  not as a "not a whole number" coercion failure
+
+#### Scenario: The nullable-dtype Series path fails loud
+
+- **WHEN** a row is obtained by iterating a `DataFrame` with nullable/arrow dtypes (e.g. via
+  `iterrows()`), so that a missing `species_name` arrives as a raw `pandas.NA`
+- **THEN** `resolve_params` raises a `ValueError` naming `species` rather than resolving
+
 ### Requirement: Species Name Normalization
 
 The library SHALL normalize the Bloom `species_name` to the `ModelCard` species vocabulary via
@@ -57,6 +105,12 @@ their stripped, lowercased form (**lowercase passthrough fallback**). Unknown sp
 through rather than being rejected or dropped — the registry/`ModelCard`s are the single authority on
 which species have models, so an unmodelled species degrades to a downstream selection zero-match
 (skip), not a resolver error. The resolver SHALL NOT maintain a whitelist or hard-fail on species.
+
+A `species_name` that is present, non-blank, and **not a string** SHALL raise a `ValueError` naming
+`species`, rather than being stringified. Every legitimate species is text, so coercing a stray
+number or sentinel via `str(value)` would mint a plausible-looking param (`123` → `"123"`) and hash
+it into `idempotency_key` with no error. `numpy.str_` subclasses `str`, so pandas string columns pass
+through normally. The same rule applies to a non-string `mode`.
 
 #### Scenario: A seeded species normalizes to the card vocabulary
 
@@ -83,6 +137,16 @@ which species have models, so an unmodelled species degrades to a downstream sel
 - **WHEN** the (normally empty) alias map is populated with `"thlaspi arvense" -> "pennycress"` and
   `species_name` is `"Thlaspi arvense"`
 - **THEN** the resolved `species` is `"pennycress"`
+
+#### Scenario: A non-string species is rejected, not stringified
+
+- **WHEN** `_normalize_species` is called with `123`, `4.5`, or `[1, 2]`
+- **THEN** it raises a `ValueError` naming `species`, and never returns `"123"` or `"[1, 2]"`
+
+#### Scenario: A numpy string species normalizes normally
+
+- **WHEN** `_normalize_species` is called with `numpy.str_("  Rice ")`
+- **THEN** it returns `"rice"` (a `numpy.str_` is a `str`)
 
 ### Requirement: Imaging Mode Resolution Seam
 
@@ -121,6 +185,21 @@ SHALL raise a `ValueError` naming `age`, rather than silently truncating. A whol
 as produced when pandas coerces a NaN-containing numeric column) SHALL coerce cleanly to `int`. A
 resolved `age` of `0` SHALL be valid (validation checks key presence, not truthiness).
 
+Accepted types SHALL be defined by an **allowlist**, not a denylist: `int` (excluding `bool`),
+`numbers.Integral` (admitting `numpy.int64` from a pandas int column), `float` / `numbers.Real`
+(admitting `numpy.float64`), and `str`. A denylist is insufficient because `numpy.bool_` is **not** a
+subclass of `bool`, `int`, `numbers.Integral`, or `numbers.Real`, so an `isinstance(value, bool)`
+guard alone lets it through and `int(numpy.bool_(True))` silently yields the plausible age `1`.
+`decimal.Decimal` falls outside the allowlist and SHALL be rejected: it never arrives from
+CSV/pandas, and a fractional `Decimal` bypasses the whole-number float guard and truncates.
+
+A non-finite age (`inf`, `-inf`) SHALL raise a `ValueError` naming `age`. It SHALL NOT propagate the
+`OverflowError` that `int(float("inf"))` raises, which is not the exception this contract promises
+and which a caller filtering bad rows with `except ValueError` would not catch. The finiteness check
+SHALL be gated on `float` rather than `numbers.Real`, because `math.isfinite` raises `OverflowError`
+on a very large `int` — gating it on `Real` would reintroduce, on a different path, the very
+exception it exists to eliminate. A very large `int` age SHALL therefore still resolve.
+
 #### Scenario: An integer age passes through as days
 
 - **WHEN** the row's `plant_age_days` is `14`
@@ -146,6 +225,31 @@ resolved `age` of `0` SHALL be valid (validation checks key presence, not truthi
 
 - **WHEN** the row's `plant_age_days` is `0`
 - **THEN** the resolved `age` is `0` and resolution succeeds (0 is not treated as missing)
+
+#### Scenario: A numpy bool age is rejected like a Python bool
+
+- **WHEN** `_coerce_age` is called with `numpy.bool_(True)`
+- **THEN** it raises a `ValueError` naming `age`, and never returns `1`
+
+#### Scenario: A non-finite age raises ValueError, not OverflowError
+
+- **WHEN** the row's `plant_age_days` is `float("inf")` or `float("-inf")`
+- **THEN** `resolve_params` raises a `ValueError` naming `age` (not an `OverflowError`)
+
+#### Scenario: A fractional Decimal age is not silently truncated
+
+- **WHEN** `_coerce_age` is called with `decimal.Decimal("14.5")`
+- **THEN** it raises a `ValueError` naming `age`, and never returns `14`
+
+#### Scenario: Numpy integer and whole-float ages still coerce
+
+- **WHEN** `_coerce_age` is called with `numpy.int64(14)` or `numpy.float64(14.0)`
+- **THEN** it returns the integer `14` in both cases
+
+#### Scenario: A very large integer age still resolves
+
+- **WHEN** `_coerce_age` is called with an integer too large to convert to a float (e.g. `10**400`)
+- **THEN** it returns that integer, rather than raising from the finiteness check
 
 #### Scenario: A blank age is treated as not provided
 
@@ -202,6 +306,11 @@ field is dropped, deferring to the post-override validation requirement below.
 
 - **WHEN** `resolve_params(row, overrides={"mode": ""})` is called
 - **THEN** it raises a `ValueError` whose message names `mode`
+
+#### Scenario: A non-string mode override is rejected
+
+- **WHEN** `resolve_params(row, overrides={"mode": 7})` is called
+- **THEN** it raises a `ValueError` naming `mode`, rather than resolving `mode` to `"7"`
 
 #### Scenario: A blank age override drops the derived age
 

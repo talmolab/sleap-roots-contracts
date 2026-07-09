@@ -17,9 +17,16 @@ Note the library's single **soft** coupling to Bloom's column vocabulary: the
 load-bearing field names below are dict keys, hoisted into module constants so
 the cross-repo coupling is explicit and greppable. There is no Bloom import and
 no DB, network, or filesystem dependency -- this stays a dependency-light leaf.
+
+The documented input is a *pandas-parsed* CSV row, so the guards here are written
+against pandas/numpy scalars as well as Python builtins: a ``pandas.NA`` species
+or a ``numpy.bool_`` age must fail loud rather than be coerced into a plausible
+param and hashed. Sentinel detection is duck-typed rather than importing pandas,
+which is an optional extra of this library.
 """
 
 import math
+import numbers
 from typing import Any, Callable, Dict, Optional
 
 from .models import ResolvedParams
@@ -28,6 +35,14 @@ from .models import ResolvedParams
 # constants so the cross-repo coupling to bloomcli's schema is explicit/greppable.
 SPECIES_NAME_FIELD = "species_name"
 PLANT_AGE_DAYS_FIELD = "plant_age_days"
+
+# The types an age may arrive as. An allowlist, not a denylist: ``numpy.bool_`` is
+# NOT a ``bool``/``int``/``numbers.Integral``, so a denylist of ``bool`` lets it
+# through and ``int(np.bool_(True))`` silently yields age 1. ``numbers.Integral``
+# admits ``numpy.int64`` (a pandas int column) and ``numbers.Real`` admits
+# ``numpy.float64``; ``decimal.Decimal`` is deliberately excluded (it is neither,
+# never arrives from CSV/pandas, and would bypass the whole-number float guard).
+_AGE_TYPES = (int, float, str, numbers.Integral, numbers.Real)
 
 # The resolvable param space; overrides are restricted to these keys.
 _PARAM_KEYS = ("species", "mode", "age")
@@ -39,37 +54,77 @@ _PARAM_KEYS = ("species", "mode", "age")
 _ALIASES: Dict[str, str] = {}
 
 
+def _is_na_sentinel(value: Any) -> bool:
+    """Return True for a missing-data sentinel, without importing pandas.
+
+    Every such sentinel compares unequal to itself: ``float("nan")``,
+    ``numpy.float64("nan")``, ``decimal.Decimal("NaN")``, and ``pandas.NaT`` all
+    return ``True`` from ``value != value``. ``pandas.NA`` is the exception — its
+    self-inequality is itself ``NA``, whose truth value is ambiguous and raises
+    ``TypeError``. That raise is therefore *positive* evidence of an NA sentinel,
+    not an error.
+
+    Duck-typed on purpose: pandas is an optional extra of this library, so the
+    check must not import it, yet a ``pandas`` row is the documented input shape.
+    """
+    try:
+        return bool(value != value)
+    except TypeError:
+        return True
+
+
 def _is_blank(value: Any) -> bool:
-    """Return True for absent-like values: ``None``, ``NaN``, or a blank string.
+    """Return True for absent-like values: ``None``, a missing sentinel, or a blank string.
 
     Bloom metadata read from ``scans.csv`` may present a missing cell as an empty
-    string (``csv``) or a ``NaN`` (``pandas`` coerces a numeric column with any
-    gap to ``float``), so both — plus whitespace-only strings — are treated the
-    same as an absent key.
+    string (``csv``), a ``NaN`` (``pandas`` coerces a numeric column with any gap
+    to ``float``), or — with nullable/arrow dtypes reached through a ``Series`` —
+    a ``pandas.NA``/``pandas.NaT``. All of these, plus whitespace-only strings,
+    are treated the same as an absent key.
+
+    Note ``inf`` is NOT blank: an infinite age is a *bad* value, not a missing
+    one, and is rejected by ``_coerce_age`` rather than silently dropped.
     """
-    if value is None or (isinstance(value, float) and math.isnan(value)):
+    if value is None or _is_na_sentinel(value):
         return True
     return isinstance(value, str) and value.strip() == ""
 
 
-def _normalize_text(value: Any) -> str:
-    """Strip and lowercase a text value; blank/``None``/``NaN`` -> ``""``."""
+def _normalize_text(value: Any, field: str) -> str:
+    """Strip and lowercase a text value; blank/``None``/missing sentinel -> ``""``.
+
+    A present but non-string value raises rather than being stringified. Every
+    legitimate species and mode is text, so ``str(value)`` on a stray sentinel or
+    number would mint a plausible-looking param (``pandas.NA`` -> ``"<na>"``,
+    ``123`` -> ``"123"``) and hash it into ``idempotency_key`` with no error —
+    silent corruption. ``numpy.str_`` subclasses ``str``, so pandas string columns
+    pass through normally.
+
+    Raises:
+        ValueError: If ``value`` is present, non-blank, and not a string.
+    """
     if _is_blank(value):
         return ""
-    return str(value).strip().lower()
+    if not isinstance(value, str):
+        raise ValueError(f"Scan param {field!r} must be a string, got {value!r}")
+    return value.strip().lower()
 
 
 def _normalize_species(name: Any) -> str:
     """Normalize a Bloom species_name to the ModelCard species vocabulary.
 
     Strips and lowercases the name, then applies the (lowercase-keyed) alias
-    map with a lowercase passthrough fallback. Blank, ``None``, or non-string
-    (e.g. ``NaN``) inputs normalize to ``""`` so callers can treat them as not
-    provided. Unknown species pass through rather than being rejected: the
-    ``ModelCard`` registry is the single authority on which species have models,
-    so an unmodelled species degrades to a selection zero-match, not an error.
+    map with a lowercase passthrough fallback. Blank, ``None``, or missing-sentinel
+    (``NaN``, ``pandas.NA``/``NaT``) inputs normalize to ``""`` so callers can
+    treat them as not provided. Unknown species pass through rather than being
+    rejected: the ``ModelCard`` registry is the single authority on which species
+    have models, so an unmodelled species degrades to a selection zero-match, not
+    an error.
+
+    Raises:
+        ValueError: If ``name`` is present, non-blank, and not a string.
     """
-    key = _normalize_text(name)
+    key = _normalize_text(name, "species")
     return _ALIASES.get(key, key)
 
 
@@ -79,8 +134,11 @@ def _normalize_mode(mode: Any) -> str:
     Mirrors ``_normalize_species`` so a derived mode and an override mode
     canonicalize identically (representation-independent ``param_hash``). The
     seeded modes (``cylinder``, ``multiplant cylinder``) are already lowercase.
+
+    Raises:
+        ValueError: If ``mode`` is present, non-blank, and not a string.
     """
-    return _normalize_text(mode)
+    return _normalize_text(mode, "mode")
 
 
 def _mode_for_scan(metadata: Dict[str, Any]) -> str:
@@ -97,17 +155,33 @@ def _mode_for_scan(metadata: Dict[str, Any]) -> str:
 def _coerce_age(raw_age: Any) -> int:
     """Coerce a plant_age_days value to a whole number of days (int).
 
-    Accepts an int or an int-coercible whole-number string; rejects bools,
-    non-whole floats, and non-coercible values with a ``ValueError`` naming
-    ``age`` — so the resolved ``age`` (and therefore ``param_hash``) is never
-    derived from a lossy conversion. Blank/``NaN`` inputs are handled upstream
-    (treated as absent), not here.
+    Accepts an int (including ``numpy.int64``), a finite whole float (including
+    ``numpy.float64``), or an int-coercible whole-number string. Everything else
+    raises a ``ValueError`` naming ``age`` — so the resolved ``age`` (and
+    therefore ``param_hash``) is never derived from a lossy or nonsensical
+    conversion. Blank and missing-sentinel inputs are handled upstream (treated as
+    absent), not here.
+
+    Rejected explicitly, each of which would otherwise resolve silently or crash:
+
+    * ``bool`` and ``numpy.bool_`` — ``int(True)`` is ``1``, a plausible age.
+      ``numpy.bool_`` is not a ``bool`` subclass, so the allowlist, not an
+      ``isinstance(..., bool)`` check alone, is what excludes it.
+    * ``inf`` / ``-inf`` — ``int(float("inf"))`` raises ``OverflowError``, which is
+      not the exception this contract promises.
+    * ``decimal.Decimal`` — outside the allowlist; a fractional ``Decimal`` slips
+      past the whole-number float guard and truncates.
     """
-    if isinstance(raw_age, bool):
+    if isinstance(raw_age, bool) or not isinstance(raw_age, _AGE_TYPES):
+        raise ValueError(f"Scan param 'age' must be a whole number, got {raw_age!r}")
+    # Gate finiteness on ``float`` (which ``numpy.float64`` subclasses), NOT on
+    # ``numbers.Real``: ints are always finite, and ``math.isfinite`` on a very
+    # large int raises OverflowError converting it to float.
+    if isinstance(raw_age, float) and not math.isfinite(raw_age):
         raise ValueError(f"Scan param 'age' must be a whole number, got {raw_age!r}")
     try:
         age = int(raw_age)
-    except (TypeError, ValueError) as e:
+    except (TypeError, ValueError, OverflowError) as e:
         raise ValueError(
             f"Scan param 'age' must be a whole number, got {raw_age!r}"
         ) from e

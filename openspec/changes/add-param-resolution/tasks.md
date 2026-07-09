@@ -23,6 +23,11 @@
 > `param_hash` → `idempotency_key`, so any drift silently breaks cross-producer idempotency with no
 > error raised. Do **not** clean up, rename, re-order, or "improve" the ported logic. The single
 > permitted edit is the `ResolvedParams` import (task 1.2).
+>
+> **The one sanctioned exception is group 5** (sentinel hardening), added after adversarial review of
+> the PR found that predict's Python-type guards let pandas/numpy sentinels corrupt the hash silently.
+> It is verified by a **partitioned** differential: identical to predict on every well-formed input,
+> divergent only where predict is provably wrong. Nothing else in the port may change.
 
 ## 1. Port the oracle (test-first)
 
@@ -101,7 +106,7 @@
       `uv sync` (non-frozen) and stays **green with a stale lock**, while the release `build.yml`
       runs `uv lock --check` + `uv sync --frozen` and **hard-fails** — so a forgotten lock bump first
       surfaces at release, after merge, while bloom#411 waits. Task 3.5 closes that gap permanently.
-      Confirm with `uv lock --check` locally regardless (see 5.1).
+      Confirm with `uv lock --check` locally regardless (see 6.1).
 - [x] 3.4 Update `docs/CHANGELOG.md` (use the **actual release date**, not a placeholder):
       - Add `## [0.1.0a4] - <release date> (Pre-release)` under `[Unreleased]`, opening with a
         one-line intro in house style (a3 does this), e.g. "Promotes the param-resolution oracle from
@@ -164,41 +169,85 @@
 - [x] 4.4 `docs/02-contract-library-plan.md`: its banner says the library "has since evolved
       (v0.1.0a1–a3)" — bump to `a1–a4`. Banner line only; the body stays frozen.
 
-## 5. Verify
+## 5. Sentinel hardening (test-first) — the one sanctioned divergence from predict
 
-- [ ] 5.1 Run `/pre-merge-check`: `black --check`, `ruff check`, full `pytest` + coverage, schema
+> Found by the 4-lens adversarial PR review. Predict guards Python types; the documented input is a
+> pandas-parsed CSV row. Verified reachable, verified silent. See `design.md` Decision 8.
+
+- [x] 5.1 RED: add a sentinel section to `tests/test_params.py` asserting `_is_blank` is `True` for
+      `None`, `NaN`, `numpy.float64("nan")`, `Decimal("NaN")`, `pandas.NaT`, `pandas.NA`, and `False`
+      for `0`, `0.0`, `"rice"`, `inf`, `-inf`, `numpy.int64(3)`; `pandas.NA`/`NaT` species raises
+      naming `species` (never `"<na>"`); `pandas.NA` age is reported **missing**, not "not a whole
+      number"; `numpy.bool_(True)` age raises naming `age` (never `1`); `inf`/`-inf` age raises
+      `ValueError` (not `OverflowError`); `Decimal("14.5")` raises (no truncation); non-string species
+      (`123`, `4.5`, `[1,2]`) and a non-string `mode` override raise. Plus **regression guards** that
+      must keep passing: `numpy.int64(14)` → `14`, `numpy.float64(14.0)` → `14`,
+      `numpy.float64(14.5)` raises, `numpy.str_("  Rice ")` → `"rice"`. Plus the reachability test:
+      a nullable/arrow-dtype `DataFrame` iterated via `iterrows()` leaks a raw `pandas.NA` and must
+      fail loud.
+- [x] 5.2 GREEN: in `params.py` add `_is_na_sentinel` (duck-typed on self-inequality; `pandas.NA`'s
+      `TypeError` on truth-testing is positive evidence — **never import pandas**, it is an optional
+      extra); widen `_is_blank` to use it (but `inf` is NOT blank — a bad value, not a missing one);
+      make `_normalize_text(value, field)` reject a present non-`str` rather than stringify it; give
+      `_coerce_age` an **allowlist** `(int, float, str, numbers.Integral, numbers.Real)` — a denylist
+      cannot exclude `numpy.bool_`, which subclasses none of `bool`/`int`/`Integral`/`Real` — and
+      reject non-finite floats, catching `OverflowError` too.
+- [x] 5.3 REGRESSION CAUGHT: gating the finiteness check on `numbers.Real` makes
+      `math.isfinite(10**400)` raise `OverflowError` — reintroducing the very exception the check
+      removes. Add `test_very_large_int_age_is_not_rejected_by_the_finiteness_guard` (RED), then gate
+      on `float` instead (`numpy.float64` subclasses it). Ints are always finite.
+- [x] 5.4 Verify with a **partitioned differential** against predict at HEAD (both loaded in one
+      process): Partition A (well-formed: species str/blank/case/`numpy.str_`; ages
+      int/str/whole-float/fractional/bool/`numpy.int64`/`numpy.float64`/huge-int/blank; all override
+      shapes) MUST be identical in `values`, `param_hash`, exception type, and message — **0
+      mismatches**. Partition B (the sentinels above) MUST raise `ValueError` in contracts and
+      diverge from predict. Record the case counts in the PR body.
+- [x] 5.5 Update the spec delta: add the **Missing-Data Sentinel Recognition** requirement; tighten
+      **Species Name Normalization** (reject non-string) and **Age Resolution In Days** (allowlist,
+      non-finite, `numpy.bool_`, `Decimal`, large-int). `openspec validate --strict` passes.
+- [x] 5.6 Record the divergence in `design.md` (Decision 8), `proposal.md`, and `docs/CHANGELOG.md`,
+      and note in the CHANGELOG that `sleap-roots-predict` still carries the unhardened copy until
+      predict#28.
+
+## 6. Verify
+
+- [ ] 6.1 Run `/pre-merge-check`: `black --check`, `ruff check`, full `pytest` + coverage, schema
       drift guard green (over **both** schemas). Reinstall (`uv sync`) first so
       `test_smoke.py::test_version_matches_pyproject` sees `0.1.0a4`. **Also run `uv lock --check`**
       (mirrors the release `build.yml`) so a stale `uv.lock` fails here rather than at release.
-- [ ] 5.2 `openspec validate add-param-resolution --strict` passes.
-- [ ] 5.3 Confirm the acceptance criteria from issue #15: the ported suite passes with identical
-      `values` **and** identical `param_hash` vs predict's implementation, and
-      `from sleap_roots_contracts import resolve_params` works at version `0.1.0a4`.
-- [ ] 5.4 Open the PR (single bundled PR: feature + release — matches this repo's precedent, where
+- [ ] 6.2 `openspec validate add-param-resolution --strict` passes.
+- [ ] 6.3 Confirm the acceptance criteria from issue #15 via the **partitioned** differential (group
+      5.4): on every **well-formed** input the ported suite yields identical `values` **and** identical
+      `param_hash` vs predict's implementation (0 mismatches); on the malformed sentinels contracts
+      raises `ValueError` where predict silently corrupts or raises `OverflowError`. And
+      `from sleap_roots_contracts import resolve_params` works at version `0.1.0a4`, verified against
+      the built wheel in an isolated environment.
+- [ ] 6.4 Open the PR (single bundled PR: feature + release — matches this repo's precedent, where
       `v0.1.0a2` (#8) and `v0.1.0a3` (#10) each shipped feature + bump in one squashed PR, and matches
       #15's explicit "cut the release"). Squash-merge title should carry the version like its
       predecessors: `feat: promote resolve_params param-resolution oracle into contracts (v0.1.0a4)`.
 
-## 6. Cut the release (after merge to `main`)
+## 7. Cut the release (after merge to `main`)
 
-- [ ] 6.1 Tag and publish the GitHub Release `v0.1.0a4` on `main`. This is the step that triggers
+- [ ] 7.1 Tag and publish the GitHub Release `v0.1.0a4` on `main`. This is the step that triggers
       `build.yml` → PyPI trusted publishing; without it nothing ships and bloom#411 stays blocked.
       `build.yml` validates the tag against `pyproject.toml` (stripping the leading `v`) and greps
       `docs/CHANGELOG.md` for `[0.1.0a4]`, so 3.1 and 3.4 must already be merged.
-- [ ] 6.2 Verify the published artifact: in a clean env,
+- [ ] 7.2 Verify the published artifact: in a clean env,
       `uv run --isolated --with sleap-roots-contracts==0.1.0a4 python -c "from sleap_roots_contracts import resolve_params; print(resolve_params({'species_name':'Rice','plant_age_days':3}))"`.
 
-## 7. Post-merge / post-release (NOT part of this PR)
+## 8. Post-merge / post-release (NOT part of this PR)
 
-- [ ] 7.1 After merge: `/openspec:archive add-param-resolution` (a separate `chore:` PR — matches the
+- [ ] 8.1 After merge: `/openspec:archive add-param-resolution` (a separate `chore:` PR — matches the
       standalone `chore: archive …` commits from #9 / #11; do not fold the archive into the feature PR).
-- [ ] 7.2 After the `v0.1.0a4` release is published:
+- [ ] 8.2 After the `v0.1.0a4` release is published:
       - bloom#411 — re-pin `sleap-roots-contracts>=0.1.0a4` (full re-pin: `pin.json` + vendored schema
         `$id`-only diff + regenerated TS); import `resolve_params` for
         `bloomctl cyl download-for-predict`.
       - predict#28 — re-pin, import from contracts, delete local `param_resolution.py` and its
-        `param-resolution` capability spec. **Re-point, do NOT delete, the two `choose_models`
-        round-trip tests** (`test_round_trip_selects_expected_models`,
+        `param-resolution` capability spec. Doing so also **adopts the sentinel hardening**: until
+        then predict's local copy still resolves a `pandas.NA` species to `"<na>"` and hashes it.
+        **Re-point, do NOT delete, the two `choose_models` round-trip tests** (`test_round_trip_selects_expected_models`,
         `test_round_trip_unknown_species_selects_nothing`): they are the only remaining assertion of
         the metadata → params → model wiring, and deleting `test_param_resolution.py` wholesale would
         silently drop that coverage from **both** repos. Re-point TS-parity predict#20 at the
@@ -206,7 +255,7 @@
       - `talmolab/sleap-roots-pipeline` `docs/bloom-integration/roadmap.md` — the "param oracle"
         reference now points at a shared contracts home (A3-params umbrella).
       **Do not modify the predict, bloom, or pipeline repos from this session.**
-- [ ] 7.3 File follow-up issues for pre-existing debt surfaced by review but **out of scope** here:
+- [ ] 8.3 File follow-up issues for pre-existing debt surfaced by review but **out of scope** here:
       - `.claude/commands/review-openspec.md` states facts from a different repo (claims ~1939 tests
         across 77 files — actually 193 across 11; a `tests/fixtures.py`, `docs/testing.md`, matplotlib
         config, and an "MIT License at line 224" that do not exist here; the repo is GPL-3.0). It
