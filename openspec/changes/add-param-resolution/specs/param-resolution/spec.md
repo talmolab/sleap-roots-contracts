@@ -203,6 +203,13 @@ field is dropped, deferring to the post-override validation requirement below.
 - **WHEN** `resolve_params(row, overrides={"mode": ""})` is called
 - **THEN** it raises a `ValueError` whose message names `mode`
 
+#### Scenario: A blank age override drops the derived age
+
+- **WHEN** `resolve_params(row, overrides={"age": blank})` is called for a row carrying a valid
+  `plant_age_days`, where `blank` is `""`, `"   "`, `None`, or a `NaN`
+- **THEN** the derived `age` is dropped rather than retained, and it raises a `ValueError` whose
+  message names `age`
+
 ### Requirement: Strict Post-Override Validation
 
 After merging and canonicalizing, `resolve_params` SHALL require that `species`, `mode`, and `age`

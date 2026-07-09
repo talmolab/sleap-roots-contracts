@@ -320,6 +320,20 @@ def test_missing_species_supplied_by_override_succeeds():
     assert params_.values["species"] == "rice"
 
 
+@pytest.mark.parametrize("blank", ["", "   ", None, math.nan])
+def test_blank_age_override_raises_naming_age(blank):
+    """A blank age override drops the derived age and fails loud naming age.
+
+    Not in predict's suite: a blank *row* age never reaches the override merge
+    (it is filtered on read), so this drop path is only reachable via a blank
+    age *override*. Mirrors the blank-mode-override case.
+    """
+    with pytest.raises(ValueError, match="age"):
+        resolve_params(
+            _row(species_name="Rice", plant_age_days=3), overrides={"age": blank}
+        )
+
+
 # --- public API + known-answer anchor (added; not in predict's suite) -------
 
 
