@@ -8,12 +8,17 @@
 > **⚠️ Point-in-time design record (2026-06-03) — superseded in specifics; kept as history.**
 > This is a dated design document, **not** the living API reference. For current truth see the
 > Pydantic models (`src/sleap_roots_contracts/`), the emitted `schema/*.json`, the OpenSpec specs
-> (`result-contract`, `analysis-input-contract`, `model-selection-contract`), and
-> `docs/CHANGELOG.md`. Known points where this doc is now stale: `BlobRef.kind` was narrowed to
+> (`result-contract`, `analysis-input-contract`, `model-selection-contract`, `param-resolution`),
+> and `docs/CHANGELOG.md`. Known points where this doc is now stale: `BlobRef.kind` was narrowed to
 > `Literal["predictions_slp"]` and a required `root_type` added (v0.1.0a2); the §5 run-identity
 > tuple gained a `predict_output_params` contributor, and `ModelCard` +
-> `Provenance.predict_inference_config`/`predict_output_params` were added (v0.1.0a3). The body is
-> otherwise left as written.
+> `Provenance.predict_inference_config`/`predict_output_params` were added (v0.1.0a3).
+> **§1 "Explicitly NOT in scope" and §5 are now _reversed_ on one point:** the Bloom-metadata →
+> params resolver (`resolve_params`) was promoted **into** this library in v0.1.0a4 (#15), because
+> a copy per consumer would silently break `param_hash` → `idempotency_key` idempotency. It is a
+> soft, code-agnostic coupling (Bloom column names as dict keys; no Bloom import, no DB/network/IO);
+> resolution no longer lives only in the producer / Bloom client (#3). The body is otherwise left as
+> written.
 
 ---
 

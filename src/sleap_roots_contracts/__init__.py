@@ -22,6 +22,7 @@ from .models import (
     RootType,
     TraitValue,
 )
+from .params import resolve_params
 from .registry import TraitDefinition, load_registry, validate_trait
 
 # Single source of version truth is pyproject.toml; resolve it from installed
@@ -56,5 +57,8 @@ __all__ = [
     # producers; Bloom consumes only the emitted JSON Schema).
     "compute_param_hash",
     "NonCanonicalizableError",
+    # Param-resolution oracle (Bloom scan metadata -> ResolvedParams). The
+    # module's Bloom column-name constants stay module-public, not package API.
+    "resolve_params",
     "__version__",
 ]

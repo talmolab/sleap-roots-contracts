@@ -8,6 +8,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0a4] - 2026-07-09 (Pre-release)
+
+Promotes the param-resolution oracle from `sleap-roots-predict` into this library so
+`sleap-roots-predict` and `bloomctl` share one implementation. Unblocks the Bloom A4
+"images-downloader" stage-in (roadmap A3-params).
+
+### Added
+- **`resolve_params(metadata, overrides=None) -> ResolvedParams`** — a pure param-resolution
+  oracle mapping a single Bloom `cyl_scans_extended` scan-metadata row to the
+  `{species, mode, age}` params that select a `ModelCard`. Exported from the package root.
+  It normalizes `species_name` (strip + lowercase, with an alias seam), derives `mode` through
+  a single decision point (currently the constant `"cylinder"`), and coerces `plant_age_days`
+  to a whole-number `int` (rejecting bools and non-whole floats). Optional `overrides` (a
+  subset of `{species, mode, age}`) win per field and are canonicalized by the same rules, so
+  `param_hash` is representation-independent. Blank/`None`/`NaN` fields are treated as not
+  provided; anything still missing after the merge raises a `ValueError` naming every absent
+  param.
+
+  It was promoted out of `sleap-roots-predict` (which will consume it from here) because the
+  resolved values feed `ResolvedParams.param_hash` → `Provenance.idempotency_key`
+  (first-writer-wins): two producers normalizing differently would compute different keys for
+  the same logical scan, both "win" the dedup race, and break idempotency with no error
+  raised anywhere. The module's Bloom column-name constants `SPECIES_NAME_FIELD` and
+  `PLANT_AGE_DAYS_FIELD` are module-public (so consumers can reference them) but are
+  deliberately not part of the package `__all__`.
+
+### Fixed
+- **`resolve_params` rejects pandas/numpy missing-data sentinels instead of silently hashing
+  them.** The oracle's guards were written against Python types, but its documented input is a
+  pandas-parsed CSV row. A `pandas.NA`/`NaT` species was stringified to `"<na>"`, a
+  `numpy.bool_(True)` age became `1`, a non-string species became `"123"`, and a fractional
+  `decimal.Decimal` truncated — each **silently folded into `param_hash` → `idempotency_key`**
+  with no error raised. A `float("inf")` age raised an uncaught `OverflowError` rather than the
+  documented `ValueError`. All now raise a `ValueError` naming the offending field.
+
+  Behavior is **unchanged for every well-formed input** — verified by a 2,268-case differential
+  against the originating implementation showing identical `values`, `param_hash`, exception type,
+  and exception message. Only rows that previously produced a corrupt hash (or the wrong exception)
+  behave differently. Sentinel detection is duck-typed, so pandas is still never imported.
+
+  Note `sleap-roots-predict` continues to carry the unhardened copy until it consumes this one
+  (predict#28).
+
+### Changed
+- Both emitted schemas are regenerated and their `$id` advances to `v0.1.0a4`. This is a
+  **bytes-only restamp**: no properties are added, removed, or altered (`resolve_params` is a
+  producer-side function and is never emitted to JSON Schema). Downstream consumers should do
+  the **standard full re-pin** — `pin.json`, the vendored schema (accept the `$id`-only diff),
+  and regenerated TypeScript — **not** merely a pip-floor bump.
+- CI now runs `uv lock --check` on pull requests. Previously a stale `uv.lock` passed PR CI
+  (which uses a non-frozen `uv sync`) and only hard-failed later in the release build.
+
 ## [0.1.0a3] - 2026-07-04 (Pre-release)
 
 Adds the model-selection contract (`ModelCard`) and records the predict inference
@@ -121,7 +173,8 @@ sleap-roots ↔ Bloom pipeline integration. Pure, dependency-light, Bloom-agnost
 - CI (lint + drift guard + tests on Python 3.11/3.12) and a PyPI
   trusted-publishing workflow.
 
-[Unreleased]: https://github.com/talmolab/sleap-roots-contracts/compare/v0.1.0a3...HEAD
+[Unreleased]: https://github.com/talmolab/sleap-roots-contracts/compare/v0.1.0a4...HEAD
+[0.1.0a4]: https://github.com/talmolab/sleap-roots-contracts/compare/v0.1.0a3...v0.1.0a4
 [0.1.0a3]: https://github.com/talmolab/sleap-roots-contracts/compare/v0.1.0a2...v0.1.0a3
 [0.1.0a2]: https://github.com/talmolab/sleap-roots-contracts/compare/v0.1.0a1...v0.1.0a2
 [0.1.0a1]: https://github.com/talmolab/sleap-roots-contracts/compare/v0.1.0a0...v0.1.0a1
