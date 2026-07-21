@@ -67,6 +67,20 @@ spec deltas and tasks.
   `pyproject.toml` changes `__version__`, which is embedded in both existing schemas' `$id`.
   `schema/*.json` must be regenerated and committed in this same change or CI's drift guard
   fails — this is the same `$id`-only restamp the `0.1.0a4` promotion already went through.
+- **No cross-validation between `PredictionArtifact.root_type` (strict `RootType` literal) and
+  `PredictionArtifact.model.root_type` (loose `str | None` on `ModelRef`)** — the two can
+  silently disagree. Not a new gap: predict's current `output_contract.py` has the identical
+  shape with the identical absence of cross-validation, so a straight lift necessarily preserves
+  it. Adding a validator here would diverge from predict's actual behavior today (breaking
+  round-trip parity for predict#30's eventual migration) and isn't required by "straight lift, no
+  new validation." Accepted as-is, same reasoning as the duplicate-`root_type`-in-`artifacts` risk
+  above.
+- **`predict_inference_config`/`predict_output_params` silently lose `NaN`/`inf` values on JSON
+  dump** (pydantic-core's default `ser_json_inf_nan="null"` — a non-finite float round-trips as
+  `None`, indistinguishable from an absent value). Not a new gap: `Provenance`'s identical fields
+  (added in `0.1.0a3`) have the exact same behavior — neither is hashed or canonicalized (only
+  `ResolvedParams.values` goes through `hashing.py`'s NaN/inf-rejecting canonicalization, because
+  it feeds `param_hash`). Consistent with existing precedent in this codebase; not addressed here.
 
 ## Migration Plan
 

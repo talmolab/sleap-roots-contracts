@@ -124,6 +124,28 @@ def test_manifest_round_trips_through_json():
     assert reloaded.artifacts[0].model == _ref()
 
 
+def test_manifest_with_explicit_empty_artifacts_round_trips():
+    """A manifest with artifacts explicitly set to [] round-trips through JSON."""
+    manifest = make_manifest(scan_key="s1", artifacts=[])
+    reloaded = PredictionManifest.model_validate_json(manifest.model_dump_json())
+    assert reloaded == manifest
+    assert reloaded.artifacts == []
+
+
+def test_manifest_schema_version_override_round_trips():
+    """A non-default schema_version is retained and survives a JSON round-trip."""
+    manifest = make_manifest(scan_key="s1", schema_version="2")
+    reloaded = PredictionManifest.model_validate_json(manifest.model_dump_json())
+    assert reloaded.schema_version == "2"
+
+
+def test_manifest_round_trips_through_dict():
+    """A manifest survives a model_dump()/model_validate() round-trip (not just JSON)."""
+    manifest = make_manifest(scan_key="s1", artifacts=[make_artifact()])
+    reloaded = PredictionManifest.model_validate(manifest.model_dump())
+    assert reloaded == manifest
+
+
 def test_manifest_with_all_root_types_round_trips():
     """A manifest with three artifacts spanning all RootTypes preserves each."""
     artifacts = [
@@ -132,6 +154,7 @@ def test_manifest_with_all_root_types_round_trips():
     ]
     manifest = make_manifest(scan_key="s1", artifacts=artifacts)
     reloaded = PredictionManifest.model_validate_json(manifest.model_dump_json())
+    assert reloaded == manifest
     assert {a.root_type for a in reloaded.artifacts} == {"primary", "lateral", "crown"}
 
 
