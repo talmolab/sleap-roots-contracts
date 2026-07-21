@@ -26,6 +26,11 @@ per root type and calls `to_model_ref(runtime_sleap_nn_version)`). Unlike the ot
 a producer↔producer contract that never crosses the Bloom boundary, so it is **not** emitted to
 the JSON Schema.
 
+Since `0.1.0a5` it also defines the **prediction-manifest contract** — `PredictionArtifact`/
+`PredictionManifest`, the Python-side shape of predict's per-scan `.slp` output, written by
+`sleap-roots-predict` and read by `bloomctl` to construct `cyl_scan_intermediates` blob bytes.
+Like `ModelCard`, it is a producer↔producer contract and is **not** emitted to the JSON Schema.
+
 Since `0.1.0a4` it also ships the **param-resolution oracle** —
 `resolve_params(metadata, overrides=None) -> ResolvedParams` maps a single Bloom
 `cyl_scans_extended` scan-metadata row to the `{species, mode, age}` params that select a
