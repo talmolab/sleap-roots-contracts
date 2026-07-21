@@ -39,6 +39,11 @@ spec deltas and tasks.
 - **Version bump lands in this PR** (`0.1.0a5`), matching both prior promotion precedents (PR #10
   → `0.1.0a3`, PR #16 → `0.1.0a4`). `uv.lock` must be re-locked in the same commit — a known gotcha
   where a version bump without a re-lock hard-fails the release build without PR CI catching it.
+- **Config mirrors predict's `_FROZEN`, including `protected_namespaces=()`.**
+  `PredictionArtifact.model_id`/`.model` are protected-namespace-shaped fields; predict's own
+  `output_contract.py` already disables the guard for exactly this reason. Verified empirically:
+  silent under the currently-locked pydantic 2.13.4, but reproducibly emits a `UserWarning` on
+  class definition under the declared floor `pydantic>=2.7` (tested against 2.7.4) without it.
 
 ## Risks / Trade-offs
 
