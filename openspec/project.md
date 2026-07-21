@@ -4,15 +4,18 @@
 `sleap-roots-contracts` is the shared **data contract** library for the sleap-roots ↔ Bloom
 pipeline. It is a small, dependency-light leaf library — **code-agnostic toward Bloom** (no Bloom
 import, no DB/network/filesystem I/O), though since `0.1.0a4` no longer **vocabulary**-agnostic
-(see the param-resolution note below). It defines three contracts: (1) the **result + provenance
+(see the param-resolution note below). It defines four contracts: (1) the **result + provenance
 contract** — the shape of a per-scan pipeline result and its provenance (Pydantic v2 models);
 (2) the **analysis-input contract** — the canonical wide trait table, with a structural
-`validate_analysis_input` validator; and (3) the **model-selection contract** — `ModelCard`, the
+`validate_analysis_input` validator; (3) the **model-selection contract** — `ModelCard`, the
 Python-side model-selection shape shared by `sleap-roots-training` (writer) and
-`sleap-roots-predict` (reader). Contracts (1) and (2) emit versioned JSON Schema artifacts (Bloom
-consumes them); contract (3) is a producer↔producer shape that never crosses the Bloom boundary
-and is **not** emitted to JSON Schema. It also ships a trait-definitions registry and, since
-`0.1.0a4`, the **param-resolution oracle** `resolve_params` (Bloom scan metadata → `ResolvedParams`).
+`sleap-roots-predict` (reader); and (4), since `0.1.0a5`, the **prediction-manifest contract** —
+`PredictionArtifact`/`PredictionManifest`, predict's per-scan output shape shared by
+`sleap-roots-predict` (writer) and `bloomctl` (reader). Contracts (1) and (2) emit versioned
+JSON Schema artifacts (Bloom consumes them); contracts (3) and (4) are producer↔producer shapes
+that never cross the Bloom boundary and are **not** emitted to JSON Schema. It also ships a
+trait-definitions registry and, since `0.1.0a4`, the **param-resolution oracle** `resolve_params`
+(Bloom scan metadata → `ResolvedParams`).
 
 `resolve_params` reads Bloom's `cyl_scans_extended` column names (`species_name`,
 `plant_age_days`) as dict keys. This is the library's single, deliberate **soft coupling** to

@@ -8,6 +8,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0a5] - 2026-07-21 (Pre-release)
+
+Promotes `PredictionArtifact`/`PredictionManifest` from `sleap-roots-predict` into this
+library so `bloomctl` can read predict's per-scan manifest without depending on an
+unpublished package. Unblocks bloom's blob-upload work (bloom#407).
+
+### Added
+- **`PredictionArtifact`/`PredictionManifest`** — a new **prediction-manifest-contract**
+  capability, a straight lift (all fields) of predict's `output_contract.py`, plus one new
+  field: `PredictionArtifact.kind: BlobKind` (defaults to `"predictions_slp"`), reusing the
+  existing `BlobKind` controlled vocabulary rather than redefining it. `PredictionManifest` is
+  the per-scan output record (`schema_version`, `scan_key`, `plant_qr_code` defaulting to
+  `scan_key`, `artifacts: list[PredictionArtifact]`, plus predict's on-disk provenance fields
+  `predict_inference_config`/`predict_output_params`/`predict_code_sha`/
+  `predict_container_digest`). Both models are frozen and exported from the package root.
+
+  It was promoted out of `sleap-roots-predict` (which will consume it from here, predict#30)
+  because `bloomctl` (bloom#407) needs this shape to construct `cyl_scan_intermediates` blob
+  bytes, and `sleap-roots-predict` is not published to PyPI — a direct dependency on it was
+  already rejected for a sibling bloom change. Like `ModelCard`, this is a Python-side
+  **producer↔producer contract** between `sleap-roots-predict` and `bloomctl` and is **not**
+  emitted to the JSON Schema.
+
+### Changed
+- Both emitted schemas (`result_envelope`, `analysis_input`) are regenerated and their `$id`
+  advances to `v0.1.0a5`. This is a **bytes-only restamp** — `schema.py`'s `MODELS` dict gains
+  no entries and no model in either schema changes — matching the `0.1.0a4` precedent.
+
 ## [0.1.0a4] - 2026-07-09 (Pre-release)
 
 Promotes the param-resolution oracle from `sleap-roots-predict` into this library so
@@ -173,7 +201,8 @@ sleap-roots ↔ Bloom pipeline integration. Pure, dependency-light, Bloom-agnost
 - CI (lint + drift guard + tests on Python 3.11/3.12) and a PyPI
   trusted-publishing workflow.
 
-[Unreleased]: https://github.com/talmolab/sleap-roots-contracts/compare/v0.1.0a4...HEAD
+[Unreleased]: https://github.com/talmolab/sleap-roots-contracts/compare/v0.1.0a5...HEAD
+[0.1.0a5]: https://github.com/talmolab/sleap-roots-contracts/compare/v0.1.0a4...v0.1.0a5
 [0.1.0a4]: https://github.com/talmolab/sleap-roots-contracts/compare/v0.1.0a3...v0.1.0a4
 [0.1.0a3]: https://github.com/talmolab/sleap-roots-contracts/compare/v0.1.0a2...v0.1.0a3
 [0.1.0a2]: https://github.com/talmolab/sleap-roots-contracts/compare/v0.1.0a1...v0.1.0a2
