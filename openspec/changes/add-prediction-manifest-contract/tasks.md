@@ -51,11 +51,11 @@
 
 ## 3. Validation
 
-- [ ] 3.1 `uv run black --check src tests`
-- [ ] 3.2 `uv run ruff check src tests`
-- [ ] 3.3 `uv lock --check` (verifies the re-lock in 2.2 is current; PR CI's plain `uv sync`
+- [x] 3.1 `uv run black --check src tests`
+- [x] 3.2 `uv run ruff check src tests`
+- [x] 3.3 `uv lock --check` (verifies the re-lock in 2.2 is current; PR CI's plain `uv sync`
       won't catch a stale lock — only the release build's `--frozen` sync does)
-- [ ] 3.4 `uv run python -m sleap_roots_contracts.schema && git diff --exit-code schema/`
+- [x] 3.4 `uv run python -m sleap_roots_contracts.schema && git diff --exit-code schema/`
       (schema drift guard, confirms 2.3 mechanically)
-- [ ] 3.5 `uv run pytest -v --cov=src/sleap_roots_contracts --cov-report=term-missing` (full suite)
-- [ ] 3.6 `openspec validate add-prediction-manifest-contract --strict`
+- [x] 3.5 `uv run pytest -v --cov=src/sleap_roots_contracts --cov-report=term-missing` (full suite)
+- [x] 3.6 `openspec validate add-prediction-manifest-contract --strict`
