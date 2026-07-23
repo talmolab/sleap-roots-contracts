@@ -25,6 +25,7 @@ from .models import (
     TraitValue,
 )
 from .params import resolve_params
+from .prediction_manifest import PredictionArtifact, PredictionManifest
 from .registry import TraitDefinition, load_registry, validate_trait
 
 # Single source of version truth is pyproject.toml; resolve it from installed
@@ -48,6 +49,10 @@ __all__ = [
     "BlobKind",
     "RootType",
     "Mode",
+    # Prediction-manifest contract (predict's per-scan output shape; producer<->producer,
+    # not emitted to JSON Schema).
+    "PredictionArtifact",
+    "PredictionManifest",
     "TraitDefinition",
     "load_registry",
     "validate_trait",
