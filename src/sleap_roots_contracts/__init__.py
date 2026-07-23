@@ -14,6 +14,8 @@ from .models import (
     BlobKind,
     BlobRef,
     InputRef,
+    LabelCard,
+    Mode,
     ModelCard,
     ModelRef,
     Provenance,
@@ -37,6 +39,7 @@ except PackageNotFoundError:  # not installed (e.g. running from a bare source t
 __all__ = [
     "BlobRef",
     "InputRef",
+    "LabelCard",
     "ModelCard",
     "ModelRef",
     "Provenance",
@@ -45,6 +48,7 @@ __all__ = [
     "TraitValue",
     "BlobKind",
     "RootType",
+    "Mode",
     # Prediction-manifest contract (predict's per-scan output shape; producer<->producer,
     # not emitted to JSON Schema).
     "PredictionArtifact",

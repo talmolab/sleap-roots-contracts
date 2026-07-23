@@ -8,6 +8,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0a6] - 2026-07-22 (Pre-release)
+
+Adds the **label-selection contract** — `LabelCard` plus the contract-owned `Mode`
+capture-mode vocabulary — the Python-side label-provenance shape shared by the
+`/build-labeling-package` workflow (writer) and training/lineage tooling (reader). Like
+`ModelCard`, this is a producer↔producer contract and is **not** emitted to JSON Schema.
+
+### Added
+- **`LabelCard` / `Mode`** — new label-selection-contract capability (mirrors `ModelCard`).
+  Training's `MODE_VOCAB` collapses into the contract-owned `Mode`, closing the
+  `cylinder`/`cyl` split from sleap-roots-training#10.
+
+### Changed
+- Both emitted schemas (`result_envelope`, `analysis_input`) are regenerated and their `$id`
+  advances to `v0.1.0a6`. Bytes-only restamp — no model changes.
+
 ## [0.1.0a5] - 2026-07-21 (Pre-release)
 
 Promotes `PredictionArtifact`/`PredictionManifest` from `sleap-roots-predict` into this
