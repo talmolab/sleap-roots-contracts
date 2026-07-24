@@ -58,16 +58,18 @@ blocked on a6 shipping.
 
 ## Risks / Trade-offs
 
-- **Predict's registry lister now raises where it used to shrug.** `WandbRegistrySource.list_cards()`
-  does `ModelCard.model_validate(meta)` per artifact (`model_registry.py`), so one off-vocabulary
-  `mode` in the live `wandb-registry-sleap-roots-models` metadata would fail the whole *listing*,
-  not just that card's match. Training's seeded matrix is clean (`cylinder`, `multiplant cylinder`),
-  but the seeded matrix is the source *snapshot*, not proof of what the live registry holds —
-  nothing here can query wandb. → **Mitigated by Task 4.1:** the live registry's `mode` values must be
-  enumerated against `get_args(Mode)` before predict bumps its pin. This is a verification obligation
-  on the consumer's bump, not a blocker for this change. Whether `list_cards()` should degrade to
-  skip-with-warning instead of raising is a real question, but it belongs to predict's spec, not this
-  contract's — flagged for that repo, not resolved here.
+- **~~Predict's registry lister now raises where it used to shrug.~~ Measured — no live exposure.**
+  The concern was that `WandbRegistrySource.list_cards()` does `ModelCard.model_validate(meta)` per
+  artifact, so one off-vocabulary `mode` would fail the whole *listing*, not just that card's match.
+  Task 4.1 enumerated the live registry (106 artifact versions): **all 13 `production`-aliased cards
+  carry an in-vocabulary mode** (`cylinder` ×11, `multiplant cylinder` ×2). The other 93 are legacy
+  pre-`ModelCard` collections with no `mode`/`species`/`root_type`/age fields at all — they could
+  never validate today either, and `list_cards()` applies its alias filter *before* building any card
+  (`model_registry.py:215` filters, `:243` validates), so it never attempts them. **The retype
+  introduces zero new failures against the live registry**, and predict's pin bump needs no migration.
+  Whether `list_cards()` should degrade to skip-with-warning instead of raising remains a fair
+  robustness question for predict's `model-management` spec — filed as
+  `talmolab/sleap-roots-predict#32` — but it is pre-existing and not caused by this change.
 - **`plate` is in the vocabulary but has no seeded models yet** (training #3 defers them). So the
   vocabulary is currently wider than the registry — the safe direction. The reverse (a live mode the
   vocabulary lacks, e.g. an unanticipated GraviScan/multiscanner mode, which `params.py:148` notes is
