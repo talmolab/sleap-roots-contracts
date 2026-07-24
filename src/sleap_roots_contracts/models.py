@@ -43,9 +43,10 @@ def _reject_bool(v: Any) -> Any:
 # `extra="ignore"` makes field validation the only defense. BeforeValidator runs ahead
 # of int parsing, so ordinary lax inputs ("7", 7.0) are untouched.
 #
-# Applied to LabelCard only. ModelCard has the same exposure but shipped in 0.1.0a3;
-# retyping its fields is a behavior change to a released contract, tracked as a
-# follow-up rather than smuggled into this change (see the change's design.md).
+# Applied to every integer field on LabelCard and to ModelCard's age bounds. The
+# ModelCard half landed a release later (0.1.0a6, tighten-model-card-validation):
+# it tightens validation on a contract already shipped in 0.1.0a3, so it was kept
+# out of the otherwise purely additive change that introduced this alias.
 NonBoolInt = Annotated[int, BeforeValidator(_reject_bool)]
 
 
@@ -186,19 +187,22 @@ RootType = Literal["primary", "lateral", "crown"]
 # so the label registry and the model registry share one spelling — the `cylinder`
 # vs `cyl` split across the two registries is exactly the defect issue #10 fixes.
 # Expressed as a Literal, mirroring RootType, rather than a frozenset. Required on
-# LabelCard; ModelCard.mode stays a loose `str` in this change (retyping it is a
-# tracked follow-up — see the change's design.md).
+# both cards: LabelCard since 0.1.0a6, ModelCard.mode as of the same release (it
+# shipped as a loose `str` in 0.1.0a3). Matched exactly — neither card normalizes
+# case or whitespace. Normalizing a *requested* mode is resolve_params' job
+# (params.py:_normalize_mode), and an unmodelled value is specified to degrade to a
+# selection zero-match there rather than an error; the cards are the authoritative
+# side and fail loudly instead.
 Mode = Literal["cylinder", "multiplant cylinder", "plate"]
 
 
-# Defined after RootType on purpose: this module has no `from __future__ import
-# annotations`, so the `root_type: RootType` field and the `-> ModelRef` return
-# annotation are evaluated at class-definition time and both names must already exist
-# (RootType is the binding constraint; ModelRef at line ~18 is never at risk). So
-# ModelCard must come *after* RootType; it is placed as close to it as the vocabulary
-# block allows — Mode now sits between the two, grouped with RootType as the other
-# controlled vocabulary this module owns. Conceptually ModelCard is a model-registry
-# sibling of ModelRef.
+# Defined after both vocabularies on purpose: this module has no `from __future__
+# import annotations`, so the `mode: Mode` and `root_type: RootType` fields and the
+# `-> ModelRef` return annotation are evaluated at class-definition time and every
+# name must already exist (RootType and Mode are the binding constraints; ModelRef at
+# line ~18 is never at risk). So ModelCard must come *after* both; it is placed as
+# close to them as the vocabulary block allows. Conceptually ModelCard is a
+# model-registry sibling of ModelRef.
 class ModelCard(BaseModel):
     """Model-selection metadata + identity for one production model.
 
@@ -208,7 +212,10 @@ class ModelCard(BaseModel):
 
     * **Selection fields** — written by training as flat wandb metadata keys:
       ``species``, ``mode``, ``age_min``, ``age_max``, ``root_type`` (and optionally
-      the trained-with ``sleap_nn_version``).
+      the trained-with ``sleap_nn_version``). ``mode`` and ``root_type`` are the
+      contract-owned :data:`Mode` and :data:`RootType` vocabularies, matched exactly:
+      a card carrying the label registry's ``cyl`` shorthand — or a cased
+      ``Cylinder`` — fails at construction rather than silently never matching a scan.
     * **Identity fields** — intrinsic to the wandb artifact object, *not* metadata:
       ``registry_id``, ``version``, ``weights_checksum``. Predict's registry lister
       composes these from the artifact and merges them with the metadata before
@@ -227,15 +234,20 @@ class ModelCard(BaseModel):
     artifact identity. ``extra="ignore"`` is set explicitly (not merely relied on as
     pydantic's default) because tolerating that blob is a load-bearing contract here —
     a future ``extra="forbid"`` would silently break predict's registry lister.
+
+    The counterweight to that tolerance: both age bounds are :data:`NonBoolInt`, so a
+    ``True`` from the same boolean-key blob is rejected rather than coerced to a
+    plausible-but-wrong window bound. Ordinary lax parsing (``"7"``, ``7.0``) is
+    unaffected.
     """
 
     model_config = ConfigDict(frozen=True, extra="ignore")
 
     # selection dimensions (training-written metadata)
     species: str
-    mode: str
-    age_min: int = Field(ge=0)
-    age_max: int = Field(ge=0)
+    mode: Mode
+    age_min: NonBoolInt = Field(ge=0)
+    age_max: NonBoolInt = Field(ge=0)
     root_type: RootType
 
     # identity of the concrete production artifact (artifact-intrinsic)

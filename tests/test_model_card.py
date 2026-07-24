@@ -15,7 +15,7 @@ def make_card(**overrides):
     """Build a valid ModelCard with sensible defaults, overridable per-test."""
     base = dict(
         species="rice",
-        mode="proximal",
+        mode="cylinder",
         age_min=2,
         age_max=5,
         root_type="primary",
@@ -32,7 +32,7 @@ def test_model_card_valid():
     """A ModelCard constructs and retains its selection + identity fields."""
     c = make_card()
     assert c.species == "rice"
-    assert c.mode == "proximal"
+    assert c.mode == "cylinder"
     assert (c.age_min, c.age_max) == (2, 5)
     assert c.root_type == "primary"
     assert c.registry_id == "reg-primary"
@@ -213,7 +213,7 @@ def test_model_card_from_merged_metadata():
     card needs both sources merged.
     """
     selection_metadata = dict(
-        species="rice", mode="proximal", age_min=2, age_max=5, root_type="primary"
+        species="rice", mode="cylinder", age_min=2, age_max=5, root_type="primary"
     )
     artifact_identity = dict(registry_id="reg-primary", version="v1")
     c = ModelCard.model_validate({**selection_metadata, **artifact_identity})
@@ -229,7 +229,7 @@ def test_model_card_tolerates_extra_keys():
     """
     blob = dict(
         species="rice",
-        mode="proximal",
+        mode="cylinder",
         age_min=2,
         age_max=5,
         root_type="primary",
