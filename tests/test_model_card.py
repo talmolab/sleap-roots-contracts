@@ -2,11 +2,12 @@
 
 import json
 import warnings
+from typing import get_args
 
 import pytest
 from pydantic import ValidationError
 
-from sleap_roots_contracts.models import ModelCard, ModelRef
+from sleap_roots_contracts.models import Mode, ModelCard, ModelRef
 from sleap_roots_contracts.schema import render
 
 
@@ -65,6 +66,39 @@ def test_model_card_rejects_negative_age(field):
         make_card(**{field: -1})
 
 
+@pytest.mark.parametrize("field", ["age_min", "age_max"])
+@pytest.mark.parametrize("value", [True, False])
+def test_model_card_rejects_bool_age(field, value):
+    """A bool age bound is rejected, not coerced to 1/0.
+
+    Python's bool subclasses int, so pydantic's lax mode would read True/False as
+    1/0 and yield a card claiming a plausible-but-wrong approved window. ModelCard
+    sets extra="ignore" so it can validate straight from a raw wandb metadata blob,
+    and in this registry that blob is boolean-key soup ({"v007": true}) — field
+    validation is the only defense left.
+
+    The companion bound is pinned to 0 so a coerced value cannot trip the
+    age_min <= age_max check instead: without it, age_max=True coerces to 1 against
+    the fixture's age_min=2 and the test would pass on the *range* error while the
+    bool sailed through. The message assertion closes the same hole from the other
+    side — only the bool guard names the bool.
+    """
+    bounds = {"age_min": 0, "age_max": 0, field: value}
+    with pytest.raises(ValidationError, match="bool"):
+        make_card(**bounds)
+
+
+@pytest.mark.parametrize("raw,expected", [("7", 7), (7.0, 7)])
+def test_model_card_age_lax_parsing_preserved(raw, expected):
+    """Ordinary lax int parsing still works — the bool guard rejects only bool.
+
+    Regression guard that keeps the NonBoolInt fix narrow: a BeforeValidator that
+    rejected anything broader than bool would break these inputs.
+    """
+    c = make_card(age_min=raw, age_max=raw)
+    assert c.age_min == expected and c.age_max == expected
+
+
 def test_model_card_rejects_bad_root_type():
     """A root_type outside {primary, lateral, crown} is rejected."""
     with pytest.raises(ValidationError):
@@ -81,6 +115,42 @@ def test_model_card_accepts_all_root_types(rt):
     c = make_card(root_type=rt)
     assert c.root_type == rt
     assert c.to_model_ref("9.9.9").root_type == rt
+
+
+def test_model_card_rejects_bad_mode():
+    """A mode outside the Mode vocabulary is rejected.
+
+    `cyl` is the concrete value this guard exists to stop: it is the shorthand the
+    existing label collection names use, and the reason the model and label
+    registries cannot be joined today (sleap-roots-training#10).
+    """
+    with pytest.raises(ValidationError):
+        make_card(mode="cyl")
+
+
+@pytest.mark.parametrize("bad", ["Cylinder", "cylinder ", " cylinder", "CYLINDER"])
+def test_model_card_mode_is_not_normalized(bad):
+    """The card matches the vocabulary exactly — it does not repair case or space.
+
+    Pins the decision that normalization belongs to resolve_params (the tolerant
+    scan-parameter side), not to the card. A card is written once by a script at
+    promotion, so a loud failure is cheap and a silent repair is not. Adding a
+    normalizing BeforeValidator to ModelCard.mode must fail this test.
+    """
+    with pytest.raises(ValidationError):
+        make_card(mode=bad)
+
+
+@pytest.mark.parametrize("mode", get_args(Mode))
+def test_model_card_accepts_all_modes(mode):
+    """Every Mode vocabulary member constructs and is retained unchanged.
+
+    Guards the vocabulary against silent narrowing (positive coverage; the negative
+    case is test_model_card_rejects_bad_mode). Parametrized over get_args(Mode) so a
+    future vocabulary member is covered without editing this test.
+    """
+    c = make_card(mode=mode)
+    assert c.mode == mode
 
 
 def test_model_card_sleap_nn_version_optional():
