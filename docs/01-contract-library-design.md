@@ -9,7 +9,8 @@
 > This is a dated design document, **not** the living API reference. For current truth see the
 > Pydantic models (`src/sleap_roots_contracts/`), the emitted `schema/*.json`, the OpenSpec specs
 > (`result-contract`, `analysis-input-contract`, `model-selection-contract`, `param-resolution`,
-> `prediction-manifest-contract`), and `docs/CHANGELOG.md`. Known points where this doc is now
+> `prediction-manifest-contract`, `label-selection-contract`), and `docs/CHANGELOG.md`. Known
+> points where this doc is now
 > stale: `BlobRef.kind` was narrowed to `Literal["predictions_slp"]` and a required `root_type`
 > added (v0.1.0a2); the §5 run-identity tuple gained a `predict_output_params` contributor, and
 > `ModelCard` + `Provenance.predict_inference_config`/`predict_output_params` were added
@@ -21,7 +22,10 @@
 > producer / Bloom client (#3). `PredictionArtifact`/`PredictionManifest` (predict's per-scan
 > output shape) were promoted **into** this library in v0.1.0a5 (#22), for the same reason a new
 > Bloom-facing consumer (`bloomctl`) needed a PyPI-published home for a shape predict already
-> defined. The body is otherwise left as written.
+> defined. `LabelCard` + the contract-owned `Mode` capture-mode vocabulary were added in
+> v0.1.0a6 (sleap-roots-training#10) — the provenance mirror of `ModelCard`, and a second
+> vocabulary this library now owns (training's `MODE_VOCAB` collapses into it). The body is
+> otherwise left as written.
 
 ---
 

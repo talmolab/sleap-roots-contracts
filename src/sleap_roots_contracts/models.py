@@ -2,9 +2,9 @@
 
 import math
 from datetime import datetime
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, model_validator
 
 from .hashing import compute_param_hash
 from .identity import compute_idempotency_key
@@ -13,6 +13,40 @@ from .identity import compute_idempotency_key
 # normalized values are guaranteed correct for the life of the instance, so the
 # validators below use object.__setattr__ to set them past the frozen guard.
 _FROZEN = ConfigDict(frozen=True)
+
+
+def _reject_bool(v: Any) -> Any:
+    """Reject a bool before it is coerced to an int.
+
+    Args:
+        v: The raw input value for an integer field.
+
+    Returns:
+        The value unchanged when it is not a bool.
+
+    Raises:
+        ValueError: If ``v`` is a bool.
+    """
+    if isinstance(v, bool):
+        raise ValueError(
+            f"expected an integer, got a bool ({v!r}); bools are rejected rather than "
+            "coerced to 1/0 because a silently plausible count is worse than a failure"
+        )
+    return v
+
+
+# An int field that will not swallow a bool. Python's `bool` is a subclass of `int`,
+# so pydantic's lax mode coerces True/False to 1/0 — a card would then validate and
+# read a plausible-but-wrong number (True as a node_count even satisfies the
+# skeleton-coherence check against a single node name). LabelCard is unusually exposed:
+# #11 backfills from legacy wandb metadata stored as boolean-key soup, and
+# `extra="ignore"` makes field validation the only defense. BeforeValidator runs ahead
+# of int parsing, so ordinary lax inputs ("7", 7.0) are untouched.
+#
+# Applied to LabelCard only. ModelCard has the same exposure but shipped in 0.1.0a3;
+# retyping its fields is a behavior change to a released contract, tracked as a
+# follow-up rather than smuggled into this change (see the change's design.md).
+NonBoolInt = Annotated[int, BeforeValidator(_reject_bool)]
 
 
 class ModelRef(BaseModel):
@@ -148,13 +182,23 @@ BlobKind = Literal["predictions_slp"]
 # left as a loose `str | None` registry pointer — see the change's design.md.
 RootType = Literal["primary", "lateral", "crown"]
 
+# Controlled vocabulary for a capture mode. Owned here (not in training's chooser)
+# so the label registry and the model registry share one spelling — the `cylinder`
+# vs `cyl` split across the two registries is exactly the defect issue #10 fixes.
+# Expressed as a Literal, mirroring RootType, rather than a frozenset. Required on
+# LabelCard; ModelCard.mode stays a loose `str` in this change (retyping it is a
+# tracked follow-up — see the change's design.md).
+Mode = Literal["cylinder", "multiplant cylinder", "plate"]
+
 
 # Defined after RootType on purpose: this module has no `from __future__ import
 # annotations`, so the `root_type: RootType` field and the `-> ModelRef` return
 # annotation are evaluated at class-definition time and both names must already exist
 # (RootType is the binding constraint; ModelRef at line ~18 is never at risk). So
-# ModelCard must come *after* RootType; it is placed here, adjacent to it. Conceptually
-# it is a model-registry sibling of ModelRef.
+# ModelCard must come *after* RootType; it is placed as close to it as the vocabulary
+# block allows — Mode now sits between the two, grouped with RootType as the other
+# controlled vocabulary this module owns. Conceptually ModelCard is a model-registry
+# sibling of ModelRef.
 class ModelCard(BaseModel):
     """Model-selection metadata + identity for one production model.
 
@@ -234,6 +278,121 @@ class ModelCard(BaseModel):
             root_type=self.root_type,
             weights_checksum=self.weights_checksum,
         )
+
+
+# Defined after Mode and RootType (same definition-order constraint as ModelCard:
+# no `from __future__ import annotations` in this module, so the `mode: Mode` and
+# `root_type: RootType` field annotations are evaluated at class-definition time and
+# both names must already exist). LabelCard is the label-registry mirror of ModelCard.
+class LabelCard(BaseModel):
+    """Label-selection metadata + identity for one labeling package.
+
+    The provenance mirror of ``ModelCard``: a queryable, typed card for the label
+    artifacts in ``wandb-registry-sleap-roots-labels``. Written by the
+    ``/build-labeling-package`` workflow (which already computes this metadata and
+    currently discards it at publish) and read by training/lineage tooling to answer
+    "where did these labels come from?" — the question the registry's boolean-key
+    metadata soup cannot answer today (issue #10).
+
+    Fields come in five groups (see the change's design.md field table):
+
+    * **Selection** — ``species``, ``mode``, ``root_type``, ``age_min``, ``age_max``.
+      ``mode`` is the contract-owned :data:`Mode` vocabulary, so a card rejects ``cyl``
+      at construction; ``[age_min, age_max]`` is inclusive and contiguous, as on
+      ``ModelCard``.
+    * **Skeleton** — ``skeleton_name``, ``node_count``, ``node_names``. ``node_count``
+      must equal ``len(node_names)`` (Task 3 validator); ``node_names`` is a tuple so it
+      stays immutable in substance under ``frozen``.
+    * **Content** — the per-package counts (``n_frames``, ``n_instances``, ``n_plants``,
+      ``n_scans``) and ``images_embedded`` (records the ~10x storage state, does not
+      change it). ``n_frames`` is cross-checked against ``sample_manifest.csv`` row
+      count in training's publish path, not here — this library takes no filesystem I/O.
+    * **Provenance** — best-effort trace fields. All optional: the Bloom-trace fields
+      (``source_experiment``, ``bloom_experiment_id``, ``accessions``), ``labeler``, and
+      ``box_link`` are not recoverable from the legacy collections' metadata, so requiring
+      them would gate #11's as-is backfill (resolved with Elizabeth, Slack 2026-07-21).
+      ``source_sha256`` replaces the broken ``data_path`` (unusable in all eight
+      collections) — Optional on the contract, but always computed over the ``.slp``
+      bytes and passed in the publish path. ``sleap_io_version`` mirrors
+      ``ModelCard.sleap_nn_version``.
+    * **Registry identity** — ``registry_id``, ``version``, intrinsic to the wandb
+      artifact object (not metadata), merged in before validation.
+
+    Extra keys are ignored, so a card validates straight from a raw wandb metadata blob
+    (the legacy boolean tag flags like ``{"v007": true, "4nodes": true}`` merged with
+    artifact identity, plus a stale ``data_path``). ``extra="ignore"`` is set explicitly
+    (not merely relied on as pydantic's default) because tolerating that blob is what
+    makes #11's backfill tractable — a future ``extra="forbid"`` would break it.
+
+    The counterweight to that tolerance: every integer field is :data:`NonBoolInt`, so a
+    bool from the same blob is rejected rather than coerced to ``1``/``0``. Ordinary lax
+    parsing (``"7"``, ``7.0``) is unaffected.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="ignore")
+
+    # selection dimensions
+    species: str
+    mode: Mode
+    root_type: RootType
+    age_min: NonBoolInt = Field(ge=0)
+    age_max: NonBoolInt = Field(ge=0)
+
+    # skeleton (node_count == len(node_names) enforced by a model validator)
+    skeleton_name: str
+    node_count: NonBoolInt = Field(ge=1)
+    node_names: tuple[str, ...]
+
+    # content counts
+    n_frames: NonBoolInt = Field(ge=0)
+    n_instances: NonBoolInt = Field(ge=0)
+    n_plants: NonBoolInt = Field(ge=0)
+    n_scans: NonBoolInt = Field(ge=0)
+    images_embedded: bool
+
+    # provenance — all best-effort, optional so #11's as-is backfill isn't gated on
+    # metadata unrecoverable for the eight legacy collections (design.md, Risks).
+    source_experiment: str | None = None
+    bloom_experiment_id: str | None = None
+    accessions: tuple[str, ...] | None = None
+    labeler: str | None = None
+    box_link: str | None = None
+    # Optional on the contract, but the publish path always computes it over the .slp
+    # bytes and passes it — the contract can't read files (design.md, publish-path
+    # decisions). Replaces the broken data_path.
+    #
+    # Named for its algorithm, unlike the algorithm-agnostic ModelCard.weights_checksum.
+    # Deliberate: weights_checksum is copied off the wandb artifact object, where the
+    # digest algorithm is wandb's implementation detail and not ours to promise, while
+    # this digest is computed by our own publish path with a pinned algorithm — so the
+    # name is the promise a consumer can verify against.
+    source_sha256: str | None = None
+    sleap_io_version: str | None = None
+
+    # identity of the concrete label artifact (artifact-intrinsic)
+    registry_id: str
+    version: str
+
+    @model_validator(mode="after")
+    def _check_age_range(self) -> "LabelCard":
+        # Mirrors ModelCard._check_age_range; [age_min, age_max] is inclusive, so
+        # age_min == age_max (a single-age window) is valid.
+        if self.age_min > self.age_max:
+            raise ValueError(
+                f"age_min ({self.age_min}) must be <= age_max ({self.age_max})"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _check_skeleton_coherence(self) -> "LabelCard":
+        # The declared node_count must match the actual node_names tuple; the error
+        # names both so a mismatch is diagnosable from the message alone.
+        if self.node_count != len(self.node_names):
+            raise ValueError(
+                f"node_count ({self.node_count}) must equal "
+                f"len(node_names) ({len(self.node_names)})"
+            )
+        return self
 
 
 # Single source of truth for BlobRef's "at least one location" rule: both the
