@@ -18,6 +18,13 @@ _FROZEN = ConfigDict(frozen=True)
 def _reject_bool(v: Any) -> Any:
     """Reject a bool before it is coerced to an int.
 
+    Catches ``numpy.bool_`` as well as the builtin. ``numpy.bool_`` is **not** a
+    ``bool`` subclass, so an ``isinstance(v, bool)`` check alone lets it through and
+    pydantic's lax mode then reads it as ``1``/``0`` — the same trap
+    ``params._coerce_age`` documents and defends against with an allowlist. Numpy is
+    not a dependency of this library, so the check is duck-typed on the ``.item()``
+    scalar-unwrap protocol rather than importing numpy or matching a type name.
+
     Args:
         v: The raw input value for an integer field.
 
@@ -25,9 +32,15 @@ def _reject_bool(v: Any) -> Any:
         The value unchanged when it is not a bool.
 
     Raises:
-        ValueError: If ``v`` is a bool.
+        ValueError: If ``v`` is a builtin ``bool`` or unwraps to one.
     """
-    if isinstance(v, bool):
+    unwrapped = v
+    if not isinstance(v, bool) and hasattr(v, "item"):
+        try:
+            unwrapped = v.item()
+        except (ValueError, TypeError):  # e.g. a multi-element array
+            unwrapped = v
+    if isinstance(unwrapped, bool):
         raise ValueError(
             f"expected an integer, got a bool ({v!r}); bools are rejected rather than "
             "coerced to 1/0 because a silently plausible count is worse than a failure"
@@ -199,8 +212,8 @@ Mode = Literal["cylinder", "multiplant cylinder", "plate"]
 # Defined after both vocabularies on purpose: this module has no `from __future__
 # import annotations`, so the `mode: Mode` and `root_type: RootType` fields and the
 # `-> ModelRef` return annotation are evaluated at class-definition time and every
-# name must already exist (RootType and Mode are the binding constraints; ModelRef at
-# line ~18 is never at risk). So ModelCard must come *after* both; it is placed as
+# name must already exist (RootType and Mode are the binding constraints; ModelRef,
+# defined far above, is never at risk). So ModelCard must come *after* both; it is placed as
 # close to them as the vocabulary block allows. Conceptually ModelCard is a
 # model-registry sibling of ModelRef.
 class ModelCard(BaseModel):

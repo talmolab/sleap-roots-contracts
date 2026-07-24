@@ -25,11 +25,11 @@ change, and because a proposal that tightens one half of the same field block in
 ask why the other half was left.
 
 **Decision: the card is strict; the scan-parameter side stays tolerant.**
-`resolve_params` normalizes a mode with strip+lower (`params.py:131`, whose docstring already calls
+`resolve_params` normalizes a mode with strip+lower (`_normalize_mode`, whose docstring already calls
 the `ModelCard` mode vocabulary authoritative) but does **not** check membership, and
 `ResolvedParams.values` is a `dict[str, Any]`. That tolerance is deliberate and load-bearing: an
 unmodelled species or mode is specified to degrade to a **selection zero-match, not an error**
-(`params.py:121`), so a scan the program has no model for is skipped rather than crashing the run.
+(`_normalize_species`), so a scan the program has no model for is skipped rather than crashing the run.
 This change does not touch it. The resulting asymmetry is the correct one — the *registry card* is a
 curated artifact written once at promotion and must be exactly right; the *scan parameters* are read
 from live Bloom metadata the pipeline does not control.
@@ -65,14 +65,14 @@ blocked on a6 shipping.
   carry an in-vocabulary mode** (`cylinder` ×11, `multiplant cylinder` ×2). The other 93 are legacy
   pre-`ModelCard` collections with no `mode`/`species`/`root_type`/age fields at all — they could
   never validate today either, and `list_cards()` applies its alias filter *before* building any card
-  (`model_registry.py:215` filters, `:243` validates), so it never attempts them. **The retype
+  (it filters, then validates), so it never attempts them. **The retype
   introduces zero new failures against the live registry**, and predict's pin bump needs no migration.
   Whether `list_cards()` should degrade to skip-with-warning instead of raising remains a fair
   robustness question for predict's `model-management` spec — filed as
   `talmolab/sleap-roots-predict#32` — but it is pre-existing and not caused by this change.
 - **`plate` is in the vocabulary but has no seeded models yet** (training #3 defers them). So the
   vocabulary is currently wider than the registry — the safe direction. The reverse (a live mode the
-  vocabulary lacks, e.g. an unanticipated GraviScan/multiscanner mode, which `params.py:148` notes is
+  vocabulary lacks, e.g. an unanticipated GraviScan/multiscanner mode, which `_mode_for_scan` notes is
   a future slot-in) would be a hard failure, and would need a contract release to admit the new
   spelling. That is the intended cost of a controlled vocabulary and matches how `RootType` already
   behaves.

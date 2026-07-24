@@ -35,6 +35,13 @@ one release and one downstream pin bump instead of two.
   silently never matching a scan.
 - **Adopt `NonBoolInt` on `ModelCard.age_min` and `ModelCard.age_max`** (#25). A `bool` bound is
   rejected rather than coerced; ordinary lax parsing (`"7"`, `7.0`) is unaffected.
+- **Fix `NonBoolInt` to catch `numpy.bool_` as well as the builtin.** Added during pre-PR review:
+  `numpy.bool_` is not a `bool` subclass, so `isinstance(v, bool)` let it through and pydantic read
+  it as `1`/`0` — the exact trap `params._coerce_age` already documents and defends against for scan
+  ages with an allowlist. The card side was therefore *looser* than the tolerant scan-param side for
+  the same quantity, inverting the asymmetry this change argues for. Because `NonBoolInt` is shared,
+  this also closes the hole on all seven of `LabelCard`'s integer fields — including `node_count`,
+  where a coerced `1` satisfies the skeleton-coherence check against a single node name.
 - Update `model-selection-contract`'s "Model Selection Card" requirement to state both, with
   scenarios covering vocabulary rejection, full-vocabulary acceptance, bool rejection, and the
   preserved lax-parsing behavior.
@@ -49,10 +56,14 @@ string and degrading an unmodelled one to a selection zero-match rather than an 
 
 ## Impact
 
-- **Affected specs:** `model-selection-contract` (MODIFIED — one requirement). No new capability;
-  `label-selection-contract` is untouched.
-- **Affected code:** `src/sleap_roots_contracts/models.py` (two field annotations plus the comment
-  blocks at `models.py:46-48` and `models.py:188-190` that name this deferral),
+- **Affected specs:** `model-selection-contract` (MODIFIED — one requirement). No new capability.
+  Note `LabelCard`'s bool rejection turns out to have **no spec requirement at all** —
+  `add-label-selection-contract` implemented `NonBoolInt` and discussed it in design.md, but never
+  wrote a SHALL or a scenario for it. So the shared guard's strengthening has no
+  `label-selection-contract` surface to modify. That gap belongs to that change, which is still open
+  (2 tasks); flagged there rather than patched from here.
+- **Affected code:** `src/sleap_roots_contracts/models.py` (two field annotations plus the `NonBoolInt` and
+  `Mode` comment blocks that name this deferral),
   `tests/test_model_card.py` (the shared fixture uses `mode="proximal"`, an off-vocabulary value that
   the retype invalidates), `docs/`.
 - **Release:** rides the **unreleased `0.1.0a6`**, alongside `add-label-selection-contract`. Must

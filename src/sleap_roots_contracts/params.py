@@ -135,12 +135,13 @@ def _normalize_mode(mode: Any) -> str:
     canonicalize identically (representation-independent ``param_hash``). The
     seeded modes (``cylinder``, ``multiplant cylinder``) are already lowercase.
 
-    Normalization only — membership is deliberately *not* checked here. This is the
-    tolerant side of the split: an unmodelled mode degrades to a selection
-    zero-match (see ``_species_for_scan``), whereas ``ModelCard``/``LabelCard``
-    match :data:`Mode` exactly and fail loudly. So ``"Cylinder"`` from an override
-    canonicalizes to a value the cards accept, while ``"cyl"`` stays a zero-match
-    here and would be rejected outright on a card.
+    Normalization only — membership is not checked here, mirroring how
+    ``_normalize_species`` lets an unknown species pass through rather than
+    rejecting it. The card registry is the authority on what has models, so an
+    unmodelled mode reaches selection and finds nothing, whereas
+    ``ModelCard``/``LabelCard`` match ``Mode`` exactly and fail loudly. In practice
+    ``"Cylinder"`` from an override canonicalizes to a value the cards accept, while
+    ``"cyl"`` does not and would be rejected outright on a card.
 
     Raises:
         ValueError: If ``mode`` is present, non-blank, and not a string.
@@ -153,10 +154,10 @@ def _mode_for_scan(metadata: Dict[str, Any]) -> str:
 
     The cylinder pipeline yields cylinder scans only, so this returns
     ``"cylinder"``. GraviScan/multiscanner modes slot in here once their
-    scanners and models exist; the returned string MUST be a member of the
-    :data:`Mode` vocabulary, which since ``0.1.0a6`` types ``ModelCard.mode`` as
-    well as ``LabelCard.mode`` — so a new modality needs the vocabulary widened
-    here *and* in ``models.py``, in the same release.
+    scanners and models exist; the returned string MUST be a member of the ``Mode``
+    vocabulary, which since ``0.1.0a6`` types ``ModelCard.mode`` as well as
+    ``LabelCard.mode`` — so a new modality needs the vocabulary widened here *and*
+    in ``models.py``, in the same release.
     """
     return "cylinder"
 

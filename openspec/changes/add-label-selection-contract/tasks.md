@@ -90,8 +90,13 @@
       the staleness paragraph (archived change, task 2.7)
 - [x] 6.3 Run `uv run pytest -v`, `uv run black --check src tests`, `uv run ruff check src tests`
       (353 passed; black + ruff clean)
-- [ ] 6.4 `openspec validate add-label-selection-contract --strict` — **BLOCKED:** `openspec` CLI is
-      not installed in this environment; run locally/CI
+- [x] 6.4 `openspec validate add-label-selection-contract --strict` — passes (the `openspec` CLI is
+      available now; it was absent when this task was written)
+- [ ] 6.6 **Gap found during `tighten-model-card-validation`'s review:** the bool-rejection behavior
+      (`NonBoolInt` on all seven integer fields) has **no requirement or scenario** in
+      `specs/label-selection-contract/spec.md` — it was implemented and argued in design.md but never
+      specified. Add a `Label Card Integer Fields Reject Bools` requirement before archiving, and note
+      the guard now also covers `numpy.bool_` (strengthened in `tighten-model-card-validation`)
 - [ ] 6.5 Release **`0.1.0a6`** (not `0.1.0a4` — already taken by `resolve_params`), then unblock
       `sleap-roots-training`'s `add-label-registry` — **version bumped in `pyproject.toml` + schema
       `$id` regenerated (a5→a6, no structural diff); the actual tag + PyPI publish is a user action**

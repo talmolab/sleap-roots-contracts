@@ -3,6 +3,7 @@
 import json
 from typing import get_args
 
+import numpy as np
 import pytest
 from pydantic import ValidationError
 
@@ -348,6 +349,20 @@ def test_label_card_rejects_bool_for_int_field(field, value):
     """
     with pytest.raises(ValidationError):
         make_label_card(**{field: value})
+
+
+@pytest.mark.parametrize("field", INT_FIELDS)
+def test_label_card_rejects_numpy_bool_for_int_field(field):
+    """np.bool_ is rejected too — it is not a ``bool`` subclass.
+
+    An ``isinstance(v, bool)`` check alone misses it, so the guard would have been
+    bypassed by any producer stitching values from a pandas row. ``node_count`` is the
+    sharpest case: coerced to ``1`` it would *satisfy* the skeleton-coherence check
+    against a single node name, yielding a card that validates while claiming a
+    one-node skeleton. ``params._coerce_age`` documents the same trap for ages.
+    """
+    with pytest.raises(ValidationError, match="bool"):
+        make_label_card(**{field: np.bool_(True)})
 
 
 def test_label_card_bool_node_count_does_not_satisfy_skeleton_check():

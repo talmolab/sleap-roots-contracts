@@ -4,6 +4,7 @@ import json
 import warnings
 from typing import get_args
 
+import numpy as np
 import pytest
 from pydantic import ValidationError
 
@@ -88,7 +89,25 @@ def test_model_card_rejects_bool_age(field, value):
         make_card(**bounds)
 
 
-@pytest.mark.parametrize("raw,expected", [("7", 7), (7.0, 7)])
+@pytest.mark.parametrize("field", ["age_min", "age_max"])
+def test_model_card_rejects_numpy_bool_age(field):
+    """np.bool_ is rejected like a Python bool — it is not a bool subclass.
+
+    The mirror of test_numpy_bool_age_is_rejected_like_a_python_bool in
+    test_params.py: _coerce_age already refuses np.bool_ on the tolerant scan-param
+    side, and the curated card must not be looser than it for the same quantity.
+    An isinstance(v, bool) check alone does not catch this, so the card would
+    otherwise read np.True_ as a selection window bound of 1.
+
+    Reachable on the write side: training builds cards in-process at promotion,
+    where a value stitched from a pandas row is a numpy scalar, not a Python bool.
+    """
+    bounds = {"age_min": 0, "age_max": 0, field: np.bool_(True)}
+    with pytest.raises(ValidationError, match="bool"):
+        make_card(**bounds)
+
+
+@pytest.mark.parametrize("raw,expected", [("7", 7), (7.0, 7), (np.int64(7), 7)])
 def test_model_card_age_lax_parsing_preserved(raw, expected):
     """Ordinary lax int parsing still works — the bool guard rejects only bool.
 
@@ -118,14 +137,15 @@ def test_model_card_accepts_all_root_types(rt):
 
 
 def test_model_card_rejects_bad_mode():
-    """A mode outside the Mode vocabulary is rejected.
+    """A mode outside the Mode vocabulary is rejected, and the error names the field.
 
     `cyl` is the concrete value this guard exists to stop: it is the shorthand the
     existing label collection names use, and the reason the model and label
     registries cannot be joined today (sleap-roots-training#10).
     """
-    with pytest.raises(ValidationError):
+    with pytest.raises(ValidationError) as exc:
         make_card(mode="cyl")
+    assert [e["loc"] for e in exc.value.errors()] == [("mode",)]
 
 
 @pytest.mark.parametrize("bad", ["Cylinder", "cylinder ", " cylinder", "CYLINDER"])
@@ -243,6 +263,58 @@ def test_model_card_tolerates_extra_keys():
     c = ModelCard.model_validate(blob)
     assert c.species == "rice"
     assert not hasattr(c, "soybean")
+
+
+@pytest.mark.parametrize(
+    "bad_field,bad_value", [("mode", "cyl"), ("age_min", True), ("age_max", True)]
+)
+def test_model_card_guards_apply_via_model_validate(bad_field, bad_value):
+    """Both guards fire on the model_validate path, not just kwargs construction.
+
+    This is the production entry point: predict's registry lister builds every card
+    with ModelCard.model_validate(raw_wandb_metadata), never with keyword arguments.
+    A guard that only held for direct construction would leave exactly the path the
+    guards exist to defend (a raw metadata blob) unprotected, so it is pinned here
+    explicitly rather than assumed from pydantic's internals.
+    """
+    blob = dict(
+        species="rice",
+        mode="cylinder",
+        age_min=0,
+        age_max=0,
+        root_type="primary",
+        registry_id="reg-primary",
+        version="v1",
+        v007=True,  # the legacy boolean-key soup this blob really carries
+    )
+    blob[bad_field] = bad_value
+    with pytest.raises(ValidationError) as exc:
+        ModelCard.model_validate(blob)
+    assert [e["loc"] for e in exc.value.errors()] == [(bad_field,)]
+
+
+def test_model_card_field_errors_aggregate():
+    """Two bad fields surface as two errors in one pass (mirrors LabelCard).
+
+    Matters for anyone diagnosing a batch of registry cards: a per-field report over
+    a bad blob is complete for field-level errors, so it is fix-all-then-rerun rather
+    than fix-one-rerun.
+    """
+    with pytest.raises(ValidationError) as exc:
+        make_card(mode="cyl", root_type="bogus")
+    assert {e["loc"] for e in exc.value.errors()} == {("mode",), ("root_type",)}
+
+
+def test_model_card_field_error_masks_the_range_check():
+    """A bad field hides the cross-field range error — the validators are gated.
+
+    The age_min <= age_max validator is mode="after", so it runs only once every
+    field has passed. Pinned (rather than left implicit) because it sets the
+    expectation for a backfill: a card can need more than one round of fixes.
+    """
+    with pytest.raises(ValidationError) as exc:
+        make_card(mode="cyl", age_min=9, age_max=2)
+    assert [e["loc"] for e in exc.value.errors()] == [("mode",)]
 
 
 def test_model_card_importable_from_package_root():

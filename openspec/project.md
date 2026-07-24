@@ -97,5 +97,6 @@ is a **coordinating writer**: at model promotion it emits the `ModelCard` select
 wandb artifact metadata (field names must match this contract), so it participates by
 coordination. Once the training-side `add-label-registry` PR lands (it sequences after this
 release), it will also **import** the package for the controlled vocabularies contracts owns —
-`RootType` and, as of the label-selection contract, `Mode`, so training's own `MODE_VOCAB`
-collapses into this single source, closing the `cylinder`/`cyl` split from issue #10.
+`RootType` and `Mode`. Since `0.1.0a6` `Mode` types the `mode` field on both cards, so training's
+own `MODE_VOCAB` is redundant for `ModelCard` *and* `LabelCard` and collapses entirely into this
+single source, closing the `cylinder`/`cyl` split from issue #10.

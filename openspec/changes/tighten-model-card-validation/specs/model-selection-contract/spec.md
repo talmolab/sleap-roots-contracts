@@ -20,7 +20,9 @@ degrades an unmodelled value to a selection zero-match rather than an error; thi
 governs the card only.
 
 `age_min` and `age_max` SHALL reject a `bool` rather than coerce it to `1`/`0`, while leaving
-ordinary lax integer parsing (for example `"7"` or `7.0`) unaffected.
+ordinary lax integer parsing (for example `"7"`, `7.0`, or a `numpy.int64`) unaffected. The
+rejection SHALL cover a `numpy.bool_` as well as the builtin `bool`: `numpy.bool_` is not a `bool`
+subclass, so a check that tests only for the builtin would let it through and read it as `1`/`0`.
 
 `ModelCard` is a Python-side producer contract and SHALL NOT appear in the emitted JSON Schema.
 
@@ -46,8 +48,14 @@ ordinary lax integer parsing (for example `"7"` or `7.0`) unaffected.
 - **THEN** validation raises an error naming the bool, rather than coercing it to `1`/`0` and
   yielding a card that claims a plausible-but-wrong selection window
 
+#### Scenario: A numpy bool age bound is rejected too
+- **WHEN** a `ModelCard` is built with an age bound given as a `numpy.bool_`
+- **THEN** validation raises the same error, because `numpy.bool_` is not a `bool` subclass and
+  would otherwise be read as `1`/`0` — the card must not be looser than `resolve_params`, which
+  already refuses a `numpy.bool_` age
+
 #### Scenario: Lax integer parsing of the age bounds is preserved
-- **WHEN** a `ModelCard` is built with an age bound given as `"7"` or `7.0`
+- **WHEN** a `ModelCard` is built with an age bound given as `"7"`, `7.0`, or a `numpy.int64`
 - **THEN** construction succeeds and the bound reads as the integer `7`
 
 #### Scenario: root_type is controlled
