@@ -19,6 +19,12 @@ capture-mode vocabulary — the Python-side label-provenance shape shared by the
 - **`LabelCard` / `Mode`** — new label-selection-contract capability (mirrors `ModelCard`).
   Training's `MODE_VOCAB` collapses into the contract-owned `Mode`, closing the
   `cylinder`/`cyl` split from sleap-roots-training#10.
+- **Bool-rejecting integer fields on `LabelCard`.** Every integer field rejects a `bool`
+  rather than letting pydantic's lax mode coerce it to `1`/`0`; ordinary lax parsing
+  (`"7"`, `7.0`) is unchanged. `LabelCard` sets `extra="ignore"` to tolerate the legacy
+  boolean-key metadata soup, which makes field validation its only defense against a
+  valid-but-wrong card. `ModelCard` is deliberately unchanged — same exposure, but it
+  shipped in `0.1.0a3` and retyping it is a tracked follow-up.
 
 ### Changed
 - Both emitted schemas (`result_envelope`, `analysis_input`) are regenerated and their `$id`
@@ -217,7 +223,8 @@ sleap-roots ↔ Bloom pipeline integration. Pure, dependency-light, Bloom-agnost
 - CI (lint + drift guard + tests on Python 3.11/3.12) and a PyPI
   trusted-publishing workflow.
 
-[Unreleased]: https://github.com/talmolab/sleap-roots-contracts/compare/v0.1.0a5...HEAD
+[Unreleased]: https://github.com/talmolab/sleap-roots-contracts/compare/v0.1.0a6...HEAD
+[0.1.0a6]: https://github.com/talmolab/sleap-roots-contracts/compare/v0.1.0a5...v0.1.0a6
 [0.1.0a5]: https://github.com/talmolab/sleap-roots-contracts/compare/v0.1.0a4...v0.1.0a5
 [0.1.0a4]: https://github.com/talmolab/sleap-roots-contracts/compare/v0.1.0a3...v0.1.0a4
 [0.1.0a3]: https://github.com/talmolab/sleap-roots-contracts/compare/v0.1.0a2...v0.1.0a3

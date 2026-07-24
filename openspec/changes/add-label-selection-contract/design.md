@@ -111,8 +111,44 @@ surface.
   populate. `source_sha256` stays computed in the publish path. One-way-door risk closed.
 - **`Mode` as a `Literal` is a closed set**; a new capture mode requires a contracts release. Accepted
   — same trade-off `RootType` already makes, and the closedness is the point.
-- Cross-repo sequencing: training cannot pin `0.1.0a5` until this ships. → Release contracts first;
+- Cross-repo sequencing: training cannot pin `0.1.0a6` until this ships. → Release contracts first;
   the training change declares the dependency.
+- **Bool-to-int coercion on the integer fields.** Python's `bool` subclasses `int`, so pydantic's
+  lax mode silently reads `True`/`False` as `1`/`0`. No current collection triggers it; the risk is
+  a *future* collection during #11's backfill yielding a valid-but-wrong card. The sharpest form:
+  `node_count=True` coerces to 1 and then **satisfies** the skeleton-coherence check against a
+  single node name, so the card validates while claiming a one-node skeleton. This contract is more
+  exposed than most — the legacy metadata is boolean-key soup (`{"4nodes": true}`) and
+  `extra="ignore"` makes field validation the only defense. → **Fixed:** a reusable
+  `NonBoolInt = Annotated[int, BeforeValidator(_reject_bool)]` rejects only `bool` and leaves lax
+  int parsing (`"7"`, `7.0`) alone, applied to all seven integer fields.
+  - **Asymmetry, deliberate:** `ModelCard` has the same exposure on `age_min`/`age_max` but shipped
+    in `0.1.0a3`. Retyping a released contract's fields is a behavior change that would tighten
+    validation for existing consumers, so it is **not** smuggled into this change. `NonBoolInt` is
+    written to be reusable; adopting it on `ModelCard` is a tracked follow-up for a release that
+    can state it in its own changelog entry.
+- **Validation is not a full diagnostic in one pass — relevant to #11's backfill script.** Not a bug
+  (it is exactly how pydantic is specified to behave), but worth stating because a backfill over
+  eight legacy collections wants to see everything wrong with a blob per attempt, not fix-one-rerun.
+  Measured on this contract:
+  - *Field-level errors do aggregate.* Two bad fields (`mode="cyl"` + `root_type="bogus"`, or
+    `n_frames=-1` + `n_plants=True`) surface as **two** entries in one `ValidationError.errors()`.
+    A per-field report over a bad blob is therefore complete for this class.
+  - *The `mode="after"` model validators are the gate.* They run only once **every** field has
+    passed, so a single bad field hides every cross-field problem: `mode="cyl"` + `node_count=9`
+    against two node names reports only the `mode` error. And the two model validators are
+    themselves sequential in definition order — `_check_age_range` raising short-circuits
+    `_check_skeleton_coherence`, so an `age_min > age_max` blob never reports its skeleton mismatch.
+  - → A backfill wanting full diagnostics should loop `model_validate` until clean rather than
+    treat one `ValidationError` as the complete defect list. Pinned by
+    `test_validation_error_aggregation_is_field_level_only` so the note can't silently go stale.
+- **Naming asymmetry with `ModelCard.weights_checksum` — deliberate, not an oversight.**
+  `weights_checksum` is algorithm-*agnostic* because it is copied from the wandb artifact object,
+  where the digest algorithm is wandb's implementation detail and not ours to promise.
+  `source_sha256` is algorithm-*specific* because **our** publish path computes it, over the `.slp`
+  bytes, with a pinned algorithm — the name is the promise. Renaming it to `source_checksum` for
+  cosmetic symmetry would discard that guarantee and churn the field name the
+  `/build-labeling-package` writer and `spec.md` already use. Kept as-is.
 
 ## Open Questions
 

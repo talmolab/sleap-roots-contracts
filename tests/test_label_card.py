@@ -8,6 +8,32 @@ from pydantic import ValidationError
 
 from sleap_roots_contracts.schema import render
 
+# The best-effort provenance fields — all optional, all seven populated by the publish
+# path. Stated once so the "all seven" invariant can't drift between tests.
+PROVENANCE_FIELDS = (
+    "source_experiment",
+    "bloom_experiment_id",
+    "accessions",
+    "labeler",
+    "box_link",
+    "source_sha256",
+    "sleap_io_version",
+)
+
+# Every integer-typed field. A bool must not be coerced into any of them.
+INT_FIELDS = (
+    "age_min",
+    "age_max",
+    "node_count",
+    "n_frames",
+    "n_instances",
+    "n_plants",
+    "n_scans",
+)
+
+# sha256 of b"" — a valid-shaped digest; the value is never recomputed here.
+_SOURCE_SHA256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+
 # Every field a valid LabelCard requires (no provenance fields — those are optional).
 REQUIRED_FIELDS = (
     "species",
@@ -112,18 +138,24 @@ def test_label_card_is_frozen():
         c.species = "canola"
 
 
-@pytest.mark.parametrize(
-    "field",
-    [
-        "source_experiment",
-        "bloom_experiment_id",
-        "accessions",
-        "labeler",
-        "box_link",
-        "source_sha256",
-        "sleap_io_version",
-    ],
-)
+def _provenance_kwargs():
+    """All seven provenance fields, each with a distinct, recognizable value.
+
+    Values are deliberately all different so a crossed assignment (two fields wired to
+    each other) fails as loudly as a dropped one.
+    """
+    return dict(
+        source_experiment="2026-05-12_rice_cyl_batch3",
+        bloom_experiment_id="exp_01HQ8Z3KQW",
+        accessions=("PI562993", "PI603911"),
+        labeler="eberrigan",
+        box_link="https://app.box.com/folder/123456789",
+        source_sha256=_SOURCE_SHA256,
+        sleap_io_version="0.2.0",
+    )
+
+
+@pytest.mark.parametrize("field", PROVENANCE_FIELDS)
 def test_label_card_optional_provenance_defaults_to_none(field):
     """Every best-effort provenance field is optional and defaults to None.
 
@@ -133,6 +165,86 @@ def test_label_card_optional_provenance_defaults_to_none(field):
     """
     c = make_label_card()
     assert getattr(c, field) is None
+
+
+def test_provenance_kwargs_covers_every_provenance_field():
+    """The populated fixture covers all seven provenance fields, and only those.
+
+    Without this, a newly added provenance field could be left out of
+    ``_provenance_kwargs`` and the round-trip guards below would silently stop
+    covering it.
+    """
+    from sleap_roots_contracts import LabelCard
+
+    assert set(_provenance_kwargs()) == set(PROVENANCE_FIELDS)
+    optional = {
+        name for name, f in LabelCard.model_fields.items() if not f.is_required()
+    }
+    assert optional == set(PROVENANCE_FIELDS)
+
+
+def test_label_card_carries_every_populated_provenance_field():
+    """Every provenance field passed in lands on the card under that same name.
+
+    The guard the rest of the suite lacked: every other test leaves these seven as
+    None, so a renamed or typo'd field would be dropped by ``extra="ignore"``, still
+    read ``None``, and pass. Populating all seven from a raw wandb-shaped blob ties the
+    writer's key names to the contract's attribute names.
+    """
+    from sleap_roots_contracts import LabelCard
+
+    provenance = _provenance_kwargs()
+    blob = {
+        **_label_metadata(),
+        "registry_id": "reg-labels-soy",
+        "version": "v7",
+        **provenance,
+    }
+    c = LabelCard.model_validate(blob)
+    for field, expected in provenance.items():
+        assert getattr(c, field) == expected, f"{field} did not survive validation"
+
+
+def test_label_card_provenance_survives_json_round_trip():
+    """A fully populated card serializes and re-validates without losing provenance.
+
+    Covers the wire hop the registry lister makes (card -> JSON -> card): every
+    provenance key must appear in the dumped payload, and ``accessions`` must come back
+    as a tuple, not the list JSON turns it into.
+    """
+    from sleap_roots_contracts import LabelCard
+
+    c = make_label_card(**_provenance_kwargs())
+    dumped = c.model_dump_json()
+    payload = json.loads(dumped)
+    for field in PROVENANCE_FIELDS:
+        assert field in payload, f"{field} missing from serialized payload"
+
+    back = LabelCard.model_validate_json(dumped)
+    assert back == c
+    assert back.accessions == ("PI562993", "PI603911")
+    assert back.source_sha256 == _SOURCE_SHA256
+
+
+def test_label_card_typo_in_provenance_key_is_dropped_silently():
+    """A misspelled provenance key is ignored, not rejected — the hazard guarded above.
+
+    ``extra="ignore"`` is required for #11's backfill (it tolerates the legacy
+    boolean-key soup), but it means the contract cannot tell a typo from a legacy tag.
+    This pins that failure mode as known and deliberate: the defense is the populated
+    round-trip test, not validation.
+    """
+    from sleap_roots_contracts import LabelCard
+
+    blob = {
+        **_label_metadata(),
+        "registry_id": "reg-labels-soy",
+        "version": "v7",
+        "box_lnk": "https://app.box.com/folder/123456789",  # typo: box_link
+    }
+    c = LabelCard.model_validate(blob)
+    assert c.box_link is None
+    assert not hasattr(c, "box_lnk")
 
 
 def test_label_card_has_no_data_path_field():
@@ -203,10 +315,60 @@ def test_label_card_rejects_node_count_name_mismatch():
     assert "2" in msg  # actual number of names
 
 
+def test_label_card_rejects_more_names_than_node_count():
+    """The mismatch is rejected in both directions — more names than the declared count.
+
+    The spec's own worked example (declared 4, five names given); the test above only
+    covered the declared > actual direction, which a one-sided ``<`` comparison would
+    also pass.
+    """
+    with pytest.raises(ValidationError) as exc:
+        make_label_card(node_count=4, node_names=("r1", "r2", "r3", "r4", "r5"))
+    msg = str(exc.value)
+    assert "4" in msg  # declared count
+    assert "5" in msg  # actual number of names
+
+
 def test_label_card_rejects_zero_node_count():
     """node_count = 0 is rejected (a skeleton has at least one node)."""
     with pytest.raises(ValidationError):
         make_label_card(node_count=0, node_names=())
+
+
+@pytest.mark.parametrize("field", INT_FIELDS)
+@pytest.mark.parametrize("value", [True, False])
+def test_label_card_rejects_bool_for_int_field(field, value):
+    """A bool is rejected wherever an integer is expected.
+
+    Pydantic's lax mode otherwise coerces ``True``/``False`` to ``1``/``0``, so a card
+    would validate and read a plausible-but-wrong number. This contract is unusually
+    exposed: #11 backfills from legacy wandb metadata that stores provenance as
+    boolean-key soup (keys whose value is ``True``), and ``extra="ignore"`` means field
+    validation is the only thing standing between that blob and a valid-but-wrong card.
+    """
+    with pytest.raises(ValidationError):
+        make_label_card(**{field: value})
+
+
+def test_label_card_bool_node_count_does_not_satisfy_skeleton_check():
+    """``node_count=True`` must not pass by coercing to 1 against a single node name.
+
+    The sharpest form of the coercion bug: bool -> 1 would make the skeleton-coherence
+    validator compare 1 == 1 and accept, producing a card claiming a one-node skeleton.
+    """
+    with pytest.raises(ValidationError):
+        make_label_card(node_count=True, node_names=("r1",))
+
+
+@pytest.mark.parametrize("value", [7, "7", 7.0])
+def test_label_card_still_accepts_ordinary_int_input(value):
+    """Rejecting bool leaves normal (lax) int parsing untouched.
+
+    The str/float forms are pydantic's existing lax behavior; the bool guard is
+    surgical and must not narrow them.
+    """
+    c = make_label_card(n_frames=value)
+    assert c.n_frames == 7
 
 
 def test_label_card_accepts_coherent_skeleton():
@@ -226,6 +388,49 @@ def test_label_card_rejects_root_type_outside_vocabulary():
     """A root_type outside the RootType vocabulary is rejected."""
     with pytest.raises(ValidationError):
         make_label_card(root_type="taproot")
+
+
+def test_validation_error_aggregation_is_field_level_only():
+    """One ValidationError is not a complete defect list — guidance for #11's backfill.
+
+    Not a bug; it is how pydantic is specified to work. Pinned here because the change's
+    design.md tells #11's backfill script to loop ``model_validate`` until clean rather
+    than treat a single error as the full diagnostic, and that advice should fail loudly
+    if the behavior ever changes.
+
+    Three distinct behaviors, in order of how much they hide:
+      1. field-level errors aggregate — two bad fields give two entries;
+      2. any field-level error suppresses the ``mode="after"`` validators entirely, so a
+         single typo'd field hides every cross-field defect;
+      3. the two model validators are sequential in definition order, so an inverted age
+         window short-circuits the skeleton-coherence check.
+    """
+
+    def errors_for(**overrides):
+        with pytest.raises(ValidationError) as exc:
+            make_label_card(**overrides)
+        return exc.value.errors()
+
+    # 1. Two independent field-level defects both surface.
+    both = errors_for(mode="cyl", root_type="bogus")
+    assert {e["loc"] for e in both} == {("mode",), ("root_type",)}
+
+    # ...including a constraint violation alongside a bool rejection, which take
+    # different paths (Field(ge=...) vs NonBoolInt's BeforeValidator).
+    mixed = errors_for(n_frames=-1, n_plants=True)
+    assert {e["loc"] for e in mixed} == {("n_frames",), ("n_plants",)}
+
+    # 2. A bad field hides a cross-field defect: node_count=9 against two names is a
+    # real skeleton mismatch, but only the mode error is reported.
+    masked = errors_for(mode="cyl", node_count=9)
+    assert {e["loc"] for e in masked} == {("mode",)}
+
+    # 3. Model validators are sequential — the age check short-circuits the skeleton
+    # check, so the skeleton mismatch stays invisible even with all fields well-typed.
+    shadowed = errors_for(age_min=10, age_max=3, node_count=9)
+    assert len(shadowed) == 1
+    assert "age_min" in shadowed[0]["msg"]
+    assert "node_count" not in shadowed[0]["msg"]
 
 
 # --- Task 4: tolerant construction from raw wandb metadata --------------------

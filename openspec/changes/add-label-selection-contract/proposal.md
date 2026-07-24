@@ -44,7 +44,7 @@ renaming or backfilling the existing eight collections (#11).
   `model-selection-contract` — `ModelCard` is untouched.
 - Affected code: `src/sleap_roots_contracts/models.py` (add `Mode`, `LabelCard`),
   `src/sleap_roots_contracts/__init__.py` (export both), `tests/`, `docs/`.
-- Release: cuts the next contracts alpha (**`0.1.0a5`** — `0.1.0a4` is already taken by
+- Release: cuts the next contracts alpha (**`0.1.0a6`** — `0.1.0a4` is already taken by
   `resolve_params`; issue #10's "0.1.0a4" is stale). Consumed by `sleap-roots-training`'s
   `add-label-registry` change, which **must sequence after** this ships.
 - Runtime deps unchanged (pydantic only; no filesystem/network — see Design on validator placement).
