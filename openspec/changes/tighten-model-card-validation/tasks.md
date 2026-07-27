@@ -151,11 +151,13 @@
 - [x] 7.11 Spec delta updated for 7.1/7.6/7.8 — the requirement now states that the bool check is
       scalar-only, that an invalid bound always surfaces as a validation error, and that a
       fractional bound is rejected rather than truncated, with a 1:1 scenario for each
-- [ ] 7.12 **NOTED, no action (finding: `Decimal` asymmetry).** `ModelCard(age_min=Decimal("7"))` is
-      accepted → `7` while `params._coerce_age` rejects `Decimal`. The design's "the card must not be
+- [x] 7.12 **CLOSED, no action taken (finding: `Decimal` asymmetry).** `ModelCard(age_min=Decimal("7"))`
+      is accepted → `7` while `params._coerce_age` rejects `Decimal`. The design's "the card must not be
       looser than `resolve_params`" argument is scoped to `numpy.bool_`, where the looseness yields a
       *plausible-but-wrong* value; a `Decimal("7")` reads as exactly `7`, and `Decimal` never arrives
-      from a JSON-derived wandb blob. Left alone deliberately rather than tightened by reflex
+      from a JSON-derived wandb blob. Left alone deliberately rather than tightened by reflex.
+      Checked because the decision is *made*, not because code changed — an unchecked box here would
+      read as outstanding work and block the archive check over a resolved no-op
 
 ## 8. PR #26 approving-review suggestions
 
