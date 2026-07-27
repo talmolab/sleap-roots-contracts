@@ -48,11 +48,17 @@ def test_model_card_rejects_reversed_age_range():
     Mirrors test_label_card_rejects_inverted_age_window: a bare `raises` here would
     also pass on any *other* validation failure, so the message is asserted to pin
     that it is the window check that fired.
+
+    The offending *values* are asserted alongside the field names, which the sibling
+    does and this test did not: field names alone are satisfied by a message that
+    names the fields without reporting the numbers, and the numbers are what makes a
+    bad card diagnosable from a log line without re-running validation.
     """
     with pytest.raises(ValidationError) as exc:
         make_card(age_min=6, age_max=3)
     msg = str(exc.value)
     assert "age_min" in msg and "age_max" in msg
+    assert "6" in msg and "3" in msg
 
 
 def test_model_card_allows_equal_age_bounds():
@@ -362,10 +368,26 @@ def test_model_card_field_errors_aggregate():
     Matters for anyone diagnosing a batch of registry cards: a per-field report over
     a bad blob is complete for field-level errors, so it is fix-all-then-rerun rather
     than fix-one-rerun.
+
+    Two vocabulary errors aggregate, and so does a `Field(ge=0)` violation next to a
+    bool rejection — those take different paths (pydantic's constraint machinery vs
+    NonBoolInt's BeforeValidator), and only the mixed case proves a raised
+    BeforeValidator does not abort the pass and swallow its neighbour. Mirrors the
+    `n_frames=-1, n_plants=True` block in test_label_card.py's
+    test_validation_error_aggregation_is_field_level_only, which ModelCard lacked.
     """
     with pytest.raises(ValidationError) as exc:
         make_card(mode="cyl", root_type="bogus")
     assert {e["loc"] for e in exc.value.errors()} == {("mode",), ("root_type",)}
+
+    with pytest.raises(ValidationError) as exc:
+        make_card(age_min=-1, age_max=True)
+    mixed = exc.value.errors()
+    assert {e["loc"] for e in mixed} == {("age_min",), ("age_max",)}
+    # ...and each is reported for its own reason, not one type for both.
+    by_loc = {e["loc"]: e for e in mixed}
+    assert by_loc[("age_min",)]["type"] == "greater_than_equal"
+    assert "bool" in by_loc[("age_max",)]["msg"]
 
 
 def test_model_card_field_error_masks_the_range_check():

@@ -35,7 +35,10 @@ def _reject_bool(v: Any) -> Any:
         v: The raw input value for an integer field.
 
     Returns:
-        The value unchanged when it is not a bool.
+        The *original* ``v``, unchanged, whenever it is not a bool — never the
+        unwrapped scalar. The unwrap exists only to answer "is this a bool?"; handing
+        pydantic the unwrapped value instead would make this guard a silent coercion
+        step (``np.int64(7)`` would arrive as a Python ``int``) rather than a check.
 
     Raises:
         ValueError: If ``v`` is a builtin ``bool`` or unwraps to one.

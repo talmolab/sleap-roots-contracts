@@ -156,3 +156,27 @@
       looser than `resolve_params`" argument is scoped to `numpy.bool_`, where the looseness yields a
       *plausible-but-wrong* value; a `Decimal("7")` reads as exactly `7`, and `Decimal` never arrives
       from a JSON-derived wandb blob. Left alone deliberately rather than tightened by reflex
+
+## 8. PR #26 approving-review suggestions
+
+All three are non-blocking parity items on an APPROVE — no behavior change, so no spec delta and
+no changelog line. Taken because each closes a gap between `ModelCard`'s suite and the `LabelCard`
+suite it claims to mirror.
+
+- [x] 8.1 **SUGGESTION: `_reject_bool`'s docstring did not say it returns the *original* `v`.**
+      "The value unchanged when it is not a bool" is true but leaves a reader of the `.item()`
+      unwrap to infer which value comes back. Now stated explicitly, with the reason: returning the
+      unwrapped scalar would turn a check into a silent coercion (`np.int64(7)` would reach pydantic
+      as a Python `int`), which is the opposite of what a guard on a curated card should do
+- [x] 8.2 **SUGGESTION: `test_model_card_rejects_reversed_age_range` asserted field *names*, not the
+      offending *values*** — weaker than `test_label_card_rejects_inverted_age_window`, which
+      asserts the numbers. Task 7.7 strengthened it from a bare `raises` to a name assertion but
+      stopped short of the sibling's bar. Now asserts both names and both values, so a message that
+      named the fields without reporting the numbers would fail
+- [x] 8.3 **SUGGESTION: nothing combined a `Field(ge=0)` violation with a `NonBoolInt` violation on
+      `ModelCard`.** The two take different paths — pydantic's constraint machinery vs the
+      `BeforeValidator` — and only the mixed case proves a *raised* `BeforeValidator` does not abort
+      the pass and swallow its neighbour's error. Added to
+      `test_model_card_field_errors_aggregate` (`age_min=-1, age_max=True`), asserting both `loc`s
+      **and** that each is reported for its own reason, mirroring the `n_frames=-1, n_plants=True`
+      block in `test_label_card.py`
