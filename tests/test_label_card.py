@@ -352,7 +352,8 @@ def test_label_card_rejects_bool_for_int_field(field, value):
 
 
 @pytest.mark.parametrize("field", INT_FIELDS)
-def test_label_card_rejects_numpy_bool_for_int_field(field):
+@pytest.mark.parametrize("value", [np.bool_(True), np.bool_(False)])
+def test_label_card_rejects_numpy_bool_for_int_field(field, value):
     """np.bool_ is rejected too — it is not a ``bool`` subclass.
 
     An ``isinstance(v, bool)`` check alone misses it, so the guard would have been
@@ -360,9 +361,13 @@ def test_label_card_rejects_numpy_bool_for_int_field(field):
     sharpest case: coerced to ``1`` it would *satisfy* the skeleton-coherence check
     against a single node name, yielding a card that validates while claiming a
     one-node skeleton. ``params._coerce_age`` documents the same trap for ages.
+
+    Both values are exercised: the builtin-bool tests parametrize over ``[True,
+    False]``, and the ``.item()`` unwrap this test covers deserves the same, so the
+    falsy half — which coerces to a plausible ``0`` — is not left unpinned.
     """
     with pytest.raises(ValidationError, match="bool"):
-        make_label_card(**{field: np.bool_(True)})
+        make_label_card(**{field: value})
 
 
 def test_label_card_bool_node_count_does_not_satisfy_skeleton_check():

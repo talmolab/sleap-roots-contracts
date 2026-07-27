@@ -92,11 +92,23 @@
       (353 passed; black + ruff clean)
 - [x] 6.4 `openspec validate add-label-selection-contract --strict` — passes (the `openspec` CLI is
       available now; it was absent when this task was written)
-- [ ] 6.6 **Gap found during `tighten-model-card-validation`'s review:** the bool-rejection behavior
-      (`NonBoolInt` on all seven integer fields) has **no requirement or scenario** in
-      `specs/label-selection-contract/spec.md` — it was implemented and argued in design.md but never
-      specified. Add a `Label Card Integer Fields Reject Bools` requirement before archiving, and note
-      the guard now also covers `numpy.bool_` (strengthened in `tighten-model-card-validation`)
 - [ ] 6.5 Release **`0.1.0a6`** (not `0.1.0a4` — already taken by `resolve_params`), then unblock
       `sleap-roots-training`'s `add-label-registry` — **version bumped in `pyproject.toml` + schema
       `$id` regenerated (a5→a6, no structural diff); the actual tag + PyPI publish is a user action**
+
+## 7. Archive gate — MUST be closed before `openspec archive`
+
+Not a checkbox to tick off with the rest: archiving folds this change's deltas into
+`openspec/specs/`, so anything missing here becomes permanently unspecified with no later prompt to
+fix it. **Do not run `openspec archive add-label-selection-contract` while 7.1 is open.**
+
+- [ ] 7.1 **BLOCKING (was 6.6). Gap found during `tighten-model-card-validation`'s review:** the
+      bool-rejection behavior (`NonBoolInt` on all seven integer fields) has **no requirement or
+      scenario** in `specs/label-selection-contract/spec.md` — it was implemented and argued in
+      `design.md` but never written as a `SHALL`. Add a `Label Card Integer Fields Reject Bools`
+      requirement with scenarios for the builtin `bool`, for `numpy.bool_` (the guard was
+      strengthened to cover it in `tighten-model-card-validation`, and that behavior is likewise
+      unspecified here), and for the `node_count=True` skeleton-coherence trap that makes this
+      load-bearing rather than cosmetic. The tests already exist in `tests/test_label_card.py` —
+      this is the spec catching up to shipped behavior, so it is a writing task, not a code one.
+      Re-run `openspec validate add-label-selection-contract --strict` after adding it

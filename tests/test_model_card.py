@@ -43,9 +43,16 @@ def test_model_card_valid():
 
 
 def test_model_card_rejects_reversed_age_range():
-    """age_min greater than age_max is rejected (window well-formedness)."""
-    with pytest.raises(ValidationError):
+    """age_min greater than age_max is rejected, and the error names both bounds.
+
+    Mirrors test_label_card_rejects_inverted_age_window: a bare `raises` here would
+    also pass on any *other* validation failure, so the message is asserted to pin
+    that it is the window check that fired.
+    """
+    with pytest.raises(ValidationError) as exc:
         make_card(age_min=6, age_max=3)
+    msg = str(exc.value)
+    assert "age_min" in msg and "age_max" in msg
 
 
 def test_model_card_allows_equal_age_bounds():
@@ -90,7 +97,8 @@ def test_model_card_rejects_bool_age(field, value):
 
 
 @pytest.mark.parametrize("field", ["age_min", "age_max"])
-def test_model_card_rejects_numpy_bool_age(field):
+@pytest.mark.parametrize("value", [np.bool_(True), np.bool_(False)])
+def test_model_card_rejects_numpy_bool_age(field, value):
     """np.bool_ is rejected like a Python bool — it is not a bool subclass.
 
     The mirror of test_numpy_bool_age_is_rejected_like_a_python_bool in
@@ -101,10 +109,65 @@ def test_model_card_rejects_numpy_bool_age(field):
 
     Reachable on the write side: training builds cards in-process at promotion,
     where a value stitched from a pandas row is a numpy scalar, not a Python bool.
+
+    Parametrized over both values: the .item() unwrap path is the one numpy-specific
+    branch in the guard, so proving it for np.True_ alone would leave the falsy half
+    — the one that coerces to a plausible 0 — unpinned.
     """
-    bounds = {"age_min": 0, "age_max": 0, field: np.bool_(True)}
+    bounds = {"age_min": 0, "age_max": 0, field: value}
     with pytest.raises(ValidationError, match="bool"):
         make_card(**bounds)
+
+
+@pytest.mark.parametrize("field", ["age_min", "age_max"])
+def test_model_card_rejects_bool_container_as_a_non_bool_error(field):
+    """A *container* of bools is rejected as a non-integer, not described as a bool.
+
+    The unwrap is duck-typed on `.item()` and gated on scalar-ness (`ndim == 0`), so
+    a one-element array falls through to pydantic's accurate `int_type` error — the
+    same error `np.array([1])` gets. Without the gate, `.item()` would unwrap the
+    single element and the card would report "got a bool" for what is really an
+    array, making the diagnostic asymmetric between bool and int containers.
+    """
+    bounds = {"age_min": 0, "age_max": 0, field: np.array([True])}
+    with pytest.raises(ValidationError) as exc:
+        make_card(**bounds)
+    assert [e["type"] for e in exc.value.errors()] == ["int_type"]
+
+
+@pytest.mark.parametrize("field", ["age_min", "age_max"])
+def test_model_card_hostile_item_still_raises_validation_error(field):
+    """An object whose `.item()` raises is rejected, not propagated to the caller.
+
+    The guard unwraps anything exposing `.item()`, so a value it was never designed
+    for can reach that call. The contract promises a ValidationError from
+    `model_validate` — a raw KeyError escaping would break every caller's except
+    clause, on exactly the boolean-key-soup path `extra="ignore"` exists to survive.
+    """
+
+    class HostileScalar:
+        """A duck-typed scalar whose unwrap raises something unanticipated."""
+
+        def item(self):
+            raise KeyError("not really a scalar")
+
+    bounds = {"age_min": 0, "age_max": 0, field: HostileScalar()}
+    with pytest.raises(ValidationError):
+        make_card(**bounds)
+
+
+@pytest.mark.parametrize("field", ["age_min", "age_max"])
+@pytest.mark.parametrize("bad", [7.5, "7.5"])
+def test_model_card_rejects_non_integral_age(field, bad):
+    """A fractional age bound is rejected, never silently truncated to 7.
+
+    Mirrors test_params.py's test_fractional_decimal_age_is_not_silently_truncated on
+    the card side: lax parsing accepts 7.0 (task 2.2 pins that), and the failure mode
+    worth guarding is the neighbouring one — 7.5 quietly becoming a 7-day bound that
+    shifts which scans a model claims.
+    """
+    with pytest.raises(ValidationError):
+        make_card(**{"age_min": 0, "age_max": 0, field: bad})
 
 
 @pytest.mark.parametrize("raw,expected", [("7", 7), (7.0, 7), (np.int64(7), 7)])

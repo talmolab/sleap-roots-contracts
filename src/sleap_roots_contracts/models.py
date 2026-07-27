@@ -25,6 +25,12 @@ def _reject_bool(v: Any) -> Any:
     not a dependency of this library, so the check is duck-typed on the ``.item()``
     scalar-unwrap protocol rather than importing numpy or matching a type name.
 
+    The unwrap is gated on scalar-ness (``ndim == 0``, absent on non-array duck types)
+    so a *container* of bools is not described as one: ``np.array([True])`` falls
+    through to pydantic's accurate "not a valid integer", the same error a container
+    of ints gets. Any ``.item()`` that raises falls through to the raw value rather
+    than propagating, so this guard can only ever produce a ``ValidationError``.
+
     Args:
         v: The raw input value for an integer field.
 
@@ -35,10 +41,13 @@ def _reject_bool(v: Any) -> Any:
         ValueError: If ``v`` is a builtin ``bool`` or unwraps to one.
     """
     unwrapped = v
-    if not isinstance(v, bool) and hasattr(v, "item"):
+    if not isinstance(v, bool) and hasattr(v, "item") and getattr(v, "ndim", 0) == 0:
         try:
             unwrapped = v.item()
-        except (ValueError, TypeError):  # e.g. a multi-element array
+        # Deliberately broad: this guard's only job is to decide "is this a bool?",
+        # and any answer it cannot get must become a ValidationError downstream, not
+        # an exception type no caller of model_validate is catching.
+        except Exception:
             unwrapped = v
     if isinstance(unwrapped, bool):
         raise ValueError(
@@ -57,9 +66,10 @@ def _reject_bool(v: Any) -> Any:
 # of int parsing, so ordinary lax inputs ("7", 7.0) are untouched.
 #
 # Applied to every integer field on LabelCard and to ModelCard's age bounds. The
-# ModelCard half landed a release later (0.1.0a6, tighten-model-card-validation):
-# it tightens validation on a contract already shipped in 0.1.0a3, so it was kept
-# out of the otherwise purely additive change that introduced this alias.
+# ModelCard half landed in a follow-up change (still 0.1.0a6,
+# tighten-model-card-validation): it tightens validation on a contract already shipped
+# in 0.1.0a3, so it was kept out of the otherwise purely additive change that
+# introduced this alias. Both ride the same unreleased 0.1.0a6.
 NonBoolInt = Annotated[int, BeforeValidator(_reject_bool)]
 
 

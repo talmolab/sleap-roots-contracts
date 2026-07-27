@@ -61,6 +61,17 @@
 - [x] 4.3 Note in `sleap-roots-training` #10 that `chooser.py`'s `MODE_VOCAB` frozenset is now fully
       redundant for both cards and should become `get_args(Mode)` when training bumps its pin
 
+## 5. Validation and release
+
+- [x] 5.1 Run `openspec validate tighten-model-card-validation --strict`
+- [x] 5.2 Run `uv run pytest -v`, `uv run black --check src tests`, `uv run ruff check src tests`
+- [x] 5.3 Regenerate `schema/*.json` and confirm the drift guard is green — expected to be a no-op,
+      since `ModelCard` is producer↔producer and not emitted; a diff here means something is wrong
+- [x] 5.4 Confirm `pyproject.toml` still reads `0.1.0a6` and that this change merges **before**
+      `add-label-selection-contract`'s task 6.5 cuts that release. If a6 ships first, renumber to
+      `0.1.0a7` rather than holding the release — training #10 is blocked on a6 (see design.md)
+- [x] 5.5 Run `/pre-merge-check`, then `/pr-description`, referencing both #21 and #25
+
 ## 6. Pre-PR review findings (added during `/pre-merge-check` Phase 3.5)
 
 - [x] 6.1 **BLOCKING:** `docs/CHANGELOG.md`'s `[0.1.0a6]` section stated "`ModelCard` is deliberately
@@ -84,16 +95,64 @@
 - [x] 6.7 Added the error-aggregation and range-masking mirrors that `test_label_card.py` had and
       `test_model_card.py` lacked
 - [x] 6.8 Flagged the gap the review surfaced in the *sibling* change: `LabelCard`'s bool rejection
-      has no spec requirement at all. Recorded as task 6.6 on `add-label-selection-contract`, which
-      is still open — not patched from here
+      has no spec requirement at all. Recorded on `add-label-selection-contract`, which is still
+      open — not patched from here. Promoted there from a task-6.6 checkbox to a standalone
+      **section 7 archive gate** in response to PR #26 review finding 3 (see 7.3 below)
 
-## 5. Validation and release
+## 7. PR #26 review findings
 
-- [x] 5.1 Run `openspec validate tighten-model-card-validation --strict`
-- [x] 5.2 Run `uv run pytest -v`, `uv run black --check src tests`, `uv run ruff check src tests`
-- [x] 5.3 Regenerate `schema/*.json` and confirm the drift guard is green — expected to be a no-op,
-      since `ModelCard` is producer↔producer and not emitted; a diff here means something is wrong
-- [x] 5.4 Confirm `pyproject.toml` still reads `0.1.0a6` and that this change merges **before**
-      `add-label-selection-contract`'s task 6.5 cuts that release. If a6 ships first, renumber to
-      `0.1.0a7` rather than holding the release — training #10 is blocked on a6 (see design.md)
-- [ ] 5.5 Run `/pre-merge-check`, then `/pr-description`, referencing both #21 and #25
+- [x] 7.1 **IMPORTANT (finding 2): `_reject_bool`'s `.item()` unwrap could escape as a non-
+      `ValidationError`.** The unwrap is duck-typed on any object exposing `.item()`, but only
+      `(ValueError, TypeError)` was caught, so an input whose `.item()` raised anything else
+      (`KeyError`, `OverflowError`, …) propagated raw out of `ModelCard.model_validate` — breaking
+      the contract's promise on exactly the boolean-key-soup path the guard defends. Broadened to
+      `except Exception` with a fall-through to the raw value. Low reachability (no real
+      numpy/pandas scalar triggers it; JSON-derived wandb blobs are builtins with no `.item()`),
+      but it is a one-line fix on a defense-in-depth guard
+- [x] 7.2 **IMPORTANT (finding 1): the "`models.py` 100%" claim was false** — lines 41-42, the
+      `.item()` fall-through, were authored but untested (99%, 2 miss). Now covered by
+      `test_model_card_hostile_item_still_raises_validation_error`, which is also 7.1's regression
+      guard. `models.py` is genuinely 100% (399 passed)
+- [x] 7.3 **IMPORTANT (finding 3): `LabelCard`'s bool/`numpy.bool_` rejection ships unspecified**,
+      and the fix was deferred to one unchecked checkbox on a sibling change — if that change is
+      archived without acting on it, the behavior lands in `openspec/specs/` permanently
+      unspecified. Promoted on `add-label-selection-contract` from task 6.6 into its own **section 7
+      "Archive gate — MUST be closed before `openspec archive`"**, stating the consequence and
+      naming the three scenarios required. Still not patched from here: it is that change's delta
+- [x] 7.4 **IMPORTANT (finding 4): the "RED→GREEN honored per commit" claim was overstated.** True
+      for the mode guard and the builtin-bool guard (RED `c2db238` gives 9 failed / 5 honestly
+      labeled "passes already"), but the `numpy.bool_` guard and both its tests landed together in
+      `e35d13a` with no failing commit first — and that is the sharpest behavioral change in the PR.
+      PR body corrected to scope the claim to the two guards it actually holds for
+- [x] 7.5 **SUGGESTION: `np.bool_(False)` was never exercised** — both numpy tests used
+      `np.bool_(True)` while the builtin tests parametrize over `[True, False]`, leaving the falsy
+      half of the `.item()` path unpinned. Both numpy tests now parametrize over both values
+- [x] 7.6 **SUGGESTION: nothing pinned non-integral age rejection on the card side.**
+      `test_model_card_age_lax_parsing_preserved` proves `7.0 → 7`; `7.5` was rejected but
+      unguarded. Added `test_model_card_rejects_non_integral_age`, mirroring `test_params.py`'s
+      `test_fractional_decimal_age_is_not_silently_truncated`
+- [x] 7.7 **SUGGESTION: `ModelCard`'s reversed-age test was weaker than its `LabelCard` sibling** —
+      a bare `pytest.raises(ValidationError)` that any other failure would satisfy. Now asserts both
+      bounds appear in the message, as task 6.7 claimed
+- [x] 7.8 **SUGGESTION: over-broad diagnostic.** A container of bools (`np.array([True])`) was
+      reported as "got a bool" while a container of ints fell through to pydantic's accurate
+      `int_type` — asymmetric messaging for two equally-invalid inputs. The unwrap is now gated on
+      scalar-ness (`ndim == 0`, absent on non-array duck types so the protocol still works), and
+      `test_model_card_rejects_bool_container_as_a_non_bool_error` pins the symmetry
+- [x] 7.9 **SUGGESTION: undeclared test dependency on numpy** — the tests import it, but it was
+      present only transitively via `pandas`. Added to the `dev` group with a comment recording that
+      numpy remains a non-*runtime* dependency (the guard is duck-typed, never imports it)
+- [x] 7.10 **SUGGESTION (wording):** the `NonBoolInt` comment's "landed a release later" risked
+      implying two releases when both ride the unreleased `0.1.0a6` — reworded to "landed in a
+      follow-up change (still 0.1.0a6)". `docs/CHANGELOG.md`'s "the one behavior change in the
+      release" undercounted its own three `### Changed` bullets — scoped to what was meant, a change
+      to an *already-released* contract. And this file's sections ran `1, 2, 3, 4, 6, 5`; section 5
+      now physically precedes section 6, with numbering left alone so cross-references still resolve
+- [x] 7.11 Spec delta updated for 7.1/7.6/7.8 — the requirement now states that the bool check is
+      scalar-only, that an invalid bound always surfaces as a validation error, and that a
+      fractional bound is rejected rather than truncated, with a 1:1 scenario for each
+- [ ] 7.12 **NOTED, no action (finding: `Decimal` asymmetry).** `ModelCard(age_min=Decimal("7"))` is
+      accepted → `7` while `params._coerce_age` rejects `Decimal`. The design's "the card must not be
+      looser than `resolve_params`" argument is scoped to `numpy.bool_`, where the looseness yields a
+      *plausible-but-wrong* value; a `Decimal("7")` reads as exactly `7`, and `Decimal` never arrives
+      from a JSON-derived wandb blob. Left alone deliberately rather than tightened by reflex

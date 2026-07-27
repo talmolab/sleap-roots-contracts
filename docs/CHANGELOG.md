@@ -16,7 +16,8 @@ capture-mode vocabulary — the Python-side label-provenance shape shared by the
 `ModelCard`, this is a producer↔producer contract and is **not** emitted to JSON Schema.
 
 Also **tightens `ModelCard`** so both cards validate the same way — see *Changed* below.
-This is the one behavior change in the release; read it before bumping a pin.
+That is the only change in this release to an **already-released** contract (`ModelCard`
+shipped in `0.1.0a3`); everything else here is new surface. Read it before bumping a pin.
 
 ### Added
 - **`LabelCard` / `Mode`** — new label-selection-contract capability (mirrors `ModelCard`).
@@ -45,6 +46,9 @@ This is the one behavior change in the release; read it before bumping a pin.
   sharpest case was `LabelCard.node_count`, where a coerced `1` *satisfies* the
   skeleton-coherence check against a single node name, yielding a card that validates while
   claiming a one-node skeleton. Duck-typed on `.item()`, so numpy remains a non-dependency.
+  The check is **scalar-only** — a one-element array of bools is rejected as a non-integer,
+  the same error a one-element array of ints gets — and an unwrap that raises falls through
+  rather than propagating, so an invalid integer field always surfaces as a `ValidationError`.
 - **Migration:** none needed for the production registry. All 13 `production`-aliased
   cards in `wandb-registry-sleap-roots-models` already carry an in-vocabulary mode
   (`cylinder` ×11, `multiplant cylinder` ×2); the other 93 artifacts are legacy

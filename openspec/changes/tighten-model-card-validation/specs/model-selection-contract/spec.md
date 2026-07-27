@@ -23,6 +23,9 @@ governs the card only.
 ordinary lax integer parsing (for example `"7"`, `7.0`, or a `numpy.int64`) unaffected. The
 rejection SHALL cover a `numpy.bool_` as well as the builtin `bool`: `numpy.bool_` is not a `bool`
 subclass, so a check that tests only for the builtin would let it through and read it as `1`/`0`.
+The bool check SHALL apply to scalars only — a *container* of bools is not a bool, and SHALL be
+rejected as a non-integer like any other container. Whatever the input, an invalid age bound SHALL
+surface as a validation error and SHALL NOT propagate any other exception to the caller.
 
 `ModelCard` is a Python-side producer contract and SHALL NOT appear in the emitted JSON Schema.
 
@@ -53,6 +56,21 @@ subclass, so a check that tests only for the builtin would let it through and re
 - **THEN** validation raises the same error, because `numpy.bool_` is not a `bool` subclass and
   would otherwise be read as `1`/`0` — the card must not be looser than `resolve_params`, which
   already refuses a `numpy.bool_` age
+
+#### Scenario: A container of bools is rejected as a non-integer
+- **WHEN** a `ModelCard` is built with an age bound given as a one-element array of bools
+- **THEN** validation raises a non-integer type error rather than reporting a bool, because the
+  bool check applies to scalars and a container of ints in the same position is rejected the same way
+
+#### Scenario: An unanticipated input still surfaces as a validation error
+- **WHEN** a `ModelCard` is built with an age bound whose scalar-unwrap raises an unexpected error
+- **THEN** validation raises a validation error rather than propagating that error to the caller,
+  because the guard is duck-typed and callers of `model_validate` handle only validation errors
+
+#### Scenario: A fractional age bound is rejected rather than truncated
+- **WHEN** a `ModelCard` is built with an age bound given as `7.5` or `"7.5"`
+- **THEN** validation raises an error rather than truncating to `7` and shifting which scans the
+  model claims, mirroring how `resolve_params` refuses a non-integral age
 
 #### Scenario: Lax integer parsing of the age bounds is preserved
 - **WHEN** a `ModelCard` is built with an age bound given as `"7"`, `7.0`, or a `numpy.int64`
