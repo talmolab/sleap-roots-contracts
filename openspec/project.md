@@ -10,14 +10,16 @@ contract** — the shape of a per-scan pipeline result and its provenance (Pydan
 `validate_analysis_input` validator; (3) the **model-selection contract** — `ModelCard`, the
 Python-side model-selection shape shared by `sleap-roots-training` (writer) and
 `sleap-roots-predict` (reader); (4), since `0.1.0a6`, the **label-selection contract** —
-`LabelCard` (plus the contract-owned `Mode` capture-mode vocabulary), the Python-side
-label-provenance shape shared by the `/build-labeling-package` workflow (writer) and
-training/lineage tooling (reader); and (5),
+`LabelCard`, the Python-side label-provenance shape shared by the `/build-labeling-package`
+workflow (writer) and training/lineage tooling (reader); and (5),
 since `0.1.0a5`, the **prediction-manifest contract** — `PredictionArtifact`/`PredictionManifest`,
 predict's per-scan output shape shared by `sleap-roots-predict` (writer) and `bloomctl` (reader).
 Contracts (1) and (2) emit versioned JSON Schema artifacts (Bloom consumes them); contracts (3),
 (4) and (5) are producer↔producer shapes that never cross the Bloom boundary and are **not**
-emitted to JSON Schema. It also ships a trait-definitions registry and, since
+emitted to JSON Schema. The contract-owned `Mode` capture-mode vocabulary types `mode` on both
+cards (3) and (4) — since `0.1.0a6` for `ModelCard`, which shipped it as an unvalidated `str` —
+making it the single source of truth that closes the `cylinder`/`cyl` split between the two
+registries. It also ships a trait-definitions registry and, since
 `0.1.0a4`, the **param-resolution oracle** `resolve_params` (Bloom scan metadata → `ResolvedParams`).
 
 `resolve_params` reads Bloom's `cyl_scans_extended` column names (`species_name`,
@@ -95,5 +97,6 @@ is a **coordinating writer**: at model promotion it emits the `ModelCard` select
 wandb artifact metadata (field names must match this contract), so it participates by
 coordination. Once the training-side `add-label-registry` PR lands (it sequences after this
 release), it will also **import** the package for the controlled vocabularies contracts owns —
-`RootType` and, as of the label-selection contract, `Mode`, so training's own `MODE_VOCAB`
-collapses into this single source, closing the `cylinder`/`cyl` split from issue #10.
+`RootType` and `Mode`. Since `0.1.0a6` `Mode` types the `mode` field on both cards, so training's
+own `MODE_VOCAB` is redundant for `ModelCard` *and* `LabelCard` and collapses entirely into this
+single source, closing the `cylinder`/`cyl` split from issue #10.

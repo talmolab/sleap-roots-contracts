@@ -15,6 +15,10 @@ capture-mode vocabulary — the Python-side label-provenance shape shared by the
 `/build-labeling-package` workflow (writer) and training/lineage tooling (reader). Like
 `ModelCard`, this is a producer↔producer contract and is **not** emitted to JSON Schema.
 
+Also **tightens `ModelCard`** so both cards validate the same way — see *Changed* below.
+That is the only change in this release to an **already-released** contract (`ModelCard`
+shipped in `0.1.0a3`); everything else here is new surface. Read it before bumping a pin.
+
 ### Added
 - **`LabelCard` / `Mode`** — new label-selection-contract capability (mirrors `ModelCard`).
   Training's `MODE_VOCAB` collapses into the contract-owned `Mode`, closing the
@@ -23,12 +27,36 @@ capture-mode vocabulary — the Python-side label-provenance shape shared by the
   rather than letting pydantic's lax mode coerce it to `1`/`0`; ordinary lax parsing
   (`"7"`, `7.0`) is unchanged. `LabelCard` sets `extra="ignore"` to tolerate the legacy
   boolean-key metadata soup, which makes field validation its only defense against a
-  valid-but-wrong card. `ModelCard` is deliberately unchanged — same exposure, but it
-  shipped in `0.1.0a3` and retyping it is a tracked follow-up.
+  valid-but-wrong card.
 
 ### Changed
+- **BREAKING (validation): `ModelCard.mode` is now the `Mode` vocabulary, not a free
+  `str`** (#21). A card carrying an off-vocabulary mode — the label registry's `cyl`
+  shorthand, or a cased `Cylinder` — now fails at construction instead of silently never
+  matching a scan. Matched **exactly**: the card does not normalize case or whitespace,
+  mirroring `root_type`. Normalizing a *requested* mode remains `resolve_params`' job, and
+  an unmodelled value still degrades to a selection zero-match there rather than an error.
+- **BREAKING (validation): `ModelCard.age_min`/`age_max` reject a `bool`** rather than
+  coercing it to `1`/`0` (#25), matching `LabelCard`. Ordinary lax parsing (`"7"`, `7.0`,
+  `numpy.int64(7)`) is unaffected.
+- **The bool guard now also catches `numpy.bool_`**, on `ModelCard` *and* on all seven of
+  `LabelCard`'s integer fields. `numpy.bool_` is not a `bool` subclass, so the original
+  `isinstance(v, bool)` check let it through and pydantic then read it as `1`/`0` — the
+  same trap `params._coerce_age` already documents and defends against for scan ages. The
+  sharpest case was `LabelCard.node_count`, where a coerced `1` *satisfies* the
+  skeleton-coherence check against a single node name, yielding a card that validates while
+  claiming a one-node skeleton. Duck-typed on `.item()`, so numpy remains a non-dependency.
+  The check is **scalar-only** — a one-element array of bools is rejected as a non-integer,
+  the same error a one-element array of ints gets — and an unwrap that raises falls through
+  rather than propagating, so an invalid integer field always surfaces as a `ValidationError`.
+- **Migration:** none needed for the production registry. All 13 `production`-aliased
+  cards in `wandb-registry-sleap-roots-models` already carry an in-vocabulary mode
+  (`cylinder` ×11, `multiplant cylinder` ×2); the other 93 artifacts are legacy
+  pre-`ModelCard` collections that carry no `mode`/`species`/`root_type`/age at all and
+  could not validate before this change either.
 - Both emitted schemas (`result_envelope`, `analysis_input`) are regenerated and their `$id`
-  advances to `v0.1.0a6`. Bytes-only restamp — no model changes.
+  advances to `v0.1.0a6`. Bytes-only restamp — no model changes. `ModelCard` is
+  producer↔producer and not emitted, so neither tightening touches the schema.
 
 ## [0.1.0a5] - 2026-07-21 (Pre-release)
 

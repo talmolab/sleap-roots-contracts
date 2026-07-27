@@ -1,0 +1,184 @@
+## 1. Retype `ModelCard.mode` to the `Mode` vocabulary (#21)
+
+- [x] 1.1 (RED) Test that a `ModelCard` built with `mode="cyl"` raises, and that the error names the
+      `mode` field — the label registry's shorthand is the concrete value this guard exists to stop
+- [x] 1.2 (RED) Test that a differently-cased `mode="Cylinder"` and a whitespace-padded
+      `mode="cylinder "` both raise, pinning the "no normalization on the card side" decision so a
+      future `BeforeValidator` cannot be added without failing a test
+- [x] 1.3 (RED) Parametrized test that every member of `get_args(Mode)` constructs and is retained
+      unchanged, mirroring the existing `test_model_card_accepts_all_root_types`. Guards the
+      inverse of 1.1 — a typo'd vocabulary that rejects a legitimate seeded mode
+- [x] 1.4 (GREEN) Change `ModelCard.mode` from `str` to `Mode` in `models.py`. `Mode` is defined
+      above `ModelCard` already, so the definition-order constraint documented above `ModelCard`
+      (no `from __future__ import annotations` in this module) is satisfied without moving anything
+- [x] 1.5 Update the shared fixture in `tests/test_model_card.py`, which uses the off-vocabulary
+      `mode="proximal"`, to a real vocabulary member — and confirm the fixture change alone does not
+      turn 1.1–1.3 green (they must fail for the annotation, not the fixture)
+
+## 2. Adopt `NonBoolInt` on the age bounds (#25)
+
+- [x] 2.1 (RED) Parametrized test that `age_min=True` and `age_max=True` (and `False`) each raise
+      rather than coercing to `1`/`0`
+- [x] 2.2 (RED) Test that lax integer parsing still works — `age_min="7"` and `age_max=7.0` both
+      construct and read as the integer `7`. This is the regression guard that keeps the fix narrow:
+      `NonBoolInt` must reject only `bool`
+- [x] 2.3 (GREEN) Annotate `ModelCard.age_min` and `ModelCard.age_max` as `NonBoolInt`, keeping the
+      existing `Field(ge=0)` bounds
+- [x] 2.4 Confirm `age_min <= age_max`, negative-bound, and equal-bound behavior is unchanged (the
+      existing tests must stay green — the `mode="after"` validator runs only once field validation
+      passes, so a bool bound now fails *before* the range check)
+
+## 3. Comments, exports, and docs
+
+- [x] 3.1 Update the `NonBoolInt` comment block — it currently states "Applied to
+      LabelCard only. ModelCard has the same exposure but shipped in 0.1.0a3; retyping its fields is
+      a behavior change ... tracked as a follow-up". That deferral is now resolved
+- [x] 3.2 Update the `Mode` comment block — "Required on LabelCard;
+      `ModelCard.mode` stays a loose `str` in this change (retyping it is a tracked follow-up)" is
+      now stale
+- [x] 3.3 Update `ModelCard`'s class docstring, which describes `mode` as a plain selection field, to
+      name the vocabulary and the bool guard
+- [x] 3.4 Confirm `__init__.py` needs no change: `Mode` is already exported and
+      `NonBoolInt` stays module-internal per the design decision
+- [x] 3.5 Update `openspec/project.md`'s contract-library summary if it describes `ModelCard`'s field
+      types, and check `docs/` for the same
+
+## 4. Cross-repo verification and sequencing
+
+- [x] 4.1 Enumerated the live `wandb-registry-sleap-roots-models` (106 artifact versions) against
+      `get_args(Mode)`. **Result: clean — zero off-vocabulary values.** All 13 `production`-aliased
+      cards carry an in-vocabulary mode (`cylinder` ×11, `multiplant cylinder` ×2). The other 93 are
+      legacy pre-`ModelCard` collections carrying no `mode`/`species`/`root_type`/age at all, which
+      could not validate today either; `list_cards()` alias-filters before validating, so it never
+      attempts them. The retype adds no new failure against the live registry.
+      *(Note: the org is `eberrigan-salk-institute-for-biological-studies-org`; wandb 0.18.7's SDK
+      pins registry paths to the viewer's default org, so a multi-org account must query via
+      GraphQL — `api.artifact_collections` raises a misleading org-mismatch error.)*
+- [x] 4.2 Filed `talmolab/sleap-roots-predict#32` for the `list_cards()` robustness question — should
+      an unparseable card be skipped with a warning instead of failing the listing? Corrected on the
+      thread with 4.1's data: the question is pre-existing and not caused by this change, so the pin
+      bump is safe without migration. That is predict's spec decision, not this contract's
+- [x] 4.3 Note in `sleap-roots-training` #10 that `chooser.py`'s `MODE_VOCAB` frozenset is now fully
+      redundant for both cards and should become `get_args(Mode)` when training bumps its pin
+
+## 5. Validation and release
+
+- [x] 5.1 Run `openspec validate tighten-model-card-validation --strict`
+- [x] 5.2 Run `uv run pytest -v`, `uv run black --check src tests`, `uv run ruff check src tests`
+- [x] 5.3 Regenerate `schema/*.json` and confirm the drift guard is green — expected to be a no-op,
+      since `ModelCard` is producer↔producer and not emitted; a diff here means something is wrong
+- [x] 5.4 Confirm `pyproject.toml` still reads `0.1.0a6` and that this change merges **before**
+      `add-label-selection-contract`'s task 6.5 cuts that release. If a6 ships first, renumber to
+      `0.1.0a7` rather than holding the release — training #10 is blocked on a6 (see design.md)
+- [x] 5.5 Run `/pre-merge-check`, then `/pr-description`, referencing both #21 and #25
+
+## 6. Pre-PR review findings (added during `/pre-merge-check` Phase 3.5)
+
+- [x] 6.1 **BLOCKING:** `docs/CHANGELOG.md`'s `[0.1.0a6]` section stated "`ModelCard` is deliberately
+      unchanged — ... retyping it is a tracked follow-up", which the ride-a6 decision makes false in
+      the notes consumers read at pin-bump time. Corrected, and added `### Changed` entries for both
+      tightenings plus a migration note recording the registry verification from 4.1
+- [x] 6.2 **BLOCKING:** `params.py`'s new `_normalize_mode` docstring referenced `_species_for_scan`,
+      which does not exist. Pointed at `_normalize_species`, where the zero-match rationale lives
+- [x] 6.3 **IMPORTANT:** `NonBoolInt` missed `numpy.bool_` (not a `bool` subclass), so the curated
+      card was *looser* than `params._coerce_age` — which defends against exactly this and documents
+      why — for the same quantity. Fixed in `_reject_bool`, duck-typed on `.item()` so numpy stays a
+      non-dependency. Covers `ModelCard` and all seven `LabelCard` integer fields. Scope expansion
+      approved explicitly; `0.1.0a6` being unreleased is what makes it free
+- [x] 6.4 **IMPORTANT:** neither guard was tested via `ModelCard.model_validate(raw_dict)` — the
+      actual production path (predict's lister), as opposed to kwargs construction. Added
+- [x] 6.5 **NIT:** `test_model_card_rejects_bad_mode` asserted only that *something* raised, though
+      task 1.1 claimed it checked the error names `mode`. Now asserts the error `loc`
+- [x] 6.6 **NIT:** stale/brittle line-number references (`models.py:46-48`, `params.py:121`,
+      `__init__.py:51`, …) in the change docs and one code comment — several were already wrong.
+      Replaced with symbol names
+- [x] 6.7 Added the error-aggregation and range-masking mirrors that `test_label_card.py` had and
+      `test_model_card.py` lacked
+- [x] 6.8 Flagged the gap the review surfaced in the *sibling* change: `LabelCard`'s bool rejection
+      has no spec requirement at all. Recorded on `add-label-selection-contract`, which is still
+      open — not patched from here. Promoted there from a task-6.6 checkbox to a standalone
+      **section 7 archive gate** in response to PR #26 review finding 3 (see 7.3 below)
+
+## 7. PR #26 review findings
+
+- [x] 7.1 **IMPORTANT (finding 2): `_reject_bool`'s `.item()` unwrap could escape as a non-
+      `ValidationError`.** The unwrap is duck-typed on any object exposing `.item()`, but only
+      `(ValueError, TypeError)` was caught, so an input whose `.item()` raised anything else
+      (`KeyError`, `OverflowError`, …) propagated raw out of `ModelCard.model_validate` — breaking
+      the contract's promise on exactly the boolean-key-soup path the guard defends. Broadened to
+      `except Exception` with a fall-through to the raw value. Low reachability (no real
+      numpy/pandas scalar triggers it; JSON-derived wandb blobs are builtins with no `.item()`),
+      but it is a one-line fix on a defense-in-depth guard
+- [x] 7.2 **IMPORTANT (finding 1): the "`models.py` 100%" claim was false** — lines 41-42, the
+      `.item()` fall-through, were authored but untested (99%, 2 miss). Now covered by
+      `test_model_card_hostile_item_still_raises_validation_error`, which is also 7.1's regression
+      guard. `models.py` is genuinely 100% (399 passed)
+- [x] 7.3 **IMPORTANT (finding 3): `LabelCard`'s bool/`numpy.bool_` rejection ships unspecified**,
+      and the fix was deferred to one unchecked checkbox on a sibling change — if that change is
+      archived without acting on it, the behavior lands in `openspec/specs/` permanently
+      unspecified. Promoted on `add-label-selection-contract` from task 6.6 into its own **section 7
+      "Archive gate — MUST be closed before `openspec archive`"**, stating the consequence and
+      naming the three scenarios required. Still not patched from here: it is that change's delta
+- [x] 7.4 **IMPORTANT (finding 4): the "RED→GREEN honored per commit" claim was overstated.** True
+      for the mode guard and the builtin-bool guard (RED `c2db238` gives 9 failed / 5 honestly
+      labeled "passes already"), but the `numpy.bool_` guard and both its tests landed together in
+      `e35d13a` with no failing commit first — and that is the sharpest behavioral change in the PR.
+      PR body corrected to scope the claim to the two guards it actually holds for
+- [x] 7.5 **SUGGESTION: `np.bool_(False)` was never exercised** — both numpy tests used
+      `np.bool_(True)` while the builtin tests parametrize over `[True, False]`, leaving the falsy
+      half of the `.item()` path unpinned. Both numpy tests now parametrize over both values
+- [x] 7.6 **SUGGESTION: nothing pinned non-integral age rejection on the card side.**
+      `test_model_card_age_lax_parsing_preserved` proves `7.0 → 7`; `7.5` was rejected but
+      unguarded. Added `test_model_card_rejects_non_integral_age`, mirroring `test_params.py`'s
+      `test_fractional_decimal_age_is_not_silently_truncated`
+- [x] 7.7 **SUGGESTION: `ModelCard`'s reversed-age test was weaker than its `LabelCard` sibling** —
+      a bare `pytest.raises(ValidationError)` that any other failure would satisfy. Now asserts both
+      bounds appear in the message, as task 6.7 claimed
+- [x] 7.8 **SUGGESTION: over-broad diagnostic.** A container of bools (`np.array([True])`) was
+      reported as "got a bool" while a container of ints fell through to pydantic's accurate
+      `int_type` — asymmetric messaging for two equally-invalid inputs. The unwrap is now gated on
+      scalar-ness (`ndim == 0`, absent on non-array duck types so the protocol still works), and
+      `test_model_card_rejects_bool_container_as_a_non_bool_error` pins the symmetry
+- [x] 7.9 **SUGGESTION: undeclared test dependency on numpy** — the tests import it, but it was
+      present only transitively via `pandas`. Added to the `dev` group with a comment recording that
+      numpy remains a non-*runtime* dependency (the guard is duck-typed, never imports it)
+- [x] 7.10 **SUGGESTION (wording):** the `NonBoolInt` comment's "landed a release later" risked
+      implying two releases when both ride the unreleased `0.1.0a6` — reworded to "landed in a
+      follow-up change (still 0.1.0a6)". `docs/CHANGELOG.md`'s "the one behavior change in the
+      release" undercounted its own three `### Changed` bullets — scoped to what was meant, a change
+      to an *already-released* contract. And this file's sections ran `1, 2, 3, 4, 6, 5`; section 5
+      now physically precedes section 6, with numbering left alone so cross-references still resolve
+- [x] 7.11 Spec delta updated for 7.1/7.6/7.8 — the requirement now states that the bool check is
+      scalar-only, that an invalid bound always surfaces as a validation error, and that a
+      fractional bound is rejected rather than truncated, with a 1:1 scenario for each
+- [x] 7.12 **CLOSED, no action taken (finding: `Decimal` asymmetry).** `ModelCard(age_min=Decimal("7"))`
+      is accepted → `7` while `params._coerce_age` rejects `Decimal`. The design's "the card must not be
+      looser than `resolve_params`" argument is scoped to `numpy.bool_`, where the looseness yields a
+      *plausible-but-wrong* value; a `Decimal("7")` reads as exactly `7`, and `Decimal` never arrives
+      from a JSON-derived wandb blob. Left alone deliberately rather than tightened by reflex.
+      Checked because the decision is *made*, not because code changed — an unchecked box here would
+      read as outstanding work and block the archive check over a resolved no-op
+
+## 8. PR #26 approving-review suggestions
+
+All three are non-blocking parity items on an APPROVE — no behavior change, so no spec delta and
+no changelog line. Taken because each closes a gap between `ModelCard`'s suite and the `LabelCard`
+suite it claims to mirror.
+
+- [x] 8.1 **SUGGESTION: `_reject_bool`'s docstring did not say it returns the *original* `v`.**
+      "The value unchanged when it is not a bool" is true but leaves a reader of the `.item()`
+      unwrap to infer which value comes back. Now stated explicitly, with the reason: returning the
+      unwrapped scalar would turn a check into a silent coercion (`np.int64(7)` would reach pydantic
+      as a Python `int`), which is the opposite of what a guard on a curated card should do
+- [x] 8.2 **SUGGESTION: `test_model_card_rejects_reversed_age_range` asserted field *names*, not the
+      offending *values*** — weaker than `test_label_card_rejects_inverted_age_window`, which
+      asserts the numbers. Task 7.7 strengthened it from a bare `raises` to a name assertion but
+      stopped short of the sibling's bar. Now asserts both names and both values, so a message that
+      named the fields without reporting the numbers would fail
+- [x] 8.3 **SUGGESTION: nothing combined a `Field(ge=0)` violation with a `NonBoolInt` violation on
+      `ModelCard`.** The two take different paths — pydantic's constraint machinery vs the
+      `BeforeValidator` — and only the mixed case proves a *raised* `BeforeValidator` does not abort
+      the pass and swallow its neighbour's error. Added to
+      `test_model_card_field_errors_aggregate` (`age_min=-1, age_max=True`), asserting both `loc`s
+      **and** that each is reported for its own reason, mirroring the `n_frames=-1, n_plants=True`
+      block in `test_label_card.py`

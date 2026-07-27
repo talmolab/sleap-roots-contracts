@@ -129,11 +129,19 @@ def _normalize_species(name: Any) -> str:
 
 
 def _normalize_mode(mode: Any) -> str:
-    """Normalize a mode string to the ModelCard mode vocabulary (strip+lower).
+    """Normalize a mode string toward the :data:`Mode` vocabulary (strip+lower).
 
     Mirrors ``_normalize_species`` so a derived mode and an override mode
     canonicalize identically (representation-independent ``param_hash``). The
     seeded modes (``cylinder``, ``multiplant cylinder``) are already lowercase.
+
+    Normalization only — membership is not checked here, mirroring how
+    ``_normalize_species`` lets an unknown species pass through rather than
+    rejecting it. The card registry is the authority on what has models, so an
+    unmodelled mode reaches selection and finds nothing, whereas
+    ``ModelCard``/``LabelCard`` match ``Mode`` exactly and fail loudly. In practice
+    ``"Cylinder"`` from an override canonicalizes to a value the cards accept, while
+    ``"cyl"`` does not and would be rejected outright on a card.
 
     Raises:
         ValueError: If ``mode`` is present, non-blank, and not a string.
@@ -146,8 +154,10 @@ def _mode_for_scan(metadata: Dict[str, Any]) -> str:
 
     The cylinder pipeline yields cylinder scans only, so this returns
     ``"cylinder"``. GraviScan/multiscanner modes slot in here once their
-    scanners and models exist; the returned string MUST match the exact seeded
-    ``ModelCard`` mode vocabulary.
+    scanners and models exist; the returned string MUST be a member of the ``Mode``
+    vocabulary, which since ``0.1.0a6`` types ``ModelCard.mode`` as well as
+    ``LabelCard.mode`` — so a new modality needs the vocabulary widened here *and*
+    in ``models.py``, in the same release.
     """
     return "cylinder"
 

@@ -3,6 +3,7 @@
 import json
 from typing import get_args
 
+import numpy as np
 import pytest
 from pydantic import ValidationError
 
@@ -347,6 +348,25 @@ def test_label_card_rejects_bool_for_int_field(field, value):
     validation is the only thing standing between that blob and a valid-but-wrong card.
     """
     with pytest.raises(ValidationError):
+        make_label_card(**{field: value})
+
+
+@pytest.mark.parametrize("field", INT_FIELDS)
+@pytest.mark.parametrize("value", [np.bool_(True), np.bool_(False)])
+def test_label_card_rejects_numpy_bool_for_int_field(field, value):
+    """np.bool_ is rejected too — it is not a ``bool`` subclass.
+
+    An ``isinstance(v, bool)`` check alone misses it, so the guard would have been
+    bypassed by any producer stitching values from a pandas row. ``node_count`` is the
+    sharpest case: coerced to ``1`` it would *satisfy* the skeleton-coherence check
+    against a single node name, yielding a card that validates while claiming a
+    one-node skeleton. ``params._coerce_age`` documents the same trap for ages.
+
+    Both values are exercised: the builtin-bool tests parametrize over ``[True,
+    False]``, and the ``.item()`` unwrap this test covers deserves the same, so the
+    falsy half — which coerces to a plausible ``0`` — is not left unpinned.
+    """
+    with pytest.raises(ValidationError, match="bool"):
         make_label_card(**{field: value})
 
 
