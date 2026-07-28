@@ -130,18 +130,18 @@ free-text artifact descriptions.
 
 ### Requirement: Label Card Integer Fields Reject Bools
 
-Every integer field on `LabelCard` — `age_min`, `age_max`, `node_count`, `n_frames`, `n_instances`,
-`n_plants`, `n_scans` — SHALL reject a `bool` rather than coerce it to `1`/`0`, while leaving
-ordinary lax integer parsing (for example `"7"` or `7.0`) unaffected. Python's `bool` is a subclass
-of `int`, so without this the card would validate and read a plausible-but-wrong number.
+`LabelCard` SHALL reject a `bool` on every integer field — `age_min`, `age_max`, `node_count`,
+`n_frames`, `n_instances`, `n_plants`, `n_scans` — rather than coerce it to `1`/`0`, while leaving
+ordinary lax integer parsing (for example `"7"` or `7.0`) unaffected, so that a card cannot validate
+while reading a plausible-but-wrong count. Python's `bool` is a subclass of `int`, so absent the
+guard it would.
 
-The rejection SHALL cover a `numpy.bool_` as well as the builtin `bool`: `numpy.bool_` is not a
-`bool` subclass, so a check that tests only for the builtin would let it through and read it as
-`1`/`0`. This is not hypothetical for a producer that stitches values from a pandas row, where a
-scalar is a numpy type rather than a Python one.
+The rejection SHALL cover `numpy.bool_` as well as the builtin `bool`, so that a value stitched from
+a pandas row — where a scalar is a numpy type, and `numpy.bool_` is not a `bool` subclass — cannot
+pass a check written for the builtin alone.
 
 This requirement is the counterweight to *Tolerant Construction From Registry Metadata* below:
-because `LabelCard` ignores extra keys so it can validate from the legacy boolean-key metadata soup,
+because `LabelCard` ignores extra keys so it can validate from the legacy boolean-key metadata,
 field validation is the only defense left between that blob and a valid-but-wrong card.
 
 #### Scenario: A bool is rejected wherever an integer is expected
