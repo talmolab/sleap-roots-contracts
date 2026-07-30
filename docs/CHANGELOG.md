@@ -8,7 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.1.0a6] - 2026-07-27 (Pre-release)
+## [0.1.0a6] (Pre-release)
+
+<!-- The date is deliberately absent until the release-cut commit. This section is
+     written days before the tag, so any date put here is the *authoring* date, not
+     the release date Keep a Changelog asks for — a2 and a4 both shipped 4-5 days
+     stale that way. `/prepare-release` Step 11 writes today's date as it cuts the
+     tag, and build.yml's changelog check now requires a date to be present, so the
+     release fails loudly rather than publishing a write-date. -->
 
 Adds the **label-selection contract** — `LabelCard` plus the contract-owned `Mode`
 capture-mode vocabulary — the Python-side label-provenance shape shared by the

@@ -100,7 +100,14 @@
 
 Not a checkbox to tick off with the rest: archiving folds this change's deltas into
 `openspec/specs/`, so anything missing here becomes permanently unspecified with no later prompt to
-fix it. **Do not run `openspec archive add-label-selection-contract` while 7.1 is open.**
+fix it.
+
+**7.1 is now closed, so this section no longer blocks anything — but 6.5 is still open, and nothing
+mechanical enforces that.** `openspec archive --yes` only *warns* on incomplete tasks and proceeds,
+and `/cleanup-merged` calls it with `--yes`, so this banner was the only brake. Do not archive this
+change until `v0.1.0a6` is tagged and published; archiving a contract whose release never happened
+leaves `openspec/specs/` describing a version consumers cannot install. `tighten-model-card-validation`
+rides the same tag (its task 5.4) and is archived in the same pass.
 
 - [x] 7.1 **BLOCKING (was 6.6). Gap found during `tighten-model-card-validation`'s review:** the
       bool-rejection behavior (`NonBoolInt` on all seven integer fields) has **no requirement or
@@ -119,5 +126,19 @@ fix it. **Do not run `openspec archive add-label-selection-contract` while 7.1 i
       it is the same defect one step earlier. Added `Label Card Integer Fields Reject Bools` with the
       three named scenarios (builtin `bool`, `numpy.bool_`, the `node_count=True` skeleton-coherence
       trap) plus a fourth pinning that lax parsing survives — so the requirement states the guard's
-      *limit* as well as its reach and cannot be read as licensing a broader rejection. All four map
-      1:1 onto tests that already exist in `tests/test_label_card.py`; no code changed
+      *limit* as well as its reach and cannot be read as licensing a broader rejection.
+
+      **Widened 2026-07-30, on PR #28 review.** The first pass delivered 7.1's literal three
+      scenarios, which specified only half of `_reject_bool`. The guard has four normative behaviors
+      and `ModelCard`'s spec pins all four; two — *scalar-only, so a container is a non-integer* and
+      *an unwrap failure surfaces as a `ValidationError`, never propagating* — were absent here. Two
+      capabilities archived from one shared function, one stating the scalar-only limit and one
+      silent on it, is exactly the asymmetry this gate exists to catch, so both were added rather
+      than deferred. Scenarios are now six.
+
+      The 1:1 scenario↔test claim also turned out to be weaker than stated, and this *did* take code:
+      mutation-testing the guard (making the `raise` unreachable) left five of nineteen bool cells
+      still passing, on coincidental errors from unrelated validators. `tests/test_label_card.py`
+      now neutralizes the fixture per-field (`_bool_probe_kwargs`) and asserts the guard's own
+      wording rather than `match="bool"`, which pydantic's `input_type=bool` repr satisfied on its
+      own. Test code only — no source file changed, in either pass

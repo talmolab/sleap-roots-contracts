@@ -53,15 +53,24 @@ jobs:
           fi
           echo "Tag $TAG matches pyproject.toml version $VERSION"
 
-      - name: Validate changelog entry exists
+      - name: Validate changelog entry exists and is dated
         if: github.event_name == 'release'
         run: |
           VERSION="${{ steps.version.outputs.version }}"
-          if ! grep -q "\[$VERSION\]" docs/CHANGELOG.md; then
-            echo "ERROR: No changelog entry found for version $VERSION in docs/CHANGELOG.md"
+          # Anchored on the section heading and requiring an ISO date, not a bare
+          # "[$VERSION]" anywhere in the file — the compare-link footer at the bottom
+          # matches that on its own, so the old check passed for a version with no
+          # section at all. Requiring the date is what makes the release-cut commit
+          # mandatory: a6's section is intentionally dateless until the tag is cut,
+          # so a forgotten finalize step fails here instead of publishing the
+          # authoring date as the release date (a2 and a4 both shipped days stale).
+          if ! grep -qE "^## \[$VERSION\] - [0-9]{4}-[0-9]{2}-[0-9]{2}" docs/CHANGELOG.md; then
+            echo "ERROR: docs/CHANGELOG.md has no dated '## [$VERSION] - YYYY-MM-DD' section."
+            echo "Set the release date in the release-cut commit before tagging."
+            grep -n "\[$VERSION\]" docs/CHANGELOG.md || true
             exit 1
           fi
-          echo "Changelog entry found for version $VERSION"
+          echo "Dated changelog section found for version $VERSION"
 
       - name: Lint
         run: |
