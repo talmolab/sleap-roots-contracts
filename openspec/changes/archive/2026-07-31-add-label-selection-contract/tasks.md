@@ -92,9 +92,14 @@
       (353 passed; black + ruff clean)
 - [x] 6.4 `openspec validate add-label-selection-contract --strict` — passes (the `openspec` CLI is
       available now; it was absent when this task was written)
-- [ ] 6.5 Release **`0.1.0a6`** (not `0.1.0a4` — already taken by `resolve_params`), then unblock
+- [x] 6.5 Release **`0.1.0a6`** (not `0.1.0a4` — already taken by `resolve_params`), then unblock
       `sleap-roots-training`'s `add-label-registry` — **version bumped in `pyproject.toml` + schema
       `$id` regenerated (a5→a6, no structural diff); the actual tag + PyPI publish is a user action**
+
+      **Released 2026-07-31.** Tag `v0.1.0a6` cut from `21bf4d8`; `validate-release` green and
+      `build-and-publish` published the wheel + sdist to PyPI. Verified from a clean environment:
+      `sleap-roots-contracts==0.1.0a6` installs and `LabelCard`/`Mode` import, with `Mode` resolving
+      to the three-member vocabulary. `sleap-roots-training`'s `add-label-registry` is unblocked.
 
 ## 7. Archive gate — MUST be closed before `openspec archive`
 
@@ -102,12 +107,12 @@ Not a checkbox to tick off with the rest: archiving folds this change's deltas i
 `openspec/specs/`, so anything missing here becomes permanently unspecified with no later prompt to
 fix it.
 
-**7.1 is now closed, so this section no longer blocks anything — but 6.5 is still open, and nothing
-mechanical enforces that.** `openspec archive --yes` only *warns* on incomplete tasks and proceeds,
-and `/cleanup-merged` calls it with `--yes`, so this banner was the only brake. Do not archive this
-change until `v0.1.0a6` is tagged and published; archiving a contract whose release never happened
-leaves `openspec/specs/` describing a version consumers cannot install. `tighten-model-card-validation`
-rides the same tag (its task 5.4) and is archived in the same pass.
+**Gate closed 2026-07-31 — 7.1 and 6.5 are both done, so archiving is now permitted.** It was held
+open because `openspec archive --yes` only *warns* on incomplete tasks and proceeds, and
+`/cleanup-merged` calls it with `--yes`, so this banner was the only brake: archiving a contract
+whose release never happened leaves `openspec/specs/` describing a version consumers cannot install.
+`v0.1.0a6` is now tagged and on PyPI, so that risk is retired. `tighten-model-card-validation` rides
+the same tag (its task 5.4) and is archived in the same pass.
 
 - [x] 7.1 **BLOCKING (was 6.6). Gap found during `tighten-model-card-validation`'s review:** the
       bool-rejection behavior (`NonBoolInt` on all seven integer fields) has **no requirement or
