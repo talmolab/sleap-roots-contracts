@@ -336,6 +336,40 @@ def test_label_card_rejects_zero_node_count():
         make_label_card(node_count=0, node_names=())
 
 
+def _bool_probe_kwargs(field, value):
+    """Kwargs putting ``value`` in ``field`` with every *other* validator satisfied.
+
+    The trap these tests exist to avoid: on the ordinary fixture (``age_min=2``, two
+    ``node_names``), a coerced bool trips a *different* validator, so the test passes
+    on an unrelated error while the bool sails through the guard. Measured — with the
+    ``raise`` in ``_reject_bool`` made unreachable, five of the nineteen bool cells
+    still passed: ``age_max``/``node_count`` for both values, and ``node_count`` for
+    ``np.False_``.
+
+    So the window is widened to ``[0, 1]`` — a coerced ``0`` *or* ``1`` sits inside it
+    either way — and the skeleton is shrunk to one node, so a ``node_count`` coerced to
+    ``1`` matches rather than mismatching. Both make the card *valid* absent the guard,
+    which is what turns these into real assertions.
+
+    ``node_count=False`` is the one cell this cannot neutralize: ``ge=1`` rejects a
+    coerced ``0`` no matter what else is set. The message assertion covers it from the
+    other side — only the guard says "got a bool".
+    """
+    return {
+        "age_min": 0,
+        "age_max": 1,
+        "node_count": 1,
+        "node_names": ("r1",),
+        field: value,
+    }
+
+
+# The guard's own wording (models._reject_bool). Asserted instead of a bare "bool":
+# pydantic's error repr carries `input_type=bool` for any numpy-bool input, so
+# `match="bool"` is satisfied by the *input* regardless of which validator raised.
+_GUARD_MESSAGE = "got a bool"
+
+
 @pytest.mark.parametrize("field", INT_FIELDS)
 @pytest.mark.parametrize("value", [True, False])
 def test_label_card_rejects_bool_for_int_field(field, value):
@@ -346,9 +380,13 @@ def test_label_card_rejects_bool_for_int_field(field, value):
     exposed: #11 backfills from legacy wandb metadata that stores provenance as
     boolean-key soup (keys whose value is ``True``), and ``extra="ignore"`` means field
     validation is the only thing standing between that blob and a valid-but-wrong card.
+
+    See ``_bool_probe_kwargs`` for why the fixture is neutralized and the message
+    asserted — without both, this test passed for four of the seven fields with the
+    guard removed.
     """
-    with pytest.raises(ValidationError):
-        make_label_card(**{field: value})
+    with pytest.raises(ValidationError, match=_GUARD_MESSAGE):
+        make_label_card(**_bool_probe_kwargs(field, value))
 
 
 @pytest.mark.parametrize("field", INT_FIELDS)
@@ -366,8 +404,76 @@ def test_label_card_rejects_numpy_bool_for_int_field(field, value):
     False]``, and the ``.item()`` unwrap this test covers deserves the same, so the
     falsy half — which coerces to a plausible ``0`` — is not left unpinned.
     """
-    with pytest.raises(ValidationError, match="bool"):
-        make_label_card(**{field: value})
+    with pytest.raises(ValidationError, match=_GUARD_MESSAGE):
+        make_label_card(**_bool_probe_kwargs(field, value))
+
+
+@pytest.mark.parametrize("field", INT_FIELDS)
+def test_label_card_rejects_bool_container_as_a_non_bool_error(field):
+    """A *container* of bools is rejected as a non-integer, not described as a bool.
+
+    The mirror of test_model_card.py's twin. The unwrap is duck-typed on ``.item()``
+    and gated on scalar-ness (``ndim == 0``), so a one-element array falls through to
+    pydantic's accurate ``int_type`` error — the same error ``np.array([1])`` gets.
+    Without the gate, ``.item()`` would unwrap the single element and the card would
+    report "got a bool" for what is really an array, making the diagnostic asymmetric
+    between bool and int containers.
+    """
+    with pytest.raises(ValidationError) as exc:
+        make_label_card(**_bool_probe_kwargs(field, np.array([True])))
+    assert [e["type"] for e in exc.value.errors()] == ["int_type"]
+
+
+@pytest.mark.parametrize("field", INT_FIELDS)
+def test_label_card_hostile_item_still_raises_validation_error(field):
+    """An object whose ``.item()`` raises is rejected, not propagated to the caller.
+
+    The guard unwraps anything exposing ``.item()``, so a value it was never designed
+    for can reach that call. The contract promises a ValidationError from
+    ``model_validate`` — a raw KeyError escaping would break every caller's except
+    clause, on exactly the boolean-key-soup path ``extra="ignore"`` exists to survive.
+    """
+
+    class HostileScalar:
+        """A duck-typed scalar whose unwrap raises something unanticipated."""
+
+        def item(self):
+            raise KeyError("not really a scalar")
+
+    with pytest.raises(ValidationError):
+        make_label_card(**_bool_probe_kwargs(field, HostileScalar()))
+
+
+def test_every_int_field_is_guarded_against_bools():
+    """``INT_FIELDS`` is exactly the model's plain-int fields, and all are guarded.
+
+    Both the spec's "every integer field" SHALL and ``INT_FIELDS`` above hardcode the
+    same seven names, with nothing tying either to the model — so an eighth plain
+    ``int`` field added with ``NonBoolInt`` forgotten would leave a green suite and a
+    silently false requirement. Derived from ``model_fields`` so the SHALL enforces
+    itself, following ``test_provenance_kwargs_covers_every_provenance_field``.
+
+    ``images_embedded`` is annotated ``bool`` and correctly excluded: it is a genuine
+    boolean, not an int field a bool could be smuggled into.
+    """
+    from pydantic import BeforeValidator
+
+    from sleap_roots_contracts import LabelCard
+    from sleap_roots_contracts.models import _reject_bool
+
+    plain_ints = {
+        name for name, f in LabelCard.model_fields.items() if f.annotation is int
+    }
+    guarded = {
+        name
+        for name, f in LabelCard.model_fields.items()
+        if any(
+            isinstance(m, BeforeValidator) and m.func is _reject_bool
+            for m in f.metadata
+        )
+    }
+    assert plain_ints == set(INT_FIELDS)
+    assert guarded == set(INT_FIELDS)
 
 
 def test_label_card_bool_node_count_does_not_satisfy_skeleton_check():

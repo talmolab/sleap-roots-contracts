@@ -179,14 +179,17 @@ Move `[Unreleased]` content into a new version section:
 ```markdown
 ## [Unreleased]
 
-## [X.Y.Za1] - YYYY-MM-DD (Pre-release)
+## [X.Y.Za1] (Pre-release)
 
 ### Added
 - (moved from Unreleased)
 ...
 ```
 
-- Use today's date
+- **Leave the date off.** This section is written days before the tag is cut, so any date
+  put here is the *authoring* date, not the release date [Keep a Changelog] asks for —
+  `0.1.0a2` and `0.1.0a4` both shipped 4-5 days stale that way. Step 11 writes the real
+  date as it cuts the release, and `build.yml` fails the release if it is still missing
 - Keep an empty `[Unreleased]` section at top
 - For pre-releases, use the full PEP 440 version (e.g., `0.1.0a1`)
 - Add `(Pre-release)` suffix for alpha/beta/rc versions
@@ -319,12 +322,29 @@ After PR is merged to main:
 
 **GUARDRAILS before creating the release:**
 
-1. **Verify CHANGELOG is up-to-date**: Read `docs/CHANGELOG.md` and confirm:
-   - The `[Unreleased]` section is empty (all changes moved to the new version section)
-   - The new version section `## [X.Y.Z]` exists with today's date
-   - The section contains meaningful content (not just a header)
+1. **Date the CHANGELOG section, now.** Step 5 deliberately left the date off, because the
+   section was written days ago and a write-date is not a release date. Set it to today,
+   on `main`, and push it before tagging:
 
-2. **Extract the exact changelog section** for this version using Python:
+   ```bash
+   TODAY=$(date +%F)
+   # `## [X.Y.Z] (Pre-release)` -> `## [X.Y.Z] - YYYY-MM-DD (Pre-release)`
+   sed -i -E "s/^## \[$NEW_VERSION\]( \(Pre-release\))?$/## [$NEW_VERSION] - $TODAY\1/" docs/CHANGELOG.md
+   grep -n "^## \[$NEW_VERSION\]" docs/CHANGELOG.md   # confirm before committing
+   git commit -am "Finalize CHANGELOG for v$NEW_VERSION release" && git push origin main
+   ```
+
+   The `052339f` commit ("finalize CHANGELOG for v0.1.0a1 release") is the precedent. Skip
+   this and `validate-release` fails the release rather than publishing an undated section
+   — that gate is deliberate, not an obstacle to work around.
+
+2. **Verify CHANGELOG is up-to-date**: Read `docs/CHANGELOG.md` and confirm:
+   - The `[Unreleased]` section is empty (all changes moved to the new version section)
+   - The new version section `## [X.Y.Z]` now carries today's date
+   - The section contains meaningful content (not just a header)
+   - Any explanatory HTML comment left by Step 5 is removed
+
+3. **Extract the exact changelog section** for this version using Python:
    ```python
    import re
    with open("docs/CHANGELOG.md") as f:
@@ -339,7 +359,7 @@ After PR is merged to main:
    ```
    If the version section is missing or empty, **stop and fix the CHANGELOG first**.
 
-3. **Confirm the extracted content looks correct** before proceeding.
+4. **Confirm the extracted content looks correct** before proceeding.
 
 ```bash
 # Switch to main and pull
@@ -379,7 +399,9 @@ The GitHub Actions workflow `.github/workflows/build.yml` runs two jobs automati
 
 **`validate-release`** (gate — must pass before anything is published):
 1. Validate the release tag matches `pyproject.toml` version (`vX.Y.Z` → `X.Y.Z`)
-2. Validate a `docs/CHANGELOG.md` entry exists for the version
+2. Validate `docs/CHANGELOG.md` has a **dated** `## [X.Y.Z] - YYYY-MM-DD` section for the
+   version — anchored on the heading, so the compare-link footer alone no longer satisfies it,
+   and undated means Step 11's date step was skipped
 3. Lint (`black --check`, `ruff check`)
 4. Schema drift guard (regenerate + `git diff --exit-code schema/`) — blocks a stale/mismatched `$id`
 5. Run the test suite
