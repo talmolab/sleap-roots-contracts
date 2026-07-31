@@ -69,8 +69,13 @@ openspec archive <change-id> --yes --skip-specs
 ### Validate after archival
 
 ```bash
-openspec validate --strict
+openspec validate --all --strict
 ```
+
+**`--all` is required, not optional.** Bare `openspec validate --strict` has no target — after
+archiving there are no active changes left to name — so the CLI prints "Nothing to validate" and
+**exits 0**. It reads as a pass while having checked nothing. `--all` validates the specs the
+archive just rewrote, which is the whole point of running it here.
 
 ## 5. Commit and Push
 
@@ -96,8 +101,9 @@ git branch -a | grep <branch-name> || echo "Branch deleted"
 # OpenSpec should be in archive (if applicable)
 ls openspec/changes/archive/<change-id>
 
-# Validate OpenSpec state
-openspec validate --strict
+# Validate OpenSpec state (--all: bare --strict has no target here and exits 0 having
+# validated nothing)
+openspec validate --all --strict
 ```
 
 ## Summary Checklist
