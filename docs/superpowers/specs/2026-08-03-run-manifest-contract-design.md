@@ -55,9 +55,10 @@ skip-if-done, which it lacks entirely today).
   and traits gaining skip-if-done, are their own sessions further down the chain.
 - **No idempotency-key upgrade.** Skip-if-done moving from `Path.exists()` to a real
   `idempotency_key` comparison is tracked separately in predict/traits; this manifest only
-  carries the scoping data, not the comparison logic. (`pipeline_run_id` is included now because
-  it is cheap and load-bearing for scoping; a future field to aid the idempotency-key comparison
-  is an open extension point, not built here.)
+  carries the scoping data, not the comparison logic. The actual scoping predicate is
+  `scan_keys`; `pipeline_run_id` is traceability/identity metadata (which run produced this
+  scope), included now because it is cheap, not because scoping logic depends on it. A future
+  field to aid the idempotency-key comparison is an open extension point, not built here.
 - **No `sleap-roots-pipeline` template changes** — a direct consequence of Decision 2 below.
 
 ## Decisions
@@ -115,6 +116,17 @@ one-contract-per-module pattern (`analysis_input.py`, `params.py`, `prediction_m
 the same run, and avoids adding a second synonymous field name to the vocabulary. Unlike
 `Provenance.pipeline_run_id` (`str | None`, since it's optional there), `RunManifest.pipeline_run_id`
 is **required** — a manifest with no run identity would defeat the point of scoping.
+
+**This is precedent, not reuse of an established convention.** `Provenance.pipeline_run_id` is
+undocumented and, as of this writing, `None` in every real fixture across predict, traits, and
+`bloomctl` — nothing populates it yet. Bloom PR #570 separately defines `cyl_pipeline_runs` with
+its own bigint PK, so it is genuinely open whether `Provenance.pipeline_run_id` is ultimately
+meant to hold Bloom's own numeric run ID or Argo's `{{workflow.name}}`-style string. This design
+populates `RunManifest.pipeline_run_id` with the latter (an Argo `generateName` string, e.g.
+`"sleap-roots-pipeline-abc123xy"`) and, by being the first real consumer of the field name, is
+setting that convention rather than following one. A future write-back implementer wiring up
+`Provenance.pipeline_run_id` should treat this as the intended meaning, or explicitly revisit it
+here if Bloom's numeric run ID turns out to be the better fit.
 
 **Validation.** `scan_keys` must be non-empty and contain no duplicates. Both are cheap,
 construction-time guards against the exact failure modes this manifest exists to prevent: an
