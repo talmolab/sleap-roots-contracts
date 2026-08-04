@@ -43,14 +43,22 @@ following this program's established pattern for shared cross-repo shapes (`Resu
 
 Not in scope: `bloomctl` actually writing the manifest, `sleap-roots-predict`/`sleap-roots`-traits
 actually reading it or gaining skip-if-done, and the idempotency-key comparison upgrade — all
-tracked separately as the next three steps in talmolab/sleap-roots-pipeline#37.
+tracked separately as the next three steps in talmolab/sleap-roots-pipeline#37. Also not in
+scope, and not yet tracked anywhere until this change's follow-up comment lands: `write-back`'s
+`discover_envelopes()` has the identical unscoped-glob vulnerability predict's `discover_scans`
+had, and is a 4th consumer this manifest should eventually scope; and this design assumes at most
+one in-flight pipeline run against the shared staging directory at a time — a concurrent-run race
+on the fixed manifest filename is a known, named limitation, not solved here (see design.md,
+"Known limitations").
 
 ## Impact
 
 - Affected specs: `run-manifest-contract` (new capability). No change to any existing capability.
 - Affected code: new `src/sleap_roots_contracts/run_manifest.py`,
   `src/sleap_roots_contracts/__init__.py` (export `RunManifest`, `RUN_MANIFEST_FILENAME`), new
-  `tests/test_run_manifest.py`, `openspec/project.md`, `docs/CHANGELOG.md`, `README.md`.
+  `tests/test_run_manifest.py`, `openspec/project.md`, `docs/CHANGELOG.md`, `README.md`,
+  `docs/01-contract-library-design.md`, `pyproject.toml` + `uv.lock` (version bump), `schema/*.json`
+  (regenerated for the `$id` version restamp; no structural diff expected).
 - Release: cuts the next contracts alpha (`0.1.0a7`). Consumed next by `bloomctl` (`salk-bloom`,
   staging branch), then `sleap-roots-predict`, then `sleap-roots`-traits — each a separate,
   sequenced session per talmolab/sleap-roots-pipeline#37.

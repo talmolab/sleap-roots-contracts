@@ -73,9 +73,30 @@ anything on the Bloom-DB side. `schema.py`'s `MODELS` dict is untouched.
 ## Downstream testing obligation (not enforceable in this repo's CI)
 
 bloom#555's root cause was that no test ever fed a real producer's output through a real
-consumer's validator — both sides tested only hand-typed fixtures. The spec for this capability
-states consumers MUST import `RunManifest`/`RUN_MANIFEST_FILENAME` from this package rather than
-reimplementing the shape or hardcoding the filename (mirroring bloom#555's prescribed fix for
-`InputRef`). Carried forward explicitly into the `bloomctl` handoff and restated when
-predict/traits pick this up: each producer/consumer PR should include a test that round-trips a
-real `RunManifest` through its own real write/read path.
+consumer's validator — both sides tested only hand-typed fixtures. `spec.md`'s "Package Export"
+requirement guarantees `RunManifest`/`RUN_MANIFEST_FILENAME` are importable, but this repo's own
+spec/tests cannot compel another repo to actually import them instead of reimplementing the shape
+or hardcoding the filename — that expectation is stated here as design intent (mirroring
+bloom#555's prescribed fix for `InputRef`), not as a checkable requirement, since no scenario in
+this repo could verify another repo's import statements. Carried forward explicitly into the
+`bloomctl` handoff and restated when predict/traits pick this up: each producer/consumer PR should
+include a test that round-trips a real `RunManifest` through its own real write/read path.
+
+## Known limitations (explicitly out of scope, not silently omitted)
+
+Adversarial review (2026-08-04) surfaced three gaps this change deliberately does not solve. Full
+reasoning in `docs/superpowers/specs/2026-08-03-run-manifest-contract-design.md` §6; summarized
+here:
+
+- **Fixed-filename overwrite race.** `RUN_MANIFEST_FILENAME` names one file at a fixed path in a
+  directory that is deliberately shared across runs. Two concurrent `images-downloader` runs would
+  race on it (last-writer-wins, not corruption-safe but also not isolation-safe). This design
+  assumes at most one in-flight run against the shared staging directory at a time, matching
+  today's operational reality (the original incidents were sequential, not concurrent). Not fixed
+  here — flagged for talmolab/sleap-roots-pipeline#37.
+- **`write-back` (`bloomctl cyl batch-ingest-result`) has the identical unscoped-glob
+  vulnerability** as predict's pre-fix `discover_scans` and was not originally identified as a
+  manifest consumer. Needs the same scoping fix in a follow-up step, not this change.
+- **`bloomctl` has no `pipeline_run_id` source today** — no sidecar field or Argo env var carries
+  a `{{workflow.name}}`-equivalent value into its container. The `bloomctl` implementation session
+  must add that wiring; stated explicitly here so it isn't discovered mid-implementation.

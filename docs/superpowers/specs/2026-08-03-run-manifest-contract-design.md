@@ -156,10 +156,48 @@ this change.
 
 ### 5. Release
 
-Bump `pyproject.toml` to `0.1.0a7` in this PR and re-lock `uv.lock` in the same commit (a version
-bump without a re-lock hard-fails the release build, and PR CI does not catch it — see this
-repo's own `0.1.0a4` release history). No `CHANGELOG.md` exists in this repo; version history
-lives in PR titles by established convention.
+Bump `pyproject.toml` to `0.1.0a7` and re-lock `uv.lock` in the same commit (a version bump
+without a re-lock hard-fails the release build, and PR CI does not catch it — see this repo's own
+`0.1.0a4` release history). Bumping the version restamps every emitted schema's `$id`
+(`schema.py`'s `render()` embeds `__version__`), so `schema/*.json` must be regenerated and the
+drift guard re-checked **after** the bump, not only before it — even though this change touches
+neither `ResultEnvelope` nor `AnalysisInputRow`. `docs/CHANGELOG.md` exists and is actively
+maintained (corrected from an earlier draft of this doc, which wrongly claimed otherwise); this
+change adds a `[0.1.0a7]` entry matching the `[0.1.0a6]` format.
+
+### 6. Known limitations (explicitly out of scope, not silently omitted)
+
+Adversarial review (2026-08-04) surfaced three gaps that this change deliberately does not solve,
+named here so they aren't rediscovered as surprises later:
+
+- **Fixed-filename overwrite race.** `RUN_MANIFEST_FILENAME` is a single literal name with no
+  run-scoping in its path, written at the top level of a directory `sleap-roots-pipeline.yaml`
+  itself documents as "shared across every run — deliberately." If two runs' `images-downloader`
+  steps ever executed concurrently against that shared path, the second run's manifest write
+  would silently overwrite the first's (atomic against a torn read via `os.replace`, but not
+  against last-writer-wins), and a predictor/trait-extractor pod for run A could read run B's
+  `scan_keys`/`pipeline_run_id` — reintroducing the class of contamination this feature exists to
+  prevent. This design assumes **at most one in-flight run writing/reading the shared staging
+  directory at a time**, matching current operational reality (the two original contamination
+  incidents were both a *later* run reprocessing a *leftover* from an *earlier* one — sequential,
+  not concurrent). If concurrent runs become a real requirement, this file-based single-name
+  contract cannot be retrofitted without a breaking change across three repos' import sites; that
+  would need a different mechanism (e.g. a per-run-namespaced path plus a way for predict/traits
+  to be told which run they're for, which reopens the CLI-arg question this design deliberately
+  avoided). Flag for talmolab/sleap-roots-pipeline#37.
+- **`write-back` has the identical unscoped-glob vulnerability.** `bloomctl cyl
+  batch-ingest-result`'s `discover_envelopes()` globs `*.result.json` directory-wide over the same
+  shared `traits-output-dir`, exactly like predict's pre-fix `discover_scans`. A leftover
+  `.result.json` from a stale run would be re-ingested and written back into Bloom's DB — a
+  duplicate DB write, arguably worse than predict's duplicate GPU compute. `write-back` was not
+  identified as a manifest consumer in the original cross-repo reasoning and needs the same
+  scoping fix; flag as a 5th step for talmolab/sleap-roots-pipeline#37, not solved here.
+- **`bloomctl` has no `pipeline_run_id` source today.** Neither `build_sidecar()` nor any Argo
+  template env var currently carries a `{{workflow.name}}`-equivalent value into the container
+  `bloomctl` runs in. The `bloomctl` implementation session must add that wiring (an env var read,
+  most likely) before it can populate `RunManifest.pipeline_run_id` — correctly out of scope for
+  this contracts-only change, but should be stated explicitly in that handoff rather than
+  discovered mid-implementation.
 
 ## Testing
 

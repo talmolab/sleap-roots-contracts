@@ -29,8 +29,9 @@ immutable (frozen).
 
 ### Requirement: Scan Keys Are Non-Empty And Unique
 
-`RunManifest.scan_keys` SHALL reject an empty list and SHALL reject a list containing duplicate
-entries, both at construction time.
+`RunManifest.scan_keys` SHALL reject an empty list, SHALL reject a list containing duplicate
+entries, and SHALL reject a list containing a blank (empty or whitespace-only) string element, all
+at construction time.
 
 #### Scenario: Empty scan_keys is rejected
 - **WHEN** a `RunManifest` is constructed with `scan_keys=[]`
@@ -38,6 +39,10 @@ entries, both at construction time.
 
 #### Scenario: Duplicate scan_keys is rejected
 - **WHEN** a `RunManifest` is constructed with `scan_keys=["scan_1", "scan_1"]`
+- **THEN** validation raises an error
+
+#### Scenario: Blank scan_key element is rejected
+- **WHEN** a `RunManifest` is constructed with `scan_keys=["scan_1", ""]`
 - **THEN** validation raises an error
 
 ### Requirement: Well-Known Filename Constant
