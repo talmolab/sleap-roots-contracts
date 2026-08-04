@@ -10,15 +10,15 @@ follow-up action(s)/PR(s) — mirroring `add-label-selection-contract`'s real se
 
 ## 1. RunManifest model
 
-- [ ] 1.1 (RED) Test that `RunManifest` requires `pipeline_run_id` and `scan_keys` (missing either
+- [x] 1.1 (RED) Test that `RunManifest` requires `pipeline_run_id` and `scan_keys` (missing either
       raises `ValidationError`)
-- [ ] 1.2 (RED) Test `schema_version` defaults to `"1"`
-- [ ] 1.3 (GREEN) Add `src/sleap_roots_contracts/run_manifest.py` with `RunManifest`
+- [x] 1.2 (RED) Test `schema_version` defaults to `"1"`
+- [x] 1.3 (GREEN) Add `src/sleap_roots_contracts/run_manifest.py` with `RunManifest`
       (`model_config = ConfigDict(frozen=True)`, `schema_version: str = "1"`,
       `pipeline_run_id: str`, `scan_keys: list[str]`)
-- [ ] 1.4 Test the manifest is frozen (mutation raises) — not RED/GREEN, this behavior is free
+- [x] 1.4 Test the manifest is frozen (mutation raises) — not RED/GREEN, this behavior is free
       from `frozen=True` once 1.3 lands; the test is a guard, not a driver
-- [ ] 1.5 Test round-trips through JSON (`model_dump_json`/`model_validate_json`) and through dict
+- [x] 1.5 Test round-trips through JSON (`model_dump_json`/`model_validate_json`) and through dict
       (`model_dump`/`model_validate`), using realistic fixture values
       (`scan_keys=["scan_1009", "scan_577", "scan_289"]`,
       `pipeline_run_id="sleap-roots-pipeline-abc123xy"`) rather than placeholders — also a guard,
@@ -26,15 +26,15 @@ follow-up action(s)/PR(s) — mirroring `add-label-selection-contract`'s real se
 
 ## 2. Validators
 
-- [ ] 2.1 (RED) Test `scan_keys=[]` raises `ValidationError`
-- [ ] 2.2 (GREEN) Add the non-empty-list validator
-- [ ] 2.3 (RED) Test `scan_keys=["scan_1", "scan_1"]` raises `ValidationError`
-- [ ] 2.4 (GREEN) Add the no-duplicates validator
-- [ ] 2.5 (RED) Test `scan_keys=["scan_1", ""]` (and a whitespace-only entry, `"  "`) raises
+- [x] 2.1 (RED) Test `scan_keys=[]` raises `ValidationError`
+- [x] 2.2 (GREEN) Add the non-empty-list validator
+- [x] 2.3 (RED) Test `scan_keys=["scan_1", "scan_1"]` raises `ValidationError`
+- [x] 2.4 (GREEN) Add the no-duplicates validator
+- [x] 2.5 (RED) Test `scan_keys=["scan_1", ""]` (and a whitespace-only entry, `"  "`) raises
       `ValidationError`
-- [ ] 2.6 (GREEN) Add the blank-element validator (reject empty/whitespace-only strings in
+- [x] 2.6 (GREEN) Add the blank-element validator (reject empty/whitespace-only strings in
       `scan_keys`)
-- [ ] 2.7 Confirming tests for the "Non-string scan_key element is rejected" scenario and the
+- [x] 2.7 Confirming tests for the "Non-string scan_key element is rejected" scenario and the
       order-preservation guarantee in the "Run Manifest Shape" requirement (no code change
       expected — pydantic v2's default lax mode does not coerce `int`/`float`/`None` into a `str`
       field, unlike its `int` field lax-coercion of `bool`): `scan_keys=[1009, 577]` raises
@@ -46,23 +46,23 @@ follow-up action(s)/PR(s) — mirroring `add-label-selection-contract`'s real se
 
 ## 3. Filename constant + package export
 
-- [ ] 3.1 (RED) Test `RUN_MANIFEST_FILENAME == "run_manifest.json"` (pinned literal — a future
+- [x] 3.1 (RED) Test `RUN_MANIFEST_FILENAME == "run_manifest.json"` (pinned literal — a future
       rename must be a visible, deliberate diff here)
-- [ ] 3.2 (GREEN) Add `RUN_MANIFEST_FILENAME = "run_manifest.json"` to `run_manifest.py`
-- [ ] 3.3 (RED) Test `from sleap_roots_contracts import RunManifest, RUN_MANIFEST_FILENAME`
+- [x] 3.2 (GREEN) Add `RUN_MANIFEST_FILENAME = "run_manifest.json"` to `run_manifest.py`
+- [x] 3.3 (RED) Test `from sleap_roots_contracts import RunManifest, RUN_MANIFEST_FILENAME`
       succeeds and both names are in `__all__`
-- [ ] 3.4 (GREEN) Export both from `src/sleap_roots_contracts/__init__.py`
+- [x] 3.4 (GREEN) Export both from `src/sleap_roots_contracts/__init__.py`
 
 ## 4. Schema boundary
 
 Depends on section 3 (imports `RunManifest` via the package root, not the submodule, so the
 export path itself is exercised).
 
-- [ ] 4.1 (RED) Test `RunManifest` is absent from `schema.py`'s `MODELS` (extends the existing
+- [x] 4.1 (RED) Test `RunManifest` is absent from `schema.py`'s `MODELS` (extends the existing
       `test_prediction_manifest_absent_from_schema_models`-style assertion:
       `set(MODELS) == {"result_envelope", "analysis_input"}` and `RunManifest not in
       MODELS.values()`)
-- [ ] 4.2 Regenerate `schema/*.json` and confirm the CI drift guard is green (expect zero diff at
+- [x] 4.2 Regenerate `schema/*.json` and confirm the CI drift guard is green (expect zero diff at
       this point — no version bump has happened yet; re-verified again after 6.7's bump, see task
       6.8)
 
@@ -70,7 +70,7 @@ export path itself is exercised).
 
 Depends on section 3 (`RUN_MANIFEST_FILENAME`).
 
-- [ ] 5.1 Add a `tmp_path`-based test that writes `model_dump_json()` to a file named
+- [x] 5.1 Add a `tmp_path`-based test that writes `model_dump_json()` to a file named
       `RUN_MANIFEST_FILENAME` (not an arbitrary name — exercises the real constant, not just the
       model) and reads it back with `Path.read_text(encoding="utf-8")` +
       `model_validate_json()` — exercises the literal write/read boundary the filesystem contract

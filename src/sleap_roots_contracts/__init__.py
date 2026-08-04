@@ -27,6 +27,7 @@ from .models import (
 from .params import resolve_params
 from .prediction_manifest import PredictionArtifact, PredictionManifest
 from .registry import TraitDefinition, load_registry, validate_trait
+from .run_manifest import RUN_MANIFEST_FILENAME, RunManifest
 
 # Single source of version truth is pyproject.toml; resolve it from installed
 # package metadata so the version (and the schema $id derived from it in
@@ -53,6 +54,10 @@ __all__ = [
     # not emitted to JSON Schema).
     "PredictionArtifact",
     "PredictionManifest",
+    # Run-manifest contract (bloomctl's run-scoping shape; producer<->producer, not emitted to
+    # JSON Schema).
+    "RunManifest",
+    "RUN_MANIFEST_FILENAME",
     "TraitDefinition",
     "load_registry",
     "validate_trait",
