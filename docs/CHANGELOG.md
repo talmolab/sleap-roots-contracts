@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.1.0a6] - 2026-07-22 (Pre-release)
+## [0.1.0a6] - 2026-07-31 (Pre-release)
 
 Adds the **label-selection contract** — `LabelCard` plus the contract-owned `Mode`
 capture-mode vocabulary — the Python-side label-provenance shape shared by the

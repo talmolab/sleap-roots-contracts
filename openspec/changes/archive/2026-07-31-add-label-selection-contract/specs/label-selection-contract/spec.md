@@ -128,6 +128,64 @@ free-text artifact descriptions.
 - **WHEN** a `LabelCard` is built with `node_count` of `0` and no `node_names`
 - **THEN** validation raises an error
 
+### Requirement: Label Card Integer Fields Reject Bools
+
+`LabelCard` SHALL reject a `bool` on every integer field — `age_min`, `age_max`, `node_count`,
+`n_frames`, `n_instances`, `n_plants`, `n_scans` — rather than coerce it to `1`/`0`, while leaving
+ordinary lax integer parsing (for example `"7"` or `7.0`) unaffected, so that a card cannot validate
+while reading a plausible-but-wrong count or selection window. Python's `bool` is a subclass of
+`int`, so absent the guard such a card would validate.
+
+The rejection SHALL cover `numpy.bool_` as well as the builtin `bool`, so that a value stitched from
+a pandas row — where a scalar is a numpy type, and `numpy.bool_` is not a `bool` subclass — cannot
+pass a check written for the builtin alone.
+
+The bool check SHALL apply to scalars only — a *container* of bools is not a bool, and SHALL be
+rejected as a non-integer like any other container. Whatever the input, an invalid integer field
+SHALL surface as a validation error and SHALL NOT propagate any other exception to the caller,
+because the guard is duck-typed and reaches values it was never designed for.
+
+This requirement is the counterweight to *Tolerant Construction From Registry Metadata* below:
+because `LabelCard` ignores extra keys so it can validate from the legacy boolean-key metadata,
+field validation is the only defense left between that blob and a valid-but-wrong card.
+
+#### Scenario: A bool is rejected wherever an integer is expected
+
+- **WHEN** a `LabelCard` is built with any of its integer fields given as `True` or `False`
+- **THEN** validation raises an error naming the bool, rather than coercing the value to `1`/`0` and
+  yielding a card that claims a plausible-but-wrong count or selection window
+
+#### Scenario: A numpy bool is rejected too
+
+- **WHEN** a `LabelCard` is built with any of its integer fields given as a `numpy.bool_`
+- **THEN** validation raises the same error, because `numpy.bool_` is not a `bool` subclass and a
+  check for the builtin alone would read it as `1`/`0`
+
+#### Scenario: A bool node_count does not satisfy the skeleton coherence check
+
+- **WHEN** a `LabelCard` is built with `node_count` of `True` and exactly one entry in `node_names`
+- **THEN** validation raises an error, because a `True` coerced to `1` would *satisfy*
+  `node_count == len(node_names)` and yield a card that validates while claiming a one-node skeleton
+
+#### Scenario: A container of bools is rejected as a non-integer
+
+- **WHEN** a `LabelCard` is built with an integer field given as a one-element array of bools
+- **THEN** validation raises a non-integer type error rather than reporting a bool, because the bool
+  check applies to scalars and a container of ints in the same position is rejected the same way
+
+#### Scenario: An unanticipated input still surfaces as a validation error
+
+- **WHEN** a `LabelCard` is built with an integer field whose scalar-unwrap raises an unexpected
+  error
+- **THEN** validation raises a validation error rather than propagating that error to the caller,
+  because callers of `model_validate` handle only validation errors
+
+#### Scenario: Lax integer parsing is preserved
+
+- **WHEN** a `LabelCard` is built with a count field such as `n_frames` given as `"7"` or `7.0`
+- **THEN** construction succeeds and the field reads as the integer `7`, because the guard rejects
+  only bools
+
 ### Requirement: Tolerant Construction From Registry Metadata
 
 `LabelCard` SHALL validate successfully from a mapping that merges label metadata with the
