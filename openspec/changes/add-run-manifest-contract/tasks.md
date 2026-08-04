@@ -126,11 +126,18 @@ fix it.
       install.
 
       **Closed 2026-08-04** — see 6.9. `v0.1.0a7` is tagged and confirmed live on PyPI.
-- [ ] 7.2 Comment on and update talmolab/sleap-roots-pipeline#37 with what shipped (draft, get
+- [x] 7.2 Comment on and update talmolab/sleap-roots-pipeline#37 with what shipped (draft, get
       approval before posting). Include the three known limitations from design.md's "Known
       limitations" section — the fixed-filename concurrent-run race, `write-back`'s identical
       unscoped-glob gap (a 4th consumer needing the same fix, not previously tracked), and
       `bloomctl`'s missing `pipeline_run_id` source — so they're tracked cross-repo, not lost.
-- [ ] 7.3 Update `docs/bloom-integration/roadmap.md`'s "Cross-repo correctness" subsection —
+
+      **Posted 2026-08-04**: https://github.com/talmolab/sleap-roots-pipeline/issues/37#issuecomment-5184865031
+- [x] 7.3 Update `docs/bloom-integration/roadmap.md`'s "Cross-repo correctness" subsection —
       flip the `sleap-roots-contracts` row from ⬜ to ✅, record the version, and note the
       file-based (not CLI-arg) decision (draft, get approval before committing).
+
+      **Committed 2026-08-04** directly to `sleap-roots-pipeline`'s `main`
+      (`78c7a7c`), matching this doc's established direct-commit precedent — flips the
+      `sleap-roots-contracts` row, unblocks `bloomctl`'s row, resolves the open design question,
+      and adds a 2026-08-04 status-log entry.
