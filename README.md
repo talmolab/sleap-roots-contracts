@@ -44,6 +44,12 @@ Since `0.1.0a5` it also defines the **prediction-manifest contract** — `Predic
 `sleap-roots-predict` and read by `bloomctl` to construct `cyl_scan_intermediates` blob bytes.
 Like `ModelCard`, it is a producer↔producer contract and is **not** emitted to the JSON Schema.
 
+Since `0.1.0a7` it also defines the **run-manifest contract** — `RunManifest`/
+`RUN_MANIFEST_FILENAME`, the run-scoping shape written by `bloomctl` and read by
+`sleap-roots-predict`/`sleap-roots-traits` to scope processing to exactly the `scan_key`s a run
+was given. Like `ModelCard`, it is a producer↔producer contract and is **not** emitted to the
+JSON Schema.
+
 Since `0.1.0a4` it also ships the **param-resolution oracle** —
 `resolve_params(metadata, overrides=None) -> ResolvedParams` maps a single Bloom
 `cyl_scans_extended` scan-metadata row to the `{species, mode, age}` params that select a
