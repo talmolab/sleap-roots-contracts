@@ -2,7 +2,11 @@
 brand-new, from-scratch contract model (`add-label-selection-contract`, `add-prediction-manifest-contract`)
 lands as a small number of commits at section boundaries — not one commit per RED/GREEN subtask
 below. Implement sections 1-3 as RED/GREEN steps for TDD discipline, but commit once after section
-3, once after sections 4-5, and once after section 6 (docs + release prep).
+3, once after sections 4-5, and once after 6.1-6.8 (docs, verification, version bump + schema
+regen — all real code/doc changes). **Task 6.9 (tag + PyPI publish) and all of section 7 (archive
+gate, cross-repo issue comment, roadmap update) happen after this PR merges**, as separate
+follow-up action(s)/PR(s) — mirroring `add-label-selection-contract`'s real sequence (PR #26 merged
+→ PR #28 closed the release/archive gate → `100eaef` archived it), not bundled into this PR.
 
 ## 1. RunManifest model
 
@@ -30,14 +34,15 @@ below. Implement sections 1-3 as RED/GREEN steps for TDD discipline, but commit 
       `ValidationError`
 - [ ] 2.6 (GREEN) Add the blank-element validator (reject empty/whitespace-only strings in
       `scan_keys`)
-- [ ] 2.7 Confirming tests (no code change expected — pydantic v2's default lax mode does not
-      coerce `int`/`float`/`None` into a `str` field, unlike its `int` field lax-coercion of
-      `bool`): `scan_keys=[1009, 577]` raises `ValidationError`; `scan_keys=["scan_1", None]`
-      raises `ValidationError`; constructing with `["scan_3", "scan_1", "scan_2"]` and asserting
-      `.scan_keys` preserves that exact order, including after a JSON round-trip. These pin
-      today's correct default behavior against a future regression (e.g. a lenient custom
-      validator or config change) — see design.md's bloom#555 discussion for why the
-      int/str boundary specifically is load-bearing here
+- [ ] 2.7 Confirming tests for the "Non-string scan_key element is rejected" scenario and the
+      order-preservation guarantee in the "Run Manifest Shape" requirement (no code change
+      expected — pydantic v2's default lax mode does not coerce `int`/`float`/`None` into a `str`
+      field, unlike its `int` field lax-coercion of `bool`): `scan_keys=[1009, 577]` raises
+      `ValidationError`; `scan_keys=["scan_1", None]` raises `ValidationError`; constructing with
+      `["scan_3", "scan_1", "scan_2"]` and asserting `.scan_keys` preserves that exact order,
+      including after a JSON round-trip. These pin today's correct default behavior against a
+      future regression (e.g. a lenient custom validator or config change) — see design.md's
+      bloom#555 discussion for why the int/str boundary specifically is load-bearing here
 
 ## 3. Filename constant + package export
 

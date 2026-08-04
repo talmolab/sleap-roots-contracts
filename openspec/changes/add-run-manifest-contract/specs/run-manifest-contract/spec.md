@@ -4,8 +4,10 @@
 
 The library SHALL define `RunManifest`, the run-scoping contract written by `bloomctl` and read by
 `sleap-roots-predict`/`sleap-roots`-traits: `schema_version` (`str`, default `"1"`),
-`pipeline_run_id` (`str`, required), `scan_keys` (`list[str]`, required). The model SHALL be
-immutable (frozen).
+`pipeline_run_id` (`str`, required), `scan_keys` (`list[str]`, required). Every `scan_keys`
+element SHALL be a string, and the list's given order SHALL be preserved (no reordering or
+deduplication beyond the uniqueness check in "Scan Keys Are Non-Empty And Unique"). The model
+SHALL be immutable (frozen).
 
 #### Scenario: schema_version defaults to "1"
 - **WHEN** a `RunManifest` is constructed without an explicit `schema_version`
@@ -43,6 +45,14 @@ at construction time.
 
 #### Scenario: Blank scan_key element is rejected
 - **WHEN** a `RunManifest` is constructed with `scan_keys=["scan_1", ""]`
+- **THEN** validation raises an error
+
+#### Scenario: Whitespace-only scan_key element is rejected
+- **WHEN** a `RunManifest` is constructed with `scan_keys=["scan_1", "  "]`
+- **THEN** validation raises an error
+
+#### Scenario: Non-string scan_key element is rejected
+- **WHEN** a `RunManifest` is constructed with `scan_keys=[1009, 577]`
 - **THEN** validation raises an error
 
 ### Requirement: Well-Known Filename Constant

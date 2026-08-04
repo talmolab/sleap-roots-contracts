@@ -190,8 +190,9 @@ named here so they aren't rediscovered as surprises later:
   shared `traits-output-dir`, exactly like predict's pre-fix `discover_scans`. A leftover
   `.result.json` from a stale run would be re-ingested and written back into Bloom's DB — a
   duplicate DB write, arguably worse than predict's duplicate GPU compute. `write-back` was not
-  identified as a manifest consumer in the original cross-repo reasoning and needs the same
-  scoping fix; flag as a 5th step for talmolab/sleap-roots-pipeline#37, not solved here.
+  identified as a manifest consumer in the original cross-repo reasoning — it is a 4th consumer
+  needing the same scoping fix, alongside bloomctl/predict/traits; flag for
+  talmolab/sleap-roots-pipeline#37, not solved here.
 - **`bloomctl` has no `pipeline_run_id` source today.** Neither `build_sidecar()` nor any Argo
   template env var currently carries a `{{workflow.name}}`-equivalent value into the container
   `bloomctl` runs in. The `bloomctl` implementation session must add that wiring (an env var read,

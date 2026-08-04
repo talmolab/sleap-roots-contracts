@@ -43,13 +43,19 @@ following this program's established pattern for shared cross-repo shapes (`Resu
 
 Not in scope: `bloomctl` actually writing the manifest, `sleap-roots-predict`/`sleap-roots`-traits
 actually reading it or gaining skip-if-done, and the idempotency-key comparison upgrade — all
-tracked separately as the next three steps in talmolab/sleap-roots-pipeline#37. Also not in
-scope, and not yet tracked anywhere until this change's follow-up comment lands: `write-back`'s
-`discover_envelopes()` has the identical unscoped-glob vulnerability predict's `discover_scans`
-had, and is a 4th consumer this manifest should eventually scope; and this design assumes at most
-one in-flight pipeline run against the shared staging directory at a time — a concurrent-run race
-on the fixed manifest filename is a known, named limitation, not solved here (see design.md,
-"Known limitations").
+tracked separately as the next three steps in talmolab/sleap-roots-pipeline#37.
+
+Three additional gaps are deliberately deferred, not silently missed (full reasoning in design.md,
+"Known limitations"), and not yet tracked anywhere until this change's follow-up comment lands:
+
+- `write-back`'s `discover_envelopes()` has the identical unscoped-glob vulnerability predict's
+  `discover_scans` had. It is a 4th consumer this manifest should eventually scope, not previously
+  identified as one.
+- This design assumes at most one in-flight pipeline run against the shared staging directory at a
+  time. A concurrent-run race on the fixed manifest filename is a known, accepted limitation, not
+  solved here.
+- `bloomctl` has no existing source for `pipeline_run_id` today (no sidecar field, no Argo env
+  var) — the `bloomctl` implementation session must add that wiring.
 
 ## Impact
 
