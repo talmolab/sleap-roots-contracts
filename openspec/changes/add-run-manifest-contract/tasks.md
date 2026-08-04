@@ -80,27 +80,27 @@ Depends on section 3 (`RUN_MANIFEST_FILENAME`).
 
 ## 6. Docs and release
 
-- [ ] 6.1 Update `openspec/project.md` — the Purpose paragraph enumerates the contracts ("five
+- [x] 6.1 Update `openspec/project.md` — the Purpose paragraph enumerates the contracts ("five
       contracts" → "six contracts"); add the run-manifest contract and note it is not emitted to
       JSON Schema; update the **"External Dependencies"** section (not "Downstream consumers" —
       that section doesn't exist under that name) to note `bloomctl` writes it and
       `sleap-roots-predict`/`sleap-roots-traits` read it once their consuming PRs land (not yet)
-- [ ] 6.2 Add a `[0.1.0a7] - <release date> (Pre-release)` entry to `docs/CHANGELOG.md`, matching
+- [x] 6.2 Add a `[0.1.0a7] - <release date> (Pre-release)` entry to `docs/CHANGELOG.md`, matching
       the `[0.1.0a6]` header format, plus the compare-links footer and retargeted `[Unreleased]`
       link
-- [ ] 6.3 Add a README.md paragraph introducing `RunManifest`/`RUN_MANIFEST_FILENAME`, matching the
+- [x] 6.3 Add a README.md paragraph introducing `RunManifest`/`RUN_MANIFEST_FILENAME`, matching the
       existing one-paragraph-per-contract pattern (writer/reader + "not emitted to JSON Schema" —
       no incident narrative; that detail stays in the design docs)
-- [ ] 6.4 Append `run-manifest-contract` to the capability list in
+- [x] 6.4 Append `run-manifest-contract` to the capability list in
       `docs/01-contract-library-design.md`'s staleness paragraph and add a sentence noting the
       `RunManifest`/`RUN_MANIFEST_FILENAME` addition in `0.1.0a7`, mirroring the
       `label-selection-contract` precedent (`add-label-selection-contract` task 6.2c)
-- [ ] 6.5 Run `uv run pytest -v`, `uv run black --check src tests`, `uv run ruff check src tests`
-- [ ] 6.6 `openspec validate add-run-manifest-contract --strict`
-- [ ] 6.7 Bump `pyproject.toml` to `0.1.0a7` and re-lock `uv.lock` in the same commit (a version
+- [x] 6.5 Run `uv run pytest -v`, `uv run black --check src tests`, `uv run ruff check src tests`
+- [x] 6.6 `openspec validate add-run-manifest-contract --strict`
+- [x] 6.7 Bump `pyproject.toml` to `0.1.0a7` and re-lock `uv.lock` in the same commit (a version
       bump without a re-lock hard-fails the release build, and PR CI does not catch it — the
       `0.1.0a4` release history)
-- [ ] 6.8 **After** 6.7 (order matters — `schema.py`'s `render()` embeds `__version__` in every
+- [x] 6.8 **After** 6.7 (order matters — `schema.py`'s `render()` embeds `__version__` in every
       schema's `$id`, so any version bump restamps `schema/*.json` even though this change touches
       neither `ResultEnvelope` nor `AnalysisInputRow`): regenerate `schema/*.json` and re-run the
       full verification suite — `uv run pytest -v`, `uv run black --check src tests`,

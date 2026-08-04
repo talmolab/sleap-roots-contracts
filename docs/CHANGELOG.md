@@ -8,6 +8,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0a7] - 2026-08-04 (Pre-release)
+
+Adds the **run-manifest contract** — `RunManifest` plus the `RUN_MANIFEST_FILENAME` constant —
+the run-scoping shape written by `bloomctl` and read by `sleap-roots-predict`/`sleap-roots`-traits
+to scope processing to exactly the `scan_key`s a run was given, instead of directory-wide-scanning
+whatever sidecars happen to be present. First repo in a 4-repo cross-repo correctness fix
+(talmolab/sleap-roots-pipeline#37) for two real contamination incidents seen during cluster
+testing. Like `PredictionManifest`, this is a producer↔producer contract and is **not** emitted
+to JSON Schema.
+
+### Added
+- **`RunManifest` / `RUN_MANIFEST_FILENAME`** — new **run-manifest-contract** capability.
+  `RunManifest` carries `schema_version` (default `"1"`), `pipeline_run_id` (required), and
+  `scan_keys` (required `list[str]`, rejecting an empty list, duplicate entries, a blank or
+  whitespace-only entry, or a non-string entry). `scan_keys` is deliberately `str`, matching every
+  other scan identifier in this library and what `sleap-roots-predict`'s `discover_scans` actually
+  reads — not Bloom's internal integer `scan_id`, avoiding the class of bug bloom#555 already hit
+  once (an `image_ids` int/str mismatch that failed every real sidecar). `RUN_MANIFEST_FILENAME`
+  (`"run_manifest.json"`) is the single source of truth for the manifest's on-disk filename, so
+  `bloomctl`/`sleap-roots-predict`/`sleap-roots`-traits agree on it via import. The model is
+  frozen and exported from the package root.
+
+### Changed
+- Both emitted schemas (`result_envelope`, `analysis_input`) are regenerated and their `$id`
+  advances to `v0.1.0a7`. This is a **bytes-only restamp** — `schema.py`'s `MODELS` dict gains no
+  entries and no model in either schema changes — matching the `0.1.0a4`/`0.1.0a5`/`0.1.0a6`
+  precedent.
+
 ## [0.1.0a6] - 2026-07-31 (Pre-release)
 
 Adds the **label-selection contract** — `LabelCard` plus the contract-owned `Mode`
@@ -251,7 +279,8 @@ sleap-roots ↔ Bloom pipeline integration. Pure, dependency-light, Bloom-agnost
 - CI (lint + drift guard + tests on Python 3.11/3.12) and a PyPI
   trusted-publishing workflow.
 
-[Unreleased]: https://github.com/talmolab/sleap-roots-contracts/compare/v0.1.0a6...HEAD
+[Unreleased]: https://github.com/talmolab/sleap-roots-contracts/compare/v0.1.0a7...HEAD
+[0.1.0a7]: https://github.com/talmolab/sleap-roots-contracts/compare/v0.1.0a6...v0.1.0a7
 [0.1.0a6]: https://github.com/talmolab/sleap-roots-contracts/compare/v0.1.0a5...v0.1.0a6
 [0.1.0a5]: https://github.com/talmolab/sleap-roots-contracts/compare/v0.1.0a4...v0.1.0a5
 [0.1.0a4]: https://github.com/talmolab/sleap-roots-contracts/compare/v0.1.0a3...v0.1.0a4
