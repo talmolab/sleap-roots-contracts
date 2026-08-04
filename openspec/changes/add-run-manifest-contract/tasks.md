@@ -106,7 +106,13 @@ Depends on section 3 (`RUN_MANIFEST_FILENAME`).
       full verification suite — `uv run pytest -v`, `uv run black --check src tests`,
       `uv run ruff check src tests`, `uv lock --check`, and confirm the schema drift guard
       (`git diff --exit-code schema/`) is clean against the restamped `$id`
-- [ ] 6.9 Release `0.1.0a7` via `/prepare-release` (tag + PyPI publish is a user action)
+- [x] 6.9 Release `0.1.0a7` via `/prepare-release` (tag + PyPI publish is a user action)
+
+      **Released 2026-08-04.** Tag `v0.1.0a7` cut from `b4824dc` (PR #30); `validate-release` and
+      `build-and-publish` both green (the `pypi` environment's manual approval gate was approved
+      by eberrigan). Verified from a clean isolated environment:
+      `sleap-roots-contracts==0.1.0a7` installs and `RunManifest`/`RUN_MANIFEST_FILENAME` import;
+      constructing a `RunManifest` from the PyPI wheel round-trips as expected.
 
 ## 7. Archive gate — MUST be closed before `openspec archive`
 
@@ -114,10 +120,12 @@ Not a checkbox to tick off with the rest: archiving folds this change's deltas i
 `openspec/specs/`, so anything missing here becomes permanently unspecified with no later prompt to
 fix it.
 
-- [ ] 7.1 **BLOCKING.** `0.1.0a7` must be tagged and published to PyPI before this change is
+- [x] 7.1 **BLOCKING.** `0.1.0a7` must be tagged and published to PyPI before this change is
       archived (mirrors the `add-label-selection-contract` gate) — archiving a contract whose
       release never happened leaves `openspec/specs/` describing a version consumers cannot
       install.
+
+      **Closed 2026-08-04** — see 6.9. `v0.1.0a7` is tagged and confirmed live on PyPI.
 - [ ] 7.2 Comment on and update talmolab/sleap-roots-pipeline#37 with what shipped (draft, get
       approval before posting). Include the three known limitations from design.md's "Known
       limitations" section — the fixed-filename concurrent-run race, `write-back`'s identical
