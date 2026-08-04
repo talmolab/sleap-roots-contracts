@@ -26,7 +26,7 @@ following this program's established pattern for shared cross-repo shapes (`Resu
   Pydantic model carrying `schema_version` (`str`, default `"1"`), `pipeline_run_id` (`str`,
   required), and `scan_keys` (`list[str]`, required, non-empty, no duplicates).
 - Ship `RUN_MANIFEST_FILENAME = "run_manifest.json"` as the single source of truth for the
-  manifest's on-disk filename, so `bloomctl`/`sleap-roots-predict`/`sleap-roots`-traits agree on
+  manifest's on-disk filename, so `bloomctl`/`sleap-roots-predict`/`sleap-roots-traits` agree on
   it via import rather than each hardcoding the string.
 - `scan_keys` is deliberately `list[str]`, not `list[int]`: Bloom's DB uses integer `scan_id`
   primary keys, but `bloomctl` converts every `scan_id` to a string `scan_key` (e.g.
@@ -35,13 +35,13 @@ following this program's established pattern for shared cross-repo shapes (`Resu
   type would reintroduce, at this exact contract boundary, the class of bug bloom#555 already hit
   once (an `image_ids` int/str mismatch that failed every real sidecar).
 - `RunManifest` is **file-based**, not a CLI argument: both `sleap-roots-predict`'s and
-  `sleap-roots`-traits' entrypoints use `argparse` with exactly two required positional arguments,
+  `sleap-roots-traits`' entrypoints use `argparse` with exactly two required positional arguments,
   which hard-fails on a third; a file in the already-shared, already-mounted staging directory
   needs zero `sleap-roots-pipeline` template changes to land.
 - `RunManifest` is **producer↔producer** — like `PredictionManifest`/`ModelCard`, it never crosses
   the Bloom-DB boundary and is **not** emitted to JSON Schema.
 
-Not in scope: `bloomctl` actually writing the manifest, `sleap-roots-predict`/`sleap-roots`-traits
+Not in scope: `bloomctl` actually writing the manifest, `sleap-roots-predict`/`sleap-roots-traits`
 actually reading it or gaining skip-if-done, and the idempotency-key comparison upgrade — all
 tracked separately as the next three steps in talmolab/sleap-roots-pipeline#37.
 
@@ -66,6 +66,6 @@ Three additional gaps are deliberately deferred, not silently missed (full reaso
   `docs/01-contract-library-design.md`, `pyproject.toml` + `uv.lock` (version bump), `schema/*.json`
   (regenerated for the `$id` version restamp; no structural diff expected).
 - Release: cuts the next contracts alpha (`0.1.0a7`). Consumed next by `bloomctl` (`salk-bloom`,
-  staging branch), then `sleap-roots-predict`, then `sleap-roots`-traits — each a separate,
+  staging branch), then `sleap-roots-predict`, then `sleap-roots-traits` — each a separate,
   sequenced session per talmolab/sleap-roots-pipeline#37.
 - Runtime deps unchanged (pydantic only; no filesystem/network I/O in this library).

@@ -1,7 +1,7 @@
 ## Context
 
 Full cross-repo reasoning and the evidence trail (verified against live code in `bloomctl`,
-`sleap-roots-predict`, `sleap-roots`-traits, and `sleap-roots-pipeline`) lives in
+`sleap-roots-predict`, `sleap-roots-traits`, and `sleap-roots-pipeline`) lives in
 `docs/superpowers/specs/2026-08-03-run-manifest-contract-design.md`. This file captures the
 decisions in the format this repo's other changes use.
 
@@ -18,7 +18,7 @@ never sees a raw int. Every existing identifier field in this library (`Provenan
   based so no `sleap-roots-pipeline` template change is required to land it; a well-known filename
   constant so downstream repos import rather than hardcode it.
 - **Non-Goals:** any producer/consumer code in `bloomctl`, `sleap-roots-predict`, or
-  `sleap-roots`-traits; the idempotency-key comparison upgrade; any change to
+  `sleap-roots-traits`; the idempotency-key comparison upgrade; any change to
   `sleap-roots-pipeline`'s Argo templates.
 
 ## Decisions
@@ -34,7 +34,7 @@ caught. `scan_keys: list[str]` matches what predict/traits actually key off, not
 happens to use internally.
 
 **Decision: file-based, not a CLI argument.**
-Confirmed both `sleap-roots-predict`'s and `sleap-roots`-traits' entrypoints use `argparse` with
+Confirmed both `sleap-roots-predict`'s and `sleap-roots-traits`' entrypoints use `argparse` with
 exactly two required positional arguments — a third hard-fails (`unrecognized arguments`, exit 2),
 it does not silently no-op. Confirmed `sleap-roots-pipeline.yaml`'s `scan-ids` parameter is wired
 only to `images-downloader` today. A file in the already-shared, already-mounted staging directory

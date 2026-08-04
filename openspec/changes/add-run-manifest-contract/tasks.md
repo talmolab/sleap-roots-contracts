@@ -5,7 +5,7 @@ below. Implement sections 1-3 as RED/GREEN steps for TDD discipline, but commit 
 3, once after sections 4-5, and once after 6.1-6.8 (docs, verification, version bump + schema
 regen — all real code/doc changes). **Task 6.9 (tag + PyPI publish) and all of section 7 (archive
 gate, cross-repo issue comment, roadmap update) happen after this PR merges**, as separate
-follow-up action(s)/PR(s) — mirroring `add-label-selection-contract`'s real sequence (PR #26 merged
+follow-up action(s)/PR(s) — mirroring `add-label-selection-contract`'s real sequence (PR #24 merged
 → PR #28 closed the release/archive gate → `100eaef` archived it), not bundled into this PR.
 
 ## 1. RunManifest model
@@ -84,7 +84,7 @@ Depends on section 3 (`RUN_MANIFEST_FILENAME`).
       contracts" → "six contracts"); add the run-manifest contract and note it is not emitted to
       JSON Schema; update the **"External Dependencies"** section (not "Downstream consumers" —
       that section doesn't exist under that name) to note `bloomctl` writes it and
-      `sleap-roots-predict`/`sleap-roots`-traits read it once their consuming PRs land (not yet)
+      `sleap-roots-predict`/`sleap-roots-traits` read it once their consuming PRs land (not yet)
 - [ ] 6.2 Add a `[0.1.0a7] - <release date> (Pre-release)` entry to `docs/CHANGELOG.md`, matching
       the `[0.1.0a6]` header format, plus the compare-links footer and retargeted `[Unreleased]`
       link

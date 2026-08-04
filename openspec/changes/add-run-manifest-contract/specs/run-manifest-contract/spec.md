@@ -3,7 +3,7 @@
 ### Requirement: Run Manifest Shape
 
 The library SHALL define `RunManifest`, the run-scoping contract written by `bloomctl` and read by
-`sleap-roots-predict`/`sleap-roots`-traits: `schema_version` (`str`, default `"1"`),
+`sleap-roots-predict`/`sleap-roots-traits`: `schema_version` (`str`, default `"1"`),
 `pipeline_run_id` (`str`, required), `scan_keys` (`list[str]`, required). Every `scan_keys`
 element SHALL be a string, and the list's given order SHALL be preserved (no reordering or
 deduplication beyond the uniqueness check in "Scan Keys Are Non-Empty And Unique"). The model
@@ -75,7 +75,7 @@ The library SHALL export `RunManifest` and `RUN_MANIFEST_FILENAME` from the pack
 ### Requirement: No JSON Schema Emission
 
 `RunManifest` SHALL NOT be emitted to `schema/*.json` — this is a producer-to-producer contract
-between `bloomctl` and `sleap-roots-predict`/`sleap-roots`-traits, not a Bloom-DB-facing shape.
+between `bloomctl` and `sleap-roots-predict`/`sleap-roots-traits`, not a Bloom-DB-facing shape.
 
 #### Scenario: Schema emission set is unchanged
 - **WHEN** `sleap_roots_contracts.schema.MODELS` is inspected
