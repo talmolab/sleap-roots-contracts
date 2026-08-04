@@ -7,7 +7,7 @@ processing to exactly the `scan_keys` a run was given, instead of directory-wide
 whatever sidecars happen to be present (see talmolab/sleap-roots-pipeline#37).
 """
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, model_validator
 
 _FROZEN = ConfigDict(frozen=True)
 
@@ -36,10 +36,16 @@ class RunManifest(BaseModel):
     pipeline_run_id: str
     scan_keys: list[str]
 
-    @field_validator("scan_keys")
-    @classmethod
-    def _validate_scan_keys(cls, value: list[str]) -> list[str]:
-        """Reject an empty list, duplicate entries, or a blank/whitespace-only element."""
+    @model_validator(mode="after")
+    def _check_scan_keys(self) -> "RunManifest":
+        """Reject an empty list, duplicate entries, or a blank/whitespace-only element.
+
+        Duplicate detection is exact-match, not whitespace-normalized: the sole documented
+        producer (`bloomctl`'s `scan_key_for()`, `f"scan_{scan_id}"`) can never emit a
+        `scan_key` with incidental whitespace, so two entries differing only by whitespace
+        are treated as distinct rather than silently deduplicated.
+        """
+        value = self.scan_keys
         if not value:
             raise ValueError("scan_keys must not be empty")
         if len(set(value)) != len(value):
@@ -48,4 +54,4 @@ class RunManifest(BaseModel):
             raise ValueError(
                 "scan_keys must not contain a blank or whitespace-only entry"
             )
-        return value
+        return self

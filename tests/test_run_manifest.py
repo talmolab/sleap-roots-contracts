@@ -56,26 +56,26 @@ def test_manifest_round_trips_through_dict():
 
 
 def test_empty_scan_keys_is_rejected():
-    """scan_keys=[] raises."""
-    with pytest.raises(ValidationError):
+    """scan_keys=[] raises with a message naming the empty-list failure specifically."""
+    with pytest.raises(ValidationError, match="scan_keys must not be empty"):
         make_manifest(scan_keys=[])
 
 
 def test_duplicate_scan_keys_is_rejected():
-    """A repeated scan_key entry raises."""
-    with pytest.raises(ValidationError):
+    """A repeated scan_key entry raises with a message naming the duplicate failure."""
+    with pytest.raises(ValidationError, match="scan_keys must not contain duplicates"):
         make_manifest(scan_keys=["scan_1", "scan_1"])
 
 
 def test_blank_scan_key_element_is_rejected():
-    """An empty-string scan_key entry raises."""
-    with pytest.raises(ValidationError):
+    """An empty-string scan_key entry raises with a message naming the blank failure."""
+    with pytest.raises(ValidationError, match="blank or whitespace-only"):
         make_manifest(scan_keys=["scan_1", ""])
 
 
 def test_whitespace_only_scan_key_element_is_rejected():
-    """A whitespace-only scan_key entry raises."""
-    with pytest.raises(ValidationError):
+    """A whitespace-only scan_key entry raises with a message naming the blank failure."""
+    with pytest.raises(ValidationError, match="blank or whitespace-only"):
         make_manifest(scan_keys=["scan_1", "  "])
 
 
