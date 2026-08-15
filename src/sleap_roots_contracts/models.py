@@ -76,6 +76,26 @@ def _reject_bool(v: Any) -> Any:
 NonBoolInt = Annotated[int, BeforeValidator(_reject_bool)]
 
 
+def _check_age_window(age_min: int, age_max: int) -> None:
+    """Raise if an inclusive age window is inverted.
+
+    Shared by every model that curates an approved ``[age_min, age_max]`` window, so
+    the rule and its message have one definition. Kept as a plain function rather
+    than a mixin because the models that need it are otherwise unrelated shapes.
+
+    Args:
+        age_min: The window's inclusive lower bound.
+        age_max: The window's inclusive upper bound.
+
+    Raises:
+        ValueError: If ``age_min`` exceeds ``age_max``. The message names both
+            bounds *and* both values, so a bad card is diagnosable from a log line
+            without re-running validation.
+    """
+    if age_min > age_max:
+        raise ValueError(f"age_min ({age_min}) must be <= age_max ({age_max})")
+
+
 class ModelRef(BaseModel):
     """Identity of one model used in a run (FK-able to a future Bloom models table)."""
 
@@ -222,13 +242,76 @@ RootType = Literal["primary", "lateral", "crown"]
 Mode = Literal["cylinder", "multiplant cylinder", "plate"]
 
 
-# Defined after both vocabularies on purpose: this module has no `from __future__
-# import annotations`, so the `mode: Mode` and `root_type: RootType` fields and the
-# `-> ModelRef` return annotation are evaluated at class-definition time and every
-# name must already exist (RootType and Mode are the binding constraints; ModelRef,
-# defined far above, is never at risk). So ModelCard must come *after* both; it is placed as
-# close to them as the vocabulary block allows. Conceptually ModelCard is a
+# Selector and ModelCard are both defined after the vocabularies on purpose: this
+# module has no `from __future__ import annotations`, so every annotation is
+# evaluated at class-definition time and each name must already exist. Selector's
+# `mode: Mode` binds it after Mode; ModelCard's `root_type: RootType`, its
+# `selectors: tuple[Selector, ...]`, and its `-> ModelRef` return annotation bind it
+# after RootType and Selector (ModelRef, defined far above, is never at risk). So the
+# order here is Mode/RootType -> Selector -> ModelCard, each placed as close to what
+# it depends on as the vocabulary block allows. Conceptually ModelCard is a
 # model-registry sibling of ModelRef.
+class Selector(BaseModel):
+    """One whole validated selection context a model was approved for.
+
+    A selector is a *unit*: it asserts that the model was validated for **that**
+    species, in **that** mode, over **that** age window — and asserts nothing about
+    any other combination of the same values. That is what lets one
+    :class:`ModelCard` describe one physical model honestly. A generalist
+    primary-root model serving canola in ``cylinder`` and arabidopsis in
+    ``multiplant cylinder`` carries two selectors and thereby advertises exactly
+    those two contexts, never the cross product (which would include canola in
+    ``multiplant cylinder``, a combination nobody trained).
+
+    Consumers match a card by the **any-selector** rule — some single selector
+    matching all of (species, mode, age) — so an age MUST be compared against a
+    *matching* selector's window, never a card-level minimum or maximum. A card
+    whose selectors span 2-13 and 2-14 advertises neither window globally.
+
+    ``mode`` is the contract-owned :data:`Mode` vocabulary, matched exactly: a
+    selector carrying the label registry's ``cyl`` shorthand — or a cased
+    ``Cylinder`` — fails at construction rather than silently never matching a scan.
+    Normalizing a *requested* mode remains ``resolve_params``' job.
+
+    ``species`` is deliberately an uncontrolled ``str``: the registry's cards are the
+    single authority on which species have models, and ``resolve_params`` lets an
+    unmodelled species pass through to a selection zero-match rather than rejecting
+    it. A vocabulary here would turn that designed skip into a hard failure.
+
+    ``age_min``/``age_max`` is the *approved selection window* for this context,
+    curated at promotion (it MAY be set wider than the raw training ages). It is
+    inclusive and assumed **contiguous**; non-contiguous approved sets are not
+    expressible in one selector, though a card MAY carry several.
+
+    ``frozen`` is load-bearing twice over. It makes :class:`ModelCard`'s immutability
+    *deep* — the card's ``tuple`` annotation protects the sequence but not its
+    elements, so a mutable selector would let ``card.selectors[0].species`` be
+    reassigned on a card advertising itself as frozen. It also makes a selector
+    hashable, which is what lets the producer de-duplicate identical contexts with a
+    ``set`` when several matrix rows collapse onto one physical model.
+
+    ``extra="ignore"`` is set explicitly for the same load-bearing reason
+    :class:`ModelCard` sets it, one level down: selectors arrive as nested mappings
+    inside a raw wandb metadata blob, and a consumer pinned to an older contract must
+    tolerate a selector field a newer producer added rather than failing the whole
+    card and dropping the model from selection. The accepted cost is that a *typo'd*
+    key is dropped just as quietly, surfacing only as a missing-field error at that
+    selector's index — so the producer guards its own emitted key set.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="ignore")
+
+    species: str
+    mode: Mode
+    age_min: NonBoolInt = Field(ge=0)
+    age_max: NonBoolInt = Field(ge=0)
+
+    @model_validator(mode="after")
+    def _check_age_range(self) -> "Selector":
+        _check_age_window(self.age_min, self.age_max)
+        return self
+
+
 class ModelCard(BaseModel):
     """Model-selection metadata + identity for one production model.
 
@@ -287,10 +370,7 @@ class ModelCard(BaseModel):
 
     @model_validator(mode="after")
     def _check_age_range(self) -> "ModelCard":
-        if self.age_min > self.age_max:
-            raise ValueError(
-                f"age_min ({self.age_min}) must be <= age_max ({self.age_max})"
-            )
+        _check_age_window(self.age_min, self.age_max)
         return self
 
     def to_model_ref(self, runtime_sleap_nn_version: str) -> ModelRef:
