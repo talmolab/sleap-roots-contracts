@@ -8,8 +8,15 @@ import numpy as np
 import pytest
 from pydantic import ValidationError
 
-from sleap_roots_contracts.models import Mode, ModelCard, ModelRef
-from sleap_roots_contracts.schema import render
+from sleap_roots_contracts.models import Mode, ModelCard, ModelRef, Selector
+from sleap_roots_contracts.schema import MODELS, render
+
+
+def make_selector(**overrides):
+    """Build a valid Selector with sensible defaults, overridable per-test."""
+    base = dict(species="rice", mode="cylinder", age_min=2, age_max=5)
+    base.update(overrides)
+    return Selector(**base)
 
 
 def make_card(**overrides):
@@ -410,10 +417,140 @@ def test_model_card_importable_from_package_root():
 
 
 def test_model_card_absent_from_result_schema():
-    """ModelCard does not leak into the Bloom-facing result_envelope schema.
+    """Neither card model leaks into any emitted Bloom-facing schema.
 
-    It is a Python-side producer<->producer contract, not referenced by
-    ResultEnvelope, so it must not appear among the emitted schema's $defs.
+    They are Python-side producer<->producer contracts, not referenced by
+    ResultEnvelope or AnalysisInputRow, so they must not appear among any emitted
+    schema's $defs.
+
+    Iterates every emitted schema rather than only result_envelope, so a future
+    reference from the analysis-input side is caught too, and asserts the whole
+    $defs set rather than a bare `"ModelCard" not in defs` — the latter passes
+    vacuously if either class is ever renamed.
     """
-    defs = json.loads(render("result_envelope"))["$defs"]
-    assert "ModelCard" not in defs
+    for name in MODELS:
+        rendered = json.loads(render(name))
+        defs = set(rendered.get("$defs", {}))
+        assert {"ModelCard", "Selector"} & defs == set(), (name, sorted(defs))
+
+
+# --- Selector ---------------------------------------------------------------
+#
+# The bundled selection context: one whole validated (species, mode, age window)
+# a model was approved for. The card-level consequences of these rules live with
+# the ModelCard tests above; what is pinned here is that the rules belong to
+# Selector *itself* and hold when it is built standalone.
+
+
+def test_selector_valid():
+    """A Selector constructs and retains its four fields."""
+    s = make_selector()
+    assert s.species == "rice"
+    assert s.mode == "cylinder"
+    assert (s.age_min, s.age_max) == (2, 5)
+
+
+@pytest.mark.parametrize(
+    "bounds",
+    [
+        {"age_min": 6, "age_max": 3},  # inverted window
+        {"age_min": -1},  # negative bound
+        {"age_min": True},  # builtin bool
+        {"age_max": np.bool_(True)},  # numpy bool (not a bool subclass)
+    ],
+)
+def test_selector_enforces_its_own_age_bounds(bounds):
+    """The age rules live on Selector, not on whatever contains it.
+
+    Built standalone, with no ModelCard in sight. If these only fired through the
+    card, a producer assembling selectors before wrapping them would get no
+    feedback until the whole card was built — and `NonBoolInt`'s numpy.bool_ half
+    (strengthened in tighten-model-card-validation) would be trivially re-openable
+    by anyone hand-writing a bound check here.
+    """
+    with pytest.raises(ValidationError):
+        make_selector(**bounds)
+
+
+@pytest.mark.parametrize(
+    "bad", ["cyl", "Cylinder", "cylinder ", " cylinder", "CYLINDER"]
+)
+def test_selector_enforces_its_own_mode_vocabulary(bad):
+    """Selector.mode is matched exactly — no case or whitespace repair.
+
+    `cyl` is the concrete value this exists to stop (the label registry's
+    shorthand). The cased and space-padded spellings pin that normalization stays
+    resolve_params' job, not the selector's.
+    """
+    with pytest.raises(ValidationError):
+        make_selector(mode=bad)
+
+
+@pytest.mark.parametrize("mode", get_args(Mode))
+def test_selector_accepts_all_modes(mode):
+    """Every Mode vocabulary member constructs and is retained unchanged."""
+    assert make_selector(mode=mode).mode == mode
+
+
+def test_selector_accepts_an_unmodelled_species():
+    """species carries no vocabulary — an unmodelled one is not a validation error.
+
+    The registry's cards are the authority on which species have models, and
+    resolve_params deliberately lets an unknown species pass through to a
+    selection zero-match rather than rejecting it (param-resolution's "An unknown
+    species passes through lowercased"). A vocabulary here would turn that
+    designed skip into a hard failure.
+    """
+    assert make_selector(species="sorghum").species == "sorghum"
+
+
+def test_selector_is_frozen():
+    """A Selector is immutable, which is what makes a ModelCard deeply immutable.
+
+    The card's `tuple[Selector, ...]` protects the sequence but not its elements,
+    so a mutable Selector would let `card.selectors[0].species = ...` rewrite what
+    a "frozen" production card claims to select.
+    """
+    s = make_selector()
+    with pytest.raises(ValidationError):
+        s.species = "canola"
+
+
+def test_selector_is_hashable_and_set_deduplicates():
+    """Frozen makes Selector hashable, which is what the producer's dedup needs.
+
+    sleap-roots-training collapses several matrix rows onto one physical model and
+    de-duplicates identical contexts with a set. Equal-valued selectors must
+    therefore collapse to one element, including across lax-parsed inputs, since
+    the matrix can supply an age as a string.
+    """
+    assert len({make_selector(), make_selector()}) == 1
+    assert len({make_selector(), make_selector(age_min="2")}) == 1
+    assert len({make_selector(), make_selector(age_max=14)}) == 2
+
+
+def test_selector_tolerates_an_unknown_nested_key():
+    """extra="ignore", so a newer producer's added field does not break an old reader.
+
+    Selectors arrive as nested mappings inside a raw wandb metadata blob. A
+    consumer pinned to an older contract must drop an unknown selector key rather
+    than fail the whole card and silently remove the model from selection.
+
+    The accepted cost, flagged on contracts#32: a *typo'd* key is dropped just as
+    quietly, surfacing only as a missing-field error at that selector's index. The
+    producer side guards the extras direction itself
+    (sleap-roots-training#47 task 3.23b).
+    """
+    s = Selector.model_validate(
+        dict(species="rice", mode="cylinder", age_min=2, age_max=5, provenance="v7")
+    )
+    assert s.species == "rice"
+    assert not hasattr(s, "provenance")
+
+
+def test_selector_importable_from_package_root():
+    """Selector is exported from the package root, and listed in __all__."""
+    import sleap_roots_contracts
+
+    assert sleap_roots_contracts.Selector is Selector
+    assert "Selector" in sleap_roots_contracts.__all__
