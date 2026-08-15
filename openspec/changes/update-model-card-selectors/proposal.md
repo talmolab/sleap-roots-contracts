@@ -86,9 +86,14 @@ class ModelCard(BaseModel):         # reshaped
   deliberately **untouched** — `to_model_ref` pins `registry_id`, `version`, `root_type`, and
   `weights_checksum`, none of which move.
 - **Affected code:** `src/sleap_roots_contracts/models.py` (add `Selector`, reshape `ModelCard`, move
-  `_check_age_range` onto `Selector`, rewrite the `ModelCard` docstring **and** the four comment blocks
-  outside it that state the flat shape as fact — `models.py:71`, `:216`, `:225-231`, and `:416`, the
-  last a dangling reference to the `ModelCard._check_age_range` this change deletes);
+  `_check_age_range` onto `Selector`, rewrite the `ModelCard` docstring, **and** four comment blocks
+  outside it — each for its own reason, not one common one. `models.py:71` and `:216` state the flat
+  shape as fact ("`ModelCard`'s age bounds", "`ModelCard.mode`") and become false. `:225-231` is the
+  class-ordering/forward-reference comment and says nothing about the flat shape; it needs rewriting
+  because it is `Selector`'s only legal insertion point and because `ModelCard` now has a second
+  ordering constraint — it must follow `Selector`, not just the two vocabularies. `:416` is a dangling
+  reference to the `ModelCard._check_age_range` this change deletes. (`:324`/`:339` are `LabelCard`
+  cross-references that go imprecise rather than false.) Also
   `__init__.py` (export `Selector`); and `params.py:158` and `:142`, whose docstrings say `Mode` types
   `ModelCard.mode` and that "`ModelCard`/`LabelCard` match `Mode` exactly" — `:158` is the docstring of
   the very function whose requirement this change modifies, so leaving it would make the spec and its
