@@ -16,24 +16,24 @@ they are called out explicitly in 3.9 rather than left to "the dependent tests".
 
 ## 1. Decisions to confirm before implementing
 
-- [ ] 1.1 Confirm `Selector` is `frozen` and sets `extra="ignore"`. Both are unstated in #31's shape
+- [x] 1.1 Confirm `Selector` is `frozen` and sets `extra="ignore"`. Both are unstated in #31's shape
       sketch and are this repo's call; `design.md` decisions 1 and 2 give the reasoning (deep
       immutability for `ModelCard`, hashability for the producer's de-duplication, forward tolerance for
       an older-pinned consumer)
-- [ ] 1.2 Confirm the non-empty `selectors` check is a **`BeforeValidator`, not `Field(min_length=1)`**.
+- [x] 1.2 Confirm the non-empty `selectors` check is a **`BeforeValidator`, not `Field(min_length=1)`**.
       Measured: `min_length` validates items first, drops the invalid ones, then checks length, so a
       card whose single selector is bad reports a real error **plus** a spurious `too_short` — it says
       the list was empty when it was not, makes the genuinely-empty case indistinguishable, and breaks
       five existing exact-equality error assertions. `design.md` decision 4 has the measured table
-- [ ] 1.3 Confirm the release target is **`0.1.0a8`**. `0.1.0a7` is already on PyPI, so unlike
+- [x] 1.3 Confirm the release target is **`0.1.0a8`**. `0.1.0a7` is already on PyPI, so unlike
       `tighten-model-card-validation` this cannot ride an unreleased version
-- [ ] 1.4 Confirm `param-resolution` is in scope. Its `Imaging Mode Resolution Seam` scenario
+- [x] 1.4 Confirm `param-resolution` is in scope. Its `Imaging Mode Resolution Seam` scenario
       *constructs* `ModelCard(mode="cylinder")`, which this change makes unsatisfiable — not stale
       prose but a statement no implementation could honor (`design.md` decision 9)
 
 ## 2. Add `Selector` — additive, green on its own
 
-- [ ] 2.1 **(RED)** Write `tests/test_model_card.py` tests for all 8 `Bundled Selection Selector`
+- [x] 2.1 **(RED)** Write `tests/test_model_card.py` tests for all 8 `Bundled Selection Selector`
       scenarios, against a `Selector` that does not exist yet: valid construction; own age bounds
       enforced **standalone** (inverted window, negative, `bool`, `numpy.bool_`); own mode vocabulary
       enforced standalone (off-vocabulary, cased, space-padded); an unmodelled `species` accepted;
@@ -41,7 +41,7 @@ they are called out explicitly in 3.9 rather than left to "the dependent tests".
       key ignored; and absence from every emitted schema. Also assert `Selector` is importable from the
       package root and present in `__all__` (the precedent for a new exported name —
       `prediction-manifest-contract` and `run-manifest-contract` both spec the `__all__` assertion)
-- [ ] 2.2 **(GREEN)** Add `Selector` to `src/sleap_roots_contracts/models.py`. It must be defined
+- [x] 2.2 **(GREEN)** Add `Selector` to `src/sleap_roots_contracts/models.py`. It must be defined
       **after** `Mode` *and* **before** `ModelCard` (the module has no `from __future__ import
       annotations`, so both `Mode` in `Selector`'s annotations and `Selector` in `ModelCard`'s are
       evaluated at class-creation time). That leaves one legal insertion point, inside the definition-
@@ -49,7 +49,7 @@ they are called out explicitly in 3.9 rather than left to "the dependent tests".
       §3. `frozen=True, extra="ignore"`; `species: str`; `mode: Mode`;
       `age_min`/`age_max: NonBoolInt = Field(ge=0)`. Include a class docstring — `ruff` runs pydocstyle
       `D` on `src`, so a missing one fails `D101`
-- [ ] 2.3 **(GREEN)** Give `Selector` the age-ordering check by **sharing** the existing
+- [x] 2.3 **(GREEN)** Give `Selector` the age-ordering check by **sharing** the existing
       implementation, not restating it: `NonBoolInt` was strengthened to catch `numpy.bool_` in
       `tighten-model-card-validation`, and a hand-written bound check would silently reopen that hole.
       For this commit, extract the body of `ModelCard._check_age_range` into a module-level helper both
@@ -57,9 +57,9 @@ they are called out explicitly in 3.9 rather than left to "the dependent tests".
       `-> "Selector"` on the selector's validator — pydantic never evaluates it, so a copied
       `-> "ModelCard"` still *works* while `typing.get_type_hints` resolves it to the wrong class, and
       with no mypy in dev deps and no type-check step in CI nothing would catch it
-- [ ] 2.4 **(GREEN)** Export `Selector` from `src/sleap_roots_contracts/__init__.py` — both the import
+- [x] 2.4 **(GREEN)** Export `Selector` from `src/sleap_roots_contracts/__init__.py` — both the import
       block and `__all__`
-- [ ] 2.5 Verify green and non-perturbing: `uv run pytest -v`, `uv run black --check src tests`,
+- [x] 2.5 Verify green and non-perturbing: `uv run pytest -v`, `uv run black --check src tests`,
       `uv run ruff check src tests`, `uv lock --check`, and
       `uv run python -m sleap_roots_contracts.schema && git diff --exit-code schema/` — adding
       `Selector` must not restamp the committed schemas, because nothing in `ResultEnvelope`'s field
@@ -67,7 +67,7 @@ they are called out explicitly in 3.9 rather than left to "the dependent tests".
 
 ## 3. Reshape `ModelCard` — atomic with its test rewrite
 
-- [ ] 3.1 **(RED)** Rewrite `make_card` (`tests/test_model_card.py:15`) to build `selectors`, and update
+- [x] 3.1 **(RED)** Rewrite `make_card` (`tests/test_model_card.py:15`) to build `selectors`, and update
       the **17** of its 24 callers that pass a removed field (the other 7 — the two `root_type` tests,
       the `sleap_nn_version` optional test, and the four `to_model_ref` tests — need no edit). The
       remaining three of the 20 affected tests build mappings inline and are handled by 3.9.
@@ -76,66 +76,66 @@ they are called out explicitly in 3.9 rather than left to "the dependent tests".
       a `Selector` carrying an invalid value cannot be constructed, so an object-based fixture raises
       from `Selector` with an empty `loc` and stops exercising the card at all — the hole
       `test_model_card_guards_apply_via_model_validate` exists to close
-- [ ] 3.2 **(RED)** Re-point **all five** exact-`loc`/exact-error-list assertions under `selectors`, not
+- [x] 3.2 **(RED)** Re-point **all five** exact-`loc`/exact-error-list assertions under `selectors`, not
       just the inverted-window one: `tests/test_model_card.py:141` (`== ["int_type"]`), `:217`
       (`== [("mode",)]`), `:362` (`== [(bad_field,)]`), `:381` and `:386` (set equality over
       `("mode",)`/`("root_type",)`/`("age_min",)`/`("age_max",)`), and `:402` (`== [("mode",)]`).
       Two caveats: `("root_type",)` in the `:381` set **stays card-level** and must not be moved under
       `selectors`; and `:141` asserts error *types*, not `loc`s, so what changes there is only whether a
       second error appears (see 3.5)
-- [ ] 3.3 **(RED)** `test_model_card_field_error_masks_the_range_check` (`:393-402`) pins that a
+- [x] 3.3 **(RED)** `test_model_card_field_error_masks_the_range_check` (`:393-402`) pins that a
       card-level field error **masks** the cross-field range check, because the `after` validator is
       gated on all fields passing. That changes level: the range check now gates on the *selector's*
       fields, so a bad card-level `root_type` no longer masks a selector's inverted window and both
       errors surface. Decide deliberately and re-pin the new behavior — this test documents a
       diagnostic contract, so it must be rewritten rather than deleted
-- [ ] 3.4 **(RED)** Fix `test_model_card_is_frozen` (`:251`), which asserts on `c.species` — a field the
+- [x] 3.4 **(RED)** Fix `test_model_card_is_frozen` (`:251`), which asserts on `c.species` — a field the
       reshape removes. Measured: a frozen pydantic model raises `frozen_instance` on assignment to
       **any** name, including a removed field, so this test would keep passing while asserting nothing.
       Re-point it to a surviving field (`registry_id`) and add the nested `card.selectors[0]` case
-- [ ] 3.5 **(RED)** Add tests for the three new `Model Selection Card` scenarios — several selectors on
+- [x] 3.5 **(RED)** Add tests for the three new `Model Selection Card` scenarios — several selectors on
       one card retained in order; an empty `selectors` rejected as **exactly one** error at `selectors`
       for both `()` and `[]`; and a card whose only selector is invalid reporting **just** that
       selector with no spurious empty-list error (this is the regression test for the `min_length`
       trap, so assert the exact error list, not membership)
-- [ ] 3.6 **(RED)** Add tests for all three `No Tolerant Read Of The Legacy Flat Card` scenarios — a
+- [x] 3.6 **(RED)** Add tests for all three `No Tolerant Read Of The Legacy Flat Card` scenarios — a
       flat mapping failing with `selectors` missing; flat keys ignored not lifted (a flat mapping *plus*
       a disagreeing `selectors`, asserting the card reflects only the selector and has no `species`
       attribute); and `species`/`mode`/`age_min`/`age_max` absent from `ModelCard.model_fields`. These
       are the tests `design.md` decision 7 depends on: its whole argument for making the decision a
       named requirement is that a tolerant read cannot be re-added "without visibly deleting a
       requirement **and reddening tests**", which is false if no test exists
-- [ ] 3.7 **(RED)** Add tests for the two coercion scenarios: a list of `repr` strings does not
+- [x] 3.7 **(RED)** Add tests for the two coercion scenarios: a list of `repr` strings does not
       validate, and a positional list (`["canola", "cylinder", 2, 13]`, the `NamedTuple` coercion shape)
       does not validate by position
-- [ ] 3.8 **(RED)** Extend the existing `test_model_card_absent_from_result_schema` (`:412`, one of the
+- [x] 3.8 **(RED)** Extend the existing `test_model_card_absent_from_result_schema` (`:412`, one of the
       9 tests the reshape does not otherwise touch) to iterate **every** emitted schema rather than only
       `result_envelope`, and to assert against the expected `$defs` set rather than a bare
       `"Selector" not in defs`, which passes vacuously if either class is renamed. There are two emitted
       schemas: `schema/result_envelope.schema.json` and `schema/analysis_input.schema.json`
-- [ ] 3.9 **(RED)** Update the two `Tolerant Construction From Registry Metadata` tests, which build card
+- [x] 3.9 **(RED)** Update the two `Tolerant Construction From Registry Metadata` tests, which build card
       mappings inline and so are **not** reached by 3.1's `make_card` rewrite:
       `test_model_card_from_merged_metadata` (`:297`) must merge a `selectors` list of dicts and assert
       the result's `selectors` are `Selector` **instances** (the scenario's THEN was strengthened to say
       so), and `test_model_card_tolerates_extra_keys` (`:313`) must keep its extras alongside the new
       shape. Also update `test_model_card_guards_apply_via_model_validate` (`:340`), the third inline
       builder, whose parametrized `bad_field` values are all card-level today
-- [ ] 3.9a **(RED)** Update `tests/test_params.py` — the `_card` helper (`:72-83`, five flat kwargs) and
+- [x] 3.9a **(RED)** Update `tests/test_params.py` — the `_card` helper (`:72-83`, five flat kwargs) and
       its single call site in the mode-vocabulary agreement test (`:142-145`; the `card.mode` read is at
       `:145`). This is the only `ModelCard` construction outside `test_model_card.py`; the three other
       files mentioning `ModelCard` do so only in prose
-- [ ] 3.10 **(GREEN)** Reshape `ModelCard`: drop `species`, `mode`, `age_min`, `age_max`; add
+- [x] 3.10 **(GREEN)** Reshape `ModelCard`: drop `species`, `mode`, `age_min`, `age_max`; add
       `selectors: tuple[Selector, ...]` with the non-empty `BeforeValidator` from 1.2; delete
       `ModelCard._check_age_range` (now shared via 2.3). Keep `root_type`, `registry_id`, `version`,
       `weights_checksum`, `sleap_nn_version`, `frozen=True`, `extra="ignore"`, and `to_model_ref`
       untouched — verified that `to_model_ref` reads only `registry_id`, `version`, `root_type`,
       `weights_checksum`, so no removed field reaches it
-- [ ] 3.11 **(GREEN)** Rewrite the `ModelCard` docstring. It states the flat shape as fact in four
+- [x] 3.11 **(GREEN)** Rewrite the `ModelCard` docstring. It states the flat shape as fact in four
       places: the intro ("as flat wandb artifact metadata"), the selection-fields bullet, the
       `age_min`/`age_max` approved-window paragraph, and the `NonBoolInt` counterweight paragraph. State
       the any-selector rule and the "age against **a** matching selector, never a card-level window"
       corollary
-- [ ] 3.12 **(GREEN)** Fix the stale comment blocks **outside** that docstring, which §3.11 does not
+- [x] 3.12 **(GREEN)** Fix the stale comment blocks **outside** that docstring, which §3.11 does not
       cover and which no test would catch:
       - `models.py:71-72` — "Applied to every integer field on LabelCard and to **ModelCard's age
         bounds**" → the bounds are `Selector`'s now
@@ -145,40 +145,40 @@ they are called out explicitly in 3.9 rather than left to "the dependent tests".
         symbol 3.10 deletes, sitting in `LabelCard`, which this change otherwise does not touch
       - `models.py:324`, `:339` — `LabelCard`'s "mirror of `ModelCard`" / "`[age_min, age_max]` as on
         `ModelCard`" cross-references, now imprecise
-- [ ] 3.13 **(GREEN)** Fix `params.py:158` — `_mode_for_scan`'s docstring says `Mode` "types
+- [x] 3.13 **(GREEN)** Fix `params.py:158` — `_mode_for_scan`'s docstring says `Mode` "types
       `ModelCard.mode` as well as `LabelCard.mode`". This is the docstring of the exact function whose
       requirement this change MODIFIES, so leaving it makes the permanent spec and its own
       implementation contradict each other. Check `params.py:142` in the same pass
-- [ ] 3.14 Verify: `uv run pytest -v`, `uv run black --check src tests`, `uv run ruff check src tests`,
+- [x] 3.14 Verify: `uv run pytest -v`, `uv run black --check src tests`, `uv run ruff check src tests`,
       `uv lock --check`, `git diff --exit-code schema/`
 
 ## 4. Docs (separately green)
 
-- [ ] 4.1 `README.md` — two edits, not one. The model-selection paragraph names `mode` as a card field
+- [x] 4.1 `README.md` — two edits, not one. The model-selection paragraph names `mode` as a card field
       alongside `root_type` (rewrite for one-card-per-physical-model and `Selector`); and the paragraph
       below claims `Mode` types `mode` on "**both** cards", which becomes **false as written** — one of
       the two cards no longer has a `mode` field. Rewrite it to `Selector.mode` on the model side,
       `LabelCard.mode` on the label side
-- [ ] 4.2 **`openspec/project.md`** — the same "both cards" claim appears twice, at lines 22-23
+- [x] 4.2 **`openspec/project.md`** — the same "both cards" claim appears twice, at lines 22-23
       ("`Mode` … types `mode` on both cards (3) and (4) — since `0.1.0a6` for `ModelCard`") and 107-109
       ("`MODE_VOCAB` is redundant for `ModelCard` *and* `LabelCard`"). Both become false. This file is
       the conventions file loaded into agent context, so a stale copy mis-teaches every future change.
       Precedent: both prior changes to this contract updated it
-- [ ] 4.3 `docs/01-contract-library-design.md` — **not** a "capability list" edit; there is no
+- [x] 4.3 `docs/01-contract-library-design.md` — **not** a "capability list" edit; there is no
       `ModelCard` shape description in the body, and the body is a frozen point-in-time record
       ("superseded in specifics; kept as history"). The edit its own convention requires is appending a
       `v0.1.0a8` sentence to the running staleness banner (which currently stops at `a7`), noting the
       reshape. Leave the body untouched
-- [ ] 4.4 `docs/CHANGELOG.md` — a `0.1.0a8` section with its own **BREAKING** line, in the exact format
+- [x] 4.4 `docs/CHANGELOG.md` — a `0.1.0a8` section with its own **BREAKING** line, in the exact format
       the release build greps for (`^## \[0.1.0a8\] - YYYY-MM-DD`, plus the `(Pre-release)` suffix the
       file uses). Say plainly that card-level `species`/`mode`/`age_min`/`age_max` are gone, that there
       is deliberately no tolerant read of the flat shape, and that an upgraded reader must be deployed
       only after the producer's re-seed. Add the `[0.1.0a8]: …/compare/v0.1.0a7...v0.1.0a8` footer link
       and retarget the `[Unreleased]` link to `v0.1.0a8...HEAD`. Leave `0.1.0a6`'s released "both cards"
       entry alone — it is history
-- [ ] 4.5 `docs/02-contract-library-plan.md` — pre-answered: `grep` for `ModelCard`/`age_min`/`Selector`
+- [x] 4.5 `docs/02-contract-library-plan.md` — pre-answered: `grep` for `ModelCard`/`age_min`/`Selector`
       returns **zero** hits, and the file self-describes as a historical build record. No edit
-- [ ] 4.6 Leave the four dated `docs/superpowers/specs/*.md` design records untouched, including
+- [x] 4.6 Leave the four dated `docs/superpowers/specs/*.md` design records untouched, including
       `2026-07-03-model-card-…-design.md`, which contains the literal flat `class ModelCard` body.
       Editing a dated design record would rewrite history; noted as a decision so it is not "fixed"
       later

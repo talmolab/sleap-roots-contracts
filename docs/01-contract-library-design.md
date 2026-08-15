@@ -28,7 +28,11 @@
 > vocabulary this library now owns (training's `MODE_VOCAB` collapses into it). `RunManifest` +
 > `RUN_MANIFEST_FILENAME` were added in v0.1.0a7 (talmolab/sleap-roots-pipeline#37) — the
 > run-scoping shape written by `bloomctl` and read by `sleap-roots-predict`/`sleap-roots`-traits,
-> first step of a 4-repo fix for cross-run scan-directory contamination. The body is
+> first step of a 4-repo fix for cross-run scan-directory contamination. `ModelCard` was
+> **reshaped** in v0.1.0a8 (sleap-roots-training#39) — it now carries a scalar `root_type` plus a
+> non-empty `selectors` list of the new `Selector` shape, one card per physical model rather than
+> one per (species, mode, age) row, so the flat card-level `species`/`mode`/`age_min`/`age_max`
+> described below no longer exist. The body is
 > otherwise left as written.
 
 ---

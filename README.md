@@ -19,14 +19,19 @@ pydantic + pyyaml. Canonical example tables ship in the package
 (`sleap_roots_contracts.examples.load_analysis_input_example(...)`) so consumers can load a
 validating frame straight from the released wheel.
 
-It also defines the **model-selection contract** — `ModelCard`, the Python-side shape shared
-by `sleap-roots-training` (which writes a production model's selection metadata as wandb
-artifact metadata at promotion) and `sleap-roots-predict` (which reads cards to choose a model
-per root type and calls `to_model_ref(runtime_sleap_nn_version)`). Its `mode` and `root_type` are
-the controlled `Mode` and `RootType` vocabularies, matched exactly — since `0.1.0a6` for `mode`,
-which shipped as an unvalidated `str` in `0.1.0a3`. Unlike the result and analysis-input contracts
-above, it is a producer↔producer contract that never crosses the Bloom boundary, so it is **not**
-emitted to the JSON Schema.
+It also defines the **model-selection contract** — `ModelCard` and `Selector`, the Python-side
+shape shared by `sleap-roots-training` (which writes a production model's selection metadata as
+wandb artifact metadata at promotion) and `sleap-roots-predict` (which reads cards to choose a
+model per root type and calls `to_model_ref(runtime_sleap_nn_version)`). Since `0.1.0a8` one card
+describes **one physical model**: it carries a scalar `root_type` plus a non-empty `selectors`
+list, where each `Selector` is one whole validated `(species, mode, age_min, age_max)` context the
+model was approved for. A card matches when *some single* selector matches all of species, mode
+and age — never the cross product, so a generalist model cannot advertise a combination nobody
+trained, and an age must be compared against a *matching* selector's window rather than any
+card-level bound. `root_type` stays scalar because it is intrinsic to the weights. `Selector.mode`
+and `ModelCard.root_type` are the controlled `Mode` and `RootType` vocabularies, matched exactly.
+Unlike the result and analysis-input contracts above, it is a producer↔producer contract that
+never crosses the Bloom boundary, so it is **not** emitted to the JSON Schema.
 
 Since `0.1.0a6` it also defines the **label-selection contract** — `LabelCard`, the Python-side
 label-provenance shape written by the `/build-labeling-package` workflow (which already computes
@@ -35,8 +40,9 @@ did these labels come from?". Like `ModelCard`, it is a producer↔producer cont
 emitted to the JSON Schema.
 
 The contract-owned `Mode = {cylinder, multiplant cylinder, plate}` vocabulary types the `mode`
-field on **both** cards, making it the single source of truth that closes the `cylinder`/`cyl`
-split between the model and label registries. Consumers needing the value set for a manual
+field on **both** registries' cards — `Selector.mode` on the model side, `LabelCard.mode` on the
+label side — making it the single source of truth that closes the `cylinder`/`cyl` split between
+them. Consumers needing the value set for a manual
 membership check use `typing.get_args(Mode)` rather than re-declaring it.
 
 Since `0.1.0a5` it also defines the **prediction-manifest contract** — `PredictionArtifact`/
