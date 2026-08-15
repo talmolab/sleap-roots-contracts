@@ -185,11 +185,11 @@ they are called out explicitly in 3.9 rather than left to "the dependent tests".
 
 ## 5. Release
 
-- [ ] 5.1 Bump `pyproject.toml` to `0.1.0a8` **and re-lock `uv.lock` in the same commit** — a version
+- [x] 5.1 Bump `pyproject.toml` to `0.1.0a8` **and re-lock `uv.lock` in the same commit** — a version
       bump without a re-lock hard-fails the release build, and PR CI catches it only via the explicit
       `uv lock --check` step (the `0.1.0a4` release history is the precedent). Consider driving it
       through the repo's `version.yml` (`workflow_dispatch`) rather than by hand
-- [ ] 5.2 **After** 5.1, order matters — `schema.py`'s `render()` embeds `__version__` in every schema's
+- [x] 5.2 **After** 5.1, order matters — `schema.py`'s `render()` embeds `__version__` in every schema's
       `$id`, so any version bump restamps `schema/*.json` even though this change touches neither
       `ResultEnvelope` nor `AnalysisInputRow`: run `uv run python -m sleap_roots_contracts.schema`, then
       re-run the full gate (`uv run pytest -v`, `black --check`, `ruff check`, `uv lock --check`,
