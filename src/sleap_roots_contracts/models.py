@@ -68,11 +68,11 @@ def _reject_bool(v: Any) -> Any:
 # `extra="ignore"` makes field validation the only defense. BeforeValidator runs ahead
 # of int parsing, so ordinary lax inputs ("7", 7.0) are untouched.
 #
-# Applied to every integer field on LabelCard and to ModelCard's age bounds. The
-# ModelCard half landed in a follow-up change (still 0.1.0a6,
-# tighten-model-card-validation): it tightens validation on a contract already shipped
-# in 0.1.0a3, so it was kept out of the otherwise purely additive change that
-# introduced this alias. Both ride the same unreleased 0.1.0a6.
+# Applied to every integer field on LabelCard and to Selector's age bounds (which are
+# the model registry's, reached through ModelCard.selectors). The model-registry half
+# landed in a follow-up change (0.1.0a6, tighten-model-card-validation): it tightens
+# validation on a contract already shipped in 0.1.0a3, so it was kept out of the
+# otherwise purely additive change that introduced this alias.
 NonBoolInt = Annotated[int, BeforeValidator(_reject_bool)]
 
 
@@ -94,6 +94,42 @@ def _check_age_window(age_min: int, age_max: int) -> None:
     """
     if age_min > age_max:
         raise ValueError(f"age_min ({age_min}) must be <= age_max ({age_max})")
+
+
+def _reject_empty_selectors(v: Any) -> Any:
+    """Reject an empty selector list *before* its items are validated.
+
+    Deliberately a ``BeforeValidator`` rather than ``Field(min_length=1)``, and the
+    difference is not stylistic. Pydantic validates items first, drops the invalid
+    ones, and only then applies a length constraint to what survives — so with
+    ``min_length`` a card whose single selector is merely *invalid* reports both that
+    selector's real error **and** a spurious "list is empty". That misdescribes the
+    input and makes a genuinely empty list indistinguishable from a bad one, which is
+    exactly the distinction a producer debugging a failed seed needs. Running against
+    the raw input instead yields one precise error in every case.
+
+    The accepted cost is losing pydantic's machine-readable ``too_short`` error type
+    and the introspectable ``MinLen`` metadata entry. Worth it: the audience for this
+    error is a producer, not a schema-introspection tool, and ``ModelCard`` is never
+    emitted to JSON Schema for anything to introspect.
+
+    Args:
+        v: The raw input for the ``selectors`` field.
+
+    Returns:
+        ``v`` unchanged. A non-sequence is passed straight through to pydantic, whose
+        own type error describes it better than this guard could.
+
+    Raises:
+        ValueError: If ``v`` is a sequence with no elements.
+    """
+    if isinstance(v, (list, tuple)) and len(v) == 0:
+        raise ValueError(
+            "selectors must not be empty: a card with no selection context can never "
+            "be selected, which is a producer bug rather than a model that matches "
+            "nothing"
+        )
+    return v
 
 
 class ModelRef(BaseModel):
@@ -233,9 +269,10 @@ RootType = Literal["primary", "lateral", "crown"]
 # so the label registry and the model registry share one spelling — the `cylinder`
 # vs `cyl` split across the two registries is exactly the defect issue #10 fixes.
 # Expressed as a Literal, mirroring RootType, rather than a frozenset. Required on
-# both cards: LabelCard since 0.1.0a6, ModelCard.mode as of the same release (it
-# shipped as a loose `str` in 0.1.0a3). Matched exactly — neither card normalizes
-# case or whitespace. Normalizing a *requested* mode is resolve_params' job
+# both cards: LabelCard.mode since 0.1.0a6, and the model-registry side as of the same
+# release (it shipped as a loose `str` in 0.1.0a3). Since 0.1.0a8 the model side is
+# Selector.mode rather than a card-level field. Matched exactly — neither card
+# normalizes case or whitespace. Normalizing a *requested* mode is resolve_params' job
 # (params.py:_normalize_mode), and an unmodelled value is specified to degrade to a
 # selection zero-match there rather than an error; the cards are the authoritative
 # side and fail loudly instead.
@@ -313,30 +350,46 @@ class Selector(BaseModel):
 
 
 class ModelCard(BaseModel):
-    """Model-selection metadata + identity for one production model.
+    """Model-selection metadata + identity for **one physical model**.
 
-    Written by ``sleap-roots-training`` at promotion (the selection fields, as flat
-    wandb artifact metadata) and read by ``sleap-roots-predict`` to choose a model
-    per root type. The fields come from two sources:
+    Written by ``sleap-roots-training`` at promotion (the selection fields, as wandb
+    artifact metadata) and read by ``sleap-roots-predict`` to choose a model per root
+    type. The fields come from two sources:
 
-    * **Selection fields** — written by training as flat wandb metadata keys:
-      ``species``, ``mode``, ``age_min``, ``age_max``, ``root_type`` (and optionally
-      the trained-with ``sleap_nn_version``). ``mode`` and ``root_type`` are the
-      contract-owned :data:`Mode` and :data:`RootType` vocabularies, matched exactly:
-      a card carrying the label registry's ``cyl`` shorthand — or a cased
-      ``Cylinder`` — fails at construction rather than silently never matching a scan.
+    * **Selection fields** — written by training as wandb metadata: a scalar
+      ``root_type`` and a non-empty ``selectors`` list, plus optionally the
+      trained-with ``sleap_nn_version``. ``root_type`` is the contract-owned
+      :data:`RootType` vocabulary; each :class:`Selector` carries its own species,
+      :data:`Mode`, and age window.
     * **Identity fields** — intrinsic to the wandb artifact object, *not* metadata:
       ``registry_id``, ``version``, ``weights_checksum``. Predict's registry lister
       composes these from the artifact and merges them with the metadata before
       validating, so a bare ``model_validate(training_metadata)`` cannot build a full
       card (it lacks the identity fields).
 
-    ``age_min``/``age_max`` is the *approved selection window*, curated at promotion
-    (it MAY be set wider than the raw training ages to cover the data people actually
-    scan). It is inclusive and assumed **contiguous** (``[age_min, age_max]``;
-    non-contiguous approved sets are not expressible). The card never observes a
-    scan's age — running a model outside its window is handled by predict's explicit
-    override, not by this contract.
+    One card describes one physical model. ``selectors`` lists every selection
+    context that model was validated for, so a generalist model needs one
+    registration rather than one per species. Matching is the **any-selector** rule —
+    a card matches a requested (species, mode, age) when *some single* selector
+    matches all three — and never the cross product of its selectors' values, which
+    would advertise combinations nobody trained. It is a disjunction over selectors
+    rather than a lookup of one distinguished selector, so overlapping selectors stay
+    well-defined. A consumer MUST therefore compare a scan's age against a *matching*
+    selector's window, never a card-level minimum or maximum: a card whose selectors
+    span 2-13 and 2-14 advertises neither window globally. Selection itself lives in
+    predict's ``choose_models``; the card never observes a scan's age.
+
+    ``root_type`` stays **scalar** because it is intrinsic to the weights — a
+    primary-root model is never also a lateral one. ``sleap_nn_version`` stays scalar
+    for the same reason: it describes the weights, not a selection context.
+
+    An empty ``selectors`` is rejected. A card with no selection context can never be
+    selected, so it is a producer bug rather than a model that matches nothing, and
+    accepting one would turn a seeding bug into an invisible gap in registry coverage.
+    The check runs *before* the selectors are validated, so a card whose only selector
+    is merely invalid reports that selector rather than also claiming the list was
+    empty — the two are different bugs and a producer debugging a failed seed needs to
+    tell them apart.
 
     Extra keys are ignored, so a card validates straight from a raw wandb metadata
     blob (boolean tag flags, the spread training config, eval metrics) merged with the
@@ -344,20 +397,26 @@ class ModelCard(BaseModel):
     pydantic's default) because tolerating that blob is a load-bearing contract here —
     a future ``extra="forbid"`` would silently break predict's registry lister.
 
-    The counterweight to that tolerance: both age bounds are :data:`NonBoolInt`, so a
-    ``True`` from the same boolean-key blob is rejected rather than coerced to a
-    plausible-but-wrong window bound. Ordinary lax parsing (``"7"``, ``7.0``) is
-    unaffected.
+    The counterweight to that tolerance lives on :class:`Selector`, where the age
+    bounds are :data:`NonBoolInt`: a ``True`` from the same boolean-key blob is
+    rejected rather than coerced to a plausible-but-wrong window bound, while ordinary
+    lax parsing (``"7"``, ``7.0``) is unaffected.
+
+    There is deliberately **no tolerant read** of the legacy flat shape (a card-level
+    ``species``/``mode``/``age_min``/``age_max``). Those keys are dropped as ordinary
+    extras and the card fails on the missing ``selectors``. Lifting a flat card into a
+    single-selector card would keep the old registrations valid for an upgraded
+    consumer at the same time as the new ones, producing two matching cards for one
+    context — which ``choose_models`` raises on. Predict already skips a card it
+    cannot validate, per artifact, with a warning, so both directions of the migration
+    degrade safely without it.
     """
 
     model_config = ConfigDict(frozen=True, extra="ignore")
 
     # selection dimensions (training-written metadata)
-    species: str
-    mode: Mode
-    age_min: NonBoolInt = Field(ge=0)
-    age_max: NonBoolInt = Field(ge=0)
     root_type: RootType
+    selectors: Annotated[tuple[Selector, ...], BeforeValidator(_reject_empty_selectors)]
 
     # identity of the concrete production artifact (artifact-intrinsic)
     registry_id: str
@@ -367,11 +426,6 @@ class ModelCard(BaseModel):
     # trained-with sleap-nn version; optional — used only for predict's mismatch
     # warning (present -> predict can warn; absent -> predict skips the warning).
     sleap_nn_version: str | None = None
-
-    @model_validator(mode="after")
-    def _check_age_range(self) -> "ModelCard":
-        _check_age_window(self.age_min, self.age_max)
-        return self
 
     def to_model_ref(self, runtime_sleap_nn_version: str) -> ModelRef:
         """Build a fully-pinned ``ModelRef``, stamping the RUNTIME sleap-nn version.
@@ -398,10 +452,12 @@ class ModelCard(BaseModel):
         )
 
 
-# Defined after Mode and RootType (same definition-order constraint as ModelCard:
-# no `from __future__ import annotations` in this module, so the `mode: Mode` and
-# `root_type: RootType` field annotations are evaluated at class-definition time and
-# both names must already exist). LabelCard is the label-registry mirror of ModelCard.
+# Defined after Mode and RootType (the same definition-order constraint Selector and
+# ModelCard are subject to: no `from __future__ import annotations` in this module, so
+# the `mode: Mode` and `root_type: RootType` field annotations are evaluated at
+# class-definition time and both names must already exist). LabelCard is the
+# label-registry mirror of the model registry; it stays flat, carrying its own scalar
+# species/mode/age window, because one labeling package has exactly one context.
 class LabelCard(BaseModel):
     """Label-selection metadata + identity for one labeling package.
 
@@ -493,8 +549,10 @@ class LabelCard(BaseModel):
 
     @model_validator(mode="after")
     def _check_age_range(self) -> "LabelCard":
-        # Mirrors ModelCard._check_age_range; [age_min, age_max] is inclusive, so
-        # age_min == age_max (a single-age window) is valid.
+        # Duplicates _check_age_window (which Selector uses); [age_min, age_max] is
+        # inclusive, so age_min == age_max (a single-age window) is valid. Folding this
+        # into the shared helper is deferred, not overlooked — LabelCard is out of
+        # scope for the selector reshape.
         if self.age_min > self.age_max:
             raise ValueError(
                 f"age_min ({self.age_min}) must be <= age_max ({self.age_max})"

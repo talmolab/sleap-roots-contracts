@@ -139,7 +139,8 @@ def _normalize_mode(mode: Any) -> str:
     ``_normalize_species`` lets an unknown species pass through rather than
     rejecting it. The card registry is the authority on what has models, so an
     unmodelled mode reaches selection and finds nothing, whereas
-    ``ModelCard``/``LabelCard`` match ``Mode`` exactly and fail loudly. In practice
+    the cards match ``Mode`` exactly and fail loudly (``Selector.mode`` on the model
+    side, ``LabelCard.mode`` on the label side). In practice
     ``"Cylinder"`` from an override canonicalizes to a value the cards accept, while
     ``"cyl"`` does not and would be rejected outright on a card.
 
@@ -155,9 +156,9 @@ def _mode_for_scan(metadata: Dict[str, Any]) -> str:
     The cylinder pipeline yields cylinder scans only, so this returns
     ``"cylinder"``. GraviScan/multiscanner modes slot in here once their
     scanners and models exist; the returned string MUST be a member of the ``Mode``
-    vocabulary, which since ``0.1.0a6`` types ``ModelCard.mode`` as well as
-    ``LabelCard.mode`` — so a new modality needs the vocabulary widened here *and*
-    in ``models.py``, in the same release.
+    vocabulary, which types ``Selector.mode`` on the model-registry side (reached
+    through ``ModelCard.selectors``) as well as ``LabelCard.mode`` — so a new modality
+    needs the vocabulary widened here *and* in ``models.py``, in the same release.
     """
     return "cylinder"
 
