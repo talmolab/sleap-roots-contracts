@@ -24,7 +24,7 @@ from decimal import Decimal
 import numpy as np
 import pandas as pd
 import pytest
-from sleap_roots_contracts import ModelCard, ResolvedParams
+from sleap_roots_contracts import ModelCard, ResolvedParams, Selector
 
 # Aliased to upstream's module name so the ported tests stay byte-diffable
 # against sleap-roots-predict/tests/test_param_resolution.py.
@@ -70,13 +70,16 @@ def _row(species_name="Pennycress", plant_age_days=14, **extra):
 
 
 def _card(root_type, *, species="rice", mode="cylinder", age_min=2, age_max=5):
-    """Build a ModelCard with sensible defaults for one root type."""
+    """Build a ModelCard with sensible defaults for one root type.
+
+    The selection dimensions live on a bundled Selector; root_type stays scalar
+    and card-level because it is intrinsic to the weights.
+    """
     return ModelCard(
-        species=species,
-        mode=mode,
-        age_min=age_min,
-        age_max=age_max,
         root_type=root_type,
+        selectors=(
+            Selector(species=species, mode=mode, age_min=age_min, age_max=age_max),
+        ),
         registry_id=f"reg/{species}-{root_type}",
         version="v1",
         weights_checksum="sha",
@@ -142,7 +145,7 @@ def test_mode_for_scan_returns_cylinder():
 def test_mode_matches_seeded_card_vocabulary():
     """The mode string equals the seeded ModelCard mode vocabulary."""
     card = _card("primary", mode="cylinder")
-    assert _mode_for_scan(_row()) == card.mode
+    assert _mode_for_scan(_row()) == card.selectors[0].mode
 
 
 # --- _coerce_age -----------------------------------------------------------
