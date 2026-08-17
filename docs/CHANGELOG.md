@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.1.0a8] - UNRELEASED (Pre-release)
+## [0.1.0a8] - 2026-08-17 (Pre-release)
 
 **BREAKING.** Reshapes `ModelCard` so one card describes **one physical model**.
 Read this before bumping a pin: there is deliberately **no tolerant read** of the old
