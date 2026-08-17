@@ -8,6 +8,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0a8] - UNRELEASED (Pre-release)
+
+**BREAKING.** Reshapes `ModelCard` so one card describes **one physical model**.
+Read this before bumping a pin: there is deliberately **no tolerant read** of the old
+shape, and the cross-repo rollout is ordered.
+
+### Added
+- **`Selector`** — one whole validated `(species, mode, age_min, age_max)` selection
+  context, `frozen` and `extra="ignore"`, exported from the package root. Its age
+  bounds reuse the existing `NonBoolInt` guard and ordering check, so a selector bound
+  behaves exactly as a card bound did, `numpy.bool_` rejection included.
+
+### Changed
+- **BREAKING: `ModelCard` is now `root_type` + a non-empty `selectors` tuple + identity.**
+  Card-level `species`, `mode`, `age_min` and `age_max` are **removed**. A model
+  validated for several species is one card with several selectors instead of one
+  registration per species. `root_type` and `sleap_nn_version` stay scalar — both
+  describe the weights, not a selection context.
+- **Matching is the any-selector rule.** A card matches a requested (species, mode, age)
+  when *some single* selector matches all three, never the cross product, so a
+  generalist model cannot advertise a combination nobody trained. Compare a scan's age
+  against a **matching selector's** window, never a card-level bound: a card whose
+  selectors span 2–13 and 2–14 advertises neither globally. Matching is a disjunction,
+  not a lookup of one distinguished selector, so overlapping selectors are well-defined.
+- An empty `selectors` is rejected, as exactly one error located at `selectors`. A card
+  whose only selector is merely invalid reports that selector and is **not** also
+  reported as empty — the two are different producer bugs.
+- Validation errors for a selection value now locate the offending selector by index
+  (`('selectors', 0, 'mode')`), not a card-level field. Relevant if you log per-artifact
+  validation errors.
+
+### Migration
+- **No tolerant read of the legacy flat shape.** An old flat card fails on the missing
+  `selectors`; its flat keys are ignored as extras rather than lifted into a single
+  selector. This is deliberate: lifting them would keep the old registrations valid for
+  an upgraded consumer at the same time as the new ones, producing two matching cards
+  for one context — which `choose_models` raises on. `sleap-roots-predict` already skips
+  a card it cannot validate, per artifact, with a warning, so both directions degrade
+  safely without it.
+- **Deploy order matters.** Contracts releases, then `sleap-roots-training` re-seeds the
+  registry, then `sleap-roots-predict` **deploys**, then the old collections are retired.
+  Predict may merge and pin at any time; only its deploy is ordered, because an upgraded
+  predict deployed before the re-seed would skip every old-shape collection and find
+  nothing to select.
+- A consumer still pinned below `0.1.0a8` reading a new-shape card drops the unknown
+  `selectors` (`extra="ignore"`) and then fails on the missing flat fields — loud, not a
+  silent wrong match.
+
+
 ## [0.1.0a7] - 2026-08-04 (Pre-release)
 
 Adds the **run-manifest contract** — `RunManifest` plus the `RUN_MANIFEST_FILENAME` constant —
@@ -279,7 +328,8 @@ sleap-roots ↔ Bloom pipeline integration. Pure, dependency-light, Bloom-agnost
 - CI (lint + drift guard + tests on Python 3.11/3.12) and a PyPI
   trusted-publishing workflow.
 
-[Unreleased]: https://github.com/talmolab/sleap-roots-contracts/compare/v0.1.0a7...HEAD
+[Unreleased]: https://github.com/talmolab/sleap-roots-contracts/compare/v0.1.0a8...HEAD
+[0.1.0a8]: https://github.com/talmolab/sleap-roots-contracts/compare/v0.1.0a7...v0.1.0a8
 [0.1.0a7]: https://github.com/talmolab/sleap-roots-contracts/compare/v0.1.0a6...v0.1.0a7
 [0.1.0a6]: https://github.com/talmolab/sleap-roots-contracts/compare/v0.1.0a5...v0.1.0a6
 [0.1.0a5]: https://github.com/talmolab/sleap-roots-contracts/compare/v0.1.0a4...v0.1.0a5

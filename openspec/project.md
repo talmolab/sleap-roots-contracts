@@ -20,7 +20,8 @@ and (6), since `0.1.0a7`, the **run-manifest contract** — `RunManifest`, the r
 Contracts (1) and (2) emit versioned JSON Schema artifacts (Bloom consumes them); contracts (3),
 (4), (5) and (6) are producer↔producer shapes that never cross the Bloom boundary and are **not**
 emitted to JSON Schema. The contract-owned `Mode` capture-mode vocabulary types `mode` on both
-cards (3) and (4) — since `0.1.0a6` for `ModelCard`, which shipped it as an unvalidated `str` —
+registries' cards (3) and (4) — `Selector.mode` on the model side since `0.1.0a8`, `LabelCard.mode`
+on the label side; the model side shipped it as an unvalidated `str` until `0.1.0a6` —
 making it the single source of truth that closes the `cylinder`/`cyl` split between the two
 registries. It also ships a trait-definitions registry and, since
 `0.1.0a4`, the **param-resolution oracle** `resolve_params` (Bloom scan metadata → `ResolvedParams`).
@@ -104,6 +105,7 @@ is a **coordinating writer**: at model promotion it emits the `ModelCard` select
 wandb artifact metadata (field names must match this contract), so it participates by
 coordination. Once the training-side `add-label-registry` PR lands (it sequences after this
 release), it will also **import** the package for the controlled vocabularies contracts owns —
-`RootType` and `Mode`. Since `0.1.0a6` `Mode` types the `mode` field on both cards, so training's
-own `MODE_VOCAB` is redundant for `ModelCard` *and* `LabelCard` and collapses entirely into this
-single source, closing the `cylinder`/`cyl` split from issue #10.
+`RootType` and `Mode`. `Mode` types the `mode` field on both registries' cards — `Selector.mode`
+on the model side, `LabelCard.mode` on the label side — so training's own `MODE_VOCAB` is redundant
+for both and collapses entirely into this single source, closing the `cylinder`/`cyl` split from
+issue #10.

@@ -22,6 +22,7 @@ from .models import (
     ResolvedParams,
     ResultEnvelope,
     RootType,
+    Selector,
     TraitValue,
 )
 from .params import resolve_params
@@ -43,6 +44,7 @@ __all__ = [
     "LabelCard",
     "ModelCard",
     "ModelRef",
+    "Selector",
     "Provenance",
     "ResolvedParams",
     "ResultEnvelope",
