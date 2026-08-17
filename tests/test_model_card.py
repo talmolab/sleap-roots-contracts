@@ -87,6 +87,46 @@ def test_model_card_carries_several_selectors_for_one_physical_model():
     assert {s.species for s in c.selectors} == {"canola", "pennycress"}
 
 
+def test_model_card_accepts_overlapping_and_duplicate_selectors():
+    """Two selectors matching one context are accepted, not a validity problem.
+
+    Matching is a **disjunction** over selectors, not a lookup of one
+    distinguished selector, so two matching selectors still make the card match
+    exactly once — the age of 7 below satisfies both windows and the card is still
+    one card. Rejecting them would fail something semantically fine and turn a
+    cosmetic producer bug into a hard read-path failure on the consumer, which is
+    the wrong side to fail on; de-duplication is the producer's job.
+
+    Covers both shapes: byte-identical duplicates (which the producer's set-based
+    dedup is meant to remove) and distinct-but-overlapping windows (which it does
+    not, since dedup only removes exact repeats). The second is the one with no
+    other coverage anywhere.
+
+    Asserted through both entry points, since the production reader uses
+    model_validate on a JSON-native blob rather than kwargs.
+    """
+    identical = make_selector(species="canola", age_min=2, age_max=13)
+    c = make_card(selectors=(identical, identical))
+    assert len(c.selectors) == 2
+    assert c.selectors[0] == c.selectors[1]
+
+    wide = make_selector(species="canola", age_min=5, age_max=20)
+    c = make_card(selectors=(identical, wide))
+    assert len(c.selectors) == 2
+    matching = [
+        s
+        for s in c.selectors
+        if s.species == "canola"
+        and s.mode == "cylinder"
+        and s.age_min <= 7 <= s.age_max
+    ]
+    assert len(matching) == 2  # both match; the card still matches once
+
+    sel = dict(species="canola", mode="cylinder", age_min=2, age_max=13)
+    c = ModelCard.model_validate(card_mapping(selectors=[sel, dict(sel)]))
+    assert len(c.selectors) == 2
+
+
 @pytest.mark.parametrize("empty", [(), []])
 def test_model_card_rejects_empty_selectors(empty):
     """A card with no selection context is unselectable, so it is a producer bug.

@@ -209,6 +209,16 @@ locate the offending selector by index within `selectors`.
 - **THEN** construction succeeds and all of them are retained in order, so one card can describe a
   generalist model without being registered once per species
 
+#### Scenario: Overlapping or duplicate selectors are accepted
+- **WHEN** a `ModelCard` is built with two selectors that match the same context — either byte-identical,
+  or distinct but with overlapping age windows (e.g. canola/`cylinder`/2–13 alongside
+  canola/`cylinder`/5–20)
+- **THEN** construction succeeds and both are retained, because matching is a disjunction over
+  selectors rather than a lookup of one distinguished selector: two matching selectors still make the
+  card match exactly once, so neither is a validity problem. Rejecting them would fail a card that is
+  semantically fine and turn a cosmetic producer bug into a hard read-path failure on the consumer,
+  which is the wrong side to fail on — de-duplication is the producer's job
+
 #### Scenario: An empty selectors list is rejected
 - **WHEN** a `ModelCard` is built with `selectors` given as an empty tuple, or as an empty list
 - **THEN** validation raises exactly one error, located at `selectors`, in both cases

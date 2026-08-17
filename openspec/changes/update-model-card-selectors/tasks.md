@@ -93,6 +93,14 @@ they are called out explicitly in 3.9 rather than left to "the dependent tests".
       reshape removes. Measured: a frozen pydantic model raises `frozen_instance` on assignment to
       **any** name, including a removed field, so this test would keep passing while asserting nothing.
       Re-point it to a surviving field (`registry_id`) and add the nested `card.selectors[0]` case
+- [x] 3.5b Add the overlapping/duplicate-selectors-accepted scenario and its test. Raised by Elizabeth
+      on review of the implementation: `design.md` decision 5 argues at length that matching is a
+      disjunction and de-duplication is the producer's job, but that reasoning lived only in prose, so
+      nothing pinned it. Covers both shapes — byte-identical duplicates (which the producer's `set`-based
+      dedup removes) and distinct-but-overlapping windows (which it does not, since dedup only removes
+      exact repeats). She asked for a test; it gets a `#### Scenario:` too, on the precedent she set
+      accepting 3.23b on the producer side: a test with no requirement behind it is spec debt in the
+      other direction
 - [x] 3.5 **(RED)** Add tests for the three new `Model Selection Card` scenarios — several selectors on
       one card retained in order; an empty `selectors` rejected as **exactly one** error at `selectors`
       for both `()` and `[]`; and a card whose only selector is invalid reporting **just** that
