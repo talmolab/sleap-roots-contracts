@@ -12,12 +12,14 @@ The unit is the `ModelCard`: one card describes one **physical model** — a sca
 mode and age. It is deliberately not the cross product of independent fields, because that would let
 a generalist model advertise combinations nobody trained; and there is deliberately no card-level age
 window, because a card whose selectors span 2-13 and 2-14 advertises neither globally — age must be
-read against the *matching* selector.
+read against *a matching* selector.
 
 The contract is validation, not selection: it decides whether a card is well-formed and what it
-claims, while which card wins a given request belongs to the consumer. Its job is to make sure at
-most one card can honestly answer, and that an ill-formed card fails loudly at the producer rather
-than silently mis-matching at the consumer.
+claims, while which card wins a given request belongs to the consumer. Its job is to make an
+ill-formed card fail loudly at the producer rather than silently mis-match at the consumer. It
+deliberately does **not** attempt a cross-card check — nothing here guarantees that at most one card
+matches a given context, and a consumer MUST NOT skip its own ambiguity handling on the strength of
+this contract.
 
 ## Requirements
 

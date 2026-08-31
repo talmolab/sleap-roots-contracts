@@ -237,15 +237,16 @@ with no later prompt to fix it.
       does not touch
 - [x] 6.6 Assert the same for `param-resolution`: every requirement except `Imaging Mode Resolution
       Seam` byte-identical, and that requirement's three scenario names all still present. **Expect two
-      cosmetic non-requirement hunks on CLI 1.9.0** — the archiver deletes the blank line between the
-      Purpose paragraph and `## Requirements`, and also strips the file's trailing blank line. (1.8.0
+      cosmetic non-requirement hunks on CLI 1.9.0** — the archiver *adds* a blank line after
+      `## Requirements` (it preserves the one before it; an earlier note here had this backwards),
+      and strips the file's trailing blank line. (1.8.0
       produced only the first; the npx-cached binary updated in place between the dry run and the
       archive, so the dry run was re-done against 1.9.0 before archiving.) It is not damage and it is not a reason to wave the
       diff through
 - [x] 6.7 Re-validate the **archived** tree, which the change-level gate does not cover:
       `(cd "$SB" && openspec validate --specs --strict)` — expect `7 passed, 0 failed`. Also assert the
-      structural counts: `model-selection-contract` should end with **5 requirements and 35 scenarios**
-      (19 on `Model Selection Card`, 8 on `Bundled Selection Selector`, 3 on `No Tolerant Read`, 4 on
+      structural counts: `model-selection-contract` should end with **5 requirements and 36 scenarios**
+      (20 on `Model Selection Card`, 8 on `Bundled Selection Selector`, 3 on `No Tolerant Read`, 4 on
       `Tolerant Construction`, 1 on `Model Card To ModelRef Conversion`)
 - [x] 6.8 Fix the `model-selection-contract` spec **Purpose**, still the literal
       `TBD - created by archiving change add-model-card-predict-inference-config. Update Purpose after
@@ -261,6 +262,12 @@ with no later prompt to fix it.
       `Imaging Mode Resolution Seam` (its requirement prose and its scenario), which are this change's
       own and are correct by construction. Reference requirements by name, not by line number: the
       archiver's blank-line deletion shifts them by one
+
+**Post-archive corrections (2026-08-31).** Two tasks in this file were edited after the change was
+authored, so the archived record states what is true rather than what was predicted: 6.7's expected
+counts (35/19 → **36/20**, because `edfa5fc` added a scenario after the task was written) and 6.6's
+description of the archiver's cosmetic hunks, which was backwards. Both were caught in review of the
+archive PR. The rest of the file is the proposal as approved.
 
 ## 7. Prerequisites and follow-on (not this repo's checkboxes)
 
