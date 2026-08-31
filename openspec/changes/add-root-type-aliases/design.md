@@ -29,13 +29,19 @@ that correction to both places, with the chronology stated so #49 is not made to
   therefore states routing, which is exactly what is supported, and which is also what makes the
   record defensible to someone who knows plants — a similarity claim would be one they should
   correct.
-- **D4. Entries carry an age window as structured data.** The governing decision is age-scoped, and
+- **D4. Entries carry an age window as structured data, in DAG.** The governing decision is age-scoped, and
   the evidence filename carries a *different* window per species (`wheat_5-14DAG`, `rice_3-10DAG`),
   which is itself evidence that the scope is per-species *and* per-window. Wheat seminal roots are
-  embryonic; wheat crown roots initiate from basal shoot nodes around tillering, at or past the top
+  embryonic; wheat crown roots emerge from basal shoot nodes around tillering, at or past the top
   of that window. Outside it the terms name two co-present populations, and pooling them would
   silently merge distinct root systems. Age is available at the ingestion boundary — `LabelCard`
-  already carries `age_min`/`age_max` — so omitting it would be a choice, not a limitation.
+  already carries `age_min`/`age_max` — so omitting it would be a choice, not a limitation. The
+  **epoch** is stated normatively because it is recorded nowhere else in this library and the two
+  sides disagree by default: the seeded window is read off a `DAG`-labelled dataset while the
+  consumer takes its age from Bloom's `plant_age_days`, whose epoch neither repo asserts. The
+  window's two bounds also guard different things — above `age_max` the terms name co-present
+  populations, while below `age_min` a wheat plant has only its embryonic system, whose radicle the
+  `primary` bucket also claims.
 - **D5. The display direction is dropped from this change.** Not merely for want of a consumer, but
   for want of a safe signature. Its `species` argument comes from an analysis config, not from the
   data, so a pooled wheat+rice result rendered under a wheat config labels rice-derived rows

@@ -10,8 +10,10 @@ This capability is a **routing** record, not a botanical one. Terms grouped here
 model weights because they are not separable enough, at the recorded ages and in the recorded
 modality, to be worth separating for detection. Grouping asserts nothing about developmental
 identity or trait comparability: wheat seminal roots are embryonic while crown roots are
-post-embryonic nodal roots, and outside a recorded window the two are co-present populations rather
-than one.
+post-embryonic nodal roots. **Above** a recorded window the two are co-present populations rather
+than one, so pooling them merges distinct root systems. **Below** it the failure is different: a
+young enough wheat plant has only its embryonic system, whose radicle the `primary` bucket also has
+a claim on, so the window's lower bound guards a bucket collision rather than a co-presence.
 
 It owns normalization at the **ingestion boundary** only. Which card wins a given request remains the
 selection contract's business, and this capability's rules exist partly to keep the two apart.
@@ -30,7 +32,18 @@ The table SHALL NOT alter `RootType` membership. Widening the canonical vocabula
 modeling bucket and break the label-to-model lineage join: a wheat collection stamped with a distinct
 seminal root type could no longer be joined to the crown model actually trained on it.
 
-An entry SHALL carry an inclusive age window and SHALL assert nothing outside it. This is not
+An entry SHALL carry an inclusive age window, expressed in **days after germination (DAG)**, and
+SHALL assert nothing outside it. The epoch SHALL be stated because it is load-bearing and is
+recorded nowhere else in this library: the seeded window is read off a `DAG`-labelled dataset, while
+the consumer side takes its age from Bloom's `plant_age_days`, whose epoch this contract has never
+pinned. Wheat germinates roughly two to three days after imbibition, so a DAG-versus-DAP mismatch
+shifts a 5-14 window by a fifth to a third of its span — enough to admit a plant that is already
+tillering. An entry's bounds SHALL satisfy `0 <= age_min <= age_max`.
+
+An entry's window SHALL be the window its cited evidence establishes and SHALL NOT be widened beyond
+it. A window spanning a crop's whole studied age range is not evidence-gated and SHALL NOT be
+seeded — such a window would satisfy every scenario below while defeating the scoping this
+requirement exists to impose. This is not
 optional detail: the governing decision is explicitly age-scoped ("in wheat **at the age we study**
 the roots are seminal but they look the same as crown roots"), and the pooled training set that
 evidences it carries a different window per species. A species-keyed entry without a window would
@@ -86,10 +99,22 @@ No contract-owned species vocabulary exists — `Selector.species` and `LabelCar
 
 When `species` is not supplied, the function SHALL resolve only terms that are unambiguous across
 every entry in the table, and SHALL raise naming the candidate species when a term is recorded for
-more than one species. A term recorded for a species other than the one supplied SHALL NOT resolve.
+more than one species.
+
+A term recorded only for a species other than the one supplied SHALL NOT resolve, and SHALL raise an
+error naming the term, the species supplied, and the species the term **is** recorded for. It SHALL
+NOT reuse the unknown-term error, which lists accepted *terms* and would send the caller to correct
+the wrong argument — the term is fine; the species is the mismatch.
+
+`age_days`, when supplied, SHALL be validated the way this library validates every other age: a
+`bool` SHALL be rejected rather than read as `1`, and the rejection SHALL cover `numpy.bool_`, which
+is not a `bool` subclass; a fractional or non-finite value SHALL be rejected rather than truncated.
+Ordinary lax integer parsing is unaffected. Without this a `True` age compares as `1` and sits
+silently inside any window starting at zero.
 
 When `age_days` is supplied and falls outside the matched entry's window, the function SHALL raise a
-`ValueError` naming the term, the species, and the window. When `age_days` is omitted the function
+`ValueError` naming the term, the species, and the window. The window is **inclusive**: an age equal
+to `age_min` or to `age_max` is inside it. When `age_days` is omitted the function
 SHALL resolve, because age is not always available at an ingestion boundary — but the entry still
 records the bound, and applying the routing outside it is out of contract.
 
@@ -124,6 +149,24 @@ wrong models, which no downstream validation can catch.
 - **THEN** it raises a `ValueError` naming the term, the species, and the window
 - **AND** the same call with an age inside the window returns `crown`, so the guard discriminates
 
+#### Scenario: The window bounds are inside it
+
+- **WHEN** the function is called with an age exactly equal to the entry's `age_min`, and again with
+  an age exactly equal to its `age_max`
+- **THEN** both resolve, and an age one day beyond `age_max` raises
+
+#### Scenario: A bool age is rejected rather than read as day one
+
+- **WHEN** the function is called with `age_days` of `True`, or of `numpy.bool_(True)`
+- **THEN** it raises a `ValueError` naming `age_days`, and never treats the value as the integer `1`
+
+#### Scenario: A term recorded for another species names the species, not the term
+
+- **WHEN** the function is called with a term recorded only under `wheat`, passing species `rice`
+- **THEN** it raises an error naming the term, `rice`, and `wheat`
+- **AND** the message is not the unknown-term error, whose accepted-values list would point at the
+  wrong argument
+
 #### Scenario: An unrecognized term is rejected rather than defaulted
 
 - **WHEN** the function is called with a term that is neither canonical nor a recorded alias
@@ -148,8 +191,9 @@ for provenance — for example to report in a methods section which collections 
 tracked as a follow-up and is deliberately not bundled here, because it would require modifying
 `label-selection-contract` rather than adding to it.
 
-#### Scenario: The canonical value carries no trace of the source term
+#### Scenario: Normalization returns a bucket and communicates nothing else
 
-- **WHEN** a wheat collection whose source term was `seminal` is normalized and stamped onto a card
-- **THEN** the card's `root_type` is `crown`
-- **AND** no field on the card records that the source term was `seminal`
+- **WHEN** a term that is an alias and a term that is already canonical are both normalized to the
+  same bucket
+- **THEN** the two results are indistinguishable, so nothing downstream can recover which input
+  arrived

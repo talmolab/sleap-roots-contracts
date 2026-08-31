@@ -19,12 +19,15 @@ Where the equivalence has already been reinvented:
 
 1. **A trained model pools the two.** The "Crown/Seminal Roots" model
    (`250328_095645.multi_instance.n=1658`) was trained on a combined wheat + rice dataset
-   (`labels_seminal_wheat_5-14DAG_rice_3-10DAG.v005.slp`). **Unverified from either local checkout** —
-   this string appears in no repo on this machine, and it is the change's primary evidence, so
-   `tasks.md` §1.4 pins it to a wandb artifact before implementation.
-2. **`sleap-roots-analyze` hand-rolls the reverse direction per config**, as `custom_replacements`
-   `{"crown": "seminal"}` in a wheat cylinder QC pipeline. **Also unverified here** — that repo is not
-   checked out on this machine; §1.4 pins it to a commit SHA.
+   (`labels_seminal_wheat_5-14DAG_rice_3-10DAG.v005.slp`). The **model artifact** is confirmed on the
+   analysis machine as `250328_095645.multi_instance.n=1658.root_crown.slp` — note the `.root_crown`
+   suffix, which is independent corroboration that the pooled model's wheat output was already filed
+   under `crown` at the trait stage. The **label set** is not: that filename appears nowhere, and it
+   is the sole source of the seeded age window, so `tasks.md` §1.4 pins it before implementation.
+2. **`sleap-roots-analyze` hand-rolls the reverse direction per config.** Confirmed at `95dfcd1`:
+   `configs/active/qc/qc_cylinder_edpie.yaml:55` carries
+   `crown: "seminal"  # Wheat: crown roots → seminal roots`, applied at display time after the data
+   has already been treated as `crown` internally.
 3. **It was rediscovered a third time.** `sleap-roots-training#49` hit the wheat collection
    `wheat_5-14DAG_seminal_6nodes_labels`, correctly found that `LabelCard(root_type="seminal", ...)`
    raises today, and proposed adding a `LabelRootType` superset to *this* contract. That was a

@@ -20,10 +20,15 @@ the spec had already answered them, which made the section decoration.
 - [x] 0.2 **Unknown terms raise** (D6), coupled to evidence-gated sparsity.
 - [x] 0.3 **`species` scoped, `age_days` optional** (D4); an unsupplied species resolves only
       unambiguous terms.
-- [x] 0.4 **Seed only what is evidenced** — wheat `seminal` → `crown`. Maize brace/nodal is named in
-      #34 but no maize data exists in either registry, and brace roots are aerial and visually
-      unlike young wheat crown roots, so encoding them on an issue comment would be the worst error
-      available here.
+- [x] 0.4 **Seed only what is evidenced** — wheat `seminal` → `crown`. **Maize** is declined because
+      no maize data exists in either registry; the morphology point is secondary and only half right
+      (brace roots are aerial and unlike young wheat crown roots, but maize *below-ground* nodal
+      roots are the direct developmental analogue, so "brace/nodal" over-claims). **Rice** is
+      declined even though it is half the cited evidence, and the reason is not sparsity: rice has no
+      `seminal` term to alias. `sleap-roots-training`'s `skeletons.yaml` records rice as `primary` +
+      `crown` with no `seminal` row anywhere, because rice nodal roots emerge within days and
+      dominate by 3-10 DAG. There is no rice alias to record, so the table is not under-seeded from
+      its own evidence.
 - [x] 0.5 **The display half is dropped** (D5), not deferred-but-specified. It is absent from the
       delta, so it cannot archive into permanent spec describing a function that does not exist.
 - [ ] 0.6 **Elizabeth to confirm the one irreversible consequence.** Under #49's D4, collection names
@@ -32,40 +37,50 @@ the spec had already answered them, which made the section decoration.
       once. "Use crown throughout" plainly covers the card field; whether it was meant to reach the
       registry collection name is the question. **This is the only genuinely blocking item.**
 
-## 1. Cross-repo — correcting the record
+## 1. Cross-repo
 
-- [ ] 1.1 Post a correction on **contracts#34**, stating the chronology: its "the resolution there is
-      to store it as `crown` per team decision" describes the right outcome but post-dates #49's D3.
-- [ ] 1.2 Post on **training#49**. Be precise about what it does and does not unblock, because the
-      earlier draft of this task was wrong:
-      **(a)** D3 is superseded; `LabelRootType` is not being added. #49's argument against *widening*
-      `RootType` stands and is quoted approvingly.
-      **(b)** What drops: tasks 1.2/1.3, and #49's whole §3 root-type half — `LABEL_ROOT_TYPE_VOCAB`
-      is unnecessary since `crown` is already in `ROOT_TYPE_VOCAB`.
-      **(c)** What does **not** drop: **#49 still needs a contracts release.** Its task 1.1 is the
-      `0.1.0a6 → a8` pin catch-up (the breaking `Selector` reshape, with its ordered rollout), and
-      D7/task 1.4's optional-field relaxation remains live — #49's own task 2.5 expects
-      `n_plants`/`n_scans` to be unrecoverable. Claiming otherwise, as an earlier draft did, is false.
-      **(d)** What #49 is asked to give up, so it can push back: its ADDED requirement
-      *Label Root-Type Vocabulary* is deleted **in full, all three scenarios**, including "A label
-      collection MAY describe a root type for which no trained model exists." This design forecloses
-      that headroom. If the label side genuinely needs it, that argument should be made now.
-      **(e)** `0.1.0a9` is claimed by this change, so #49's release target moves.
-      **(f)** #49 need not wait on us — its backfill mapping is a hand-written table; writing
-      `root_type="crown"` in the wheat row works today.
-- [ ] 1.3 Confirm #34's open question during #49's provenance step: whether the rice half of the
-      pooled model (`rice_3-10DAG`) is the same source as `rice_3DAG_crown_6nodes_labels`. Note the
-      age windows differ (3-10 vs 3), so this is not a safe assumption.
-- [ ] 1.4 **Pin the evidence before implementing.** Both load-bearing citations are unverifiable from
-      any local checkout: the pooled model (`250328_095645.multi_instance.n=1658` /
-      `labels_seminal_wheat_5-14DAG_rice_3-10DAG.v005.slp`) appears in no repo on this machine, and
-      `sleap-roots-analyze` is not checked out. Record a wandb artifact URL for the model — confirming
-      the frame count and both source label sets — and a commit SHA for the analyze config. The age
-      window seeded in the table comes directly from this, so an unpinned citation means an unpinned
-      window.
-- [ ] 1.5 Correct `talmo-sleap-roots-training/docs/roadmap.md:313`, which asserts on `main` that
-      "primary / lateral / seminal / crown keep their own skeletons" — it names seminal and crown as
-      distinct root types, in the repo that owns the skeleton table #49 is about to mark verified.
+**#49 got here on its own.** An earlier draft of this section was written against #49 at `1015d59`
+and would have asked its author to give up a `LabelRootType` fork she had **already withdrawn** four
+days earlier at `f484a4d` ("Root type does **not** split (D3). Only species does."). It would have
+read as not having looked. What follows is what is actually left.
+
+- [ ] 1.1 Comment on **contracts#34** linking #35 and noting that #49 and this change converged
+      independently on `crown`. No correction is owed: #34's "the resolution there is to store it as
+      `crown` per team decision" was ahead of the evidence when written and is now simply true.
+- [ ] 1.2 Comment on **training#49** — informational, not a request. Note that D3's rewrite and this
+      proposal reached the same place from different directions; that #49's `## 1. Upstream: contracts
+      pin (no new release unless §2 requires one)` is **correct as written** — the `a6 → a8` catch-up
+      needs no release because both are published, and only its D7/task-**1.3** conditional can force
+      one; and that this change does not move #49's release target, because #49 claims no version.
+      Flag one thing for its author to push back on if she disagrees: **#34's headroom question — "a
+      label collection MAY describe a root type for which no trained model exists" — is foreclosed by
+      this design**, since every label root type must now be a modeling bucket. #49 dropped that
+      requirement for its own reasons; this change makes the foreclosure permanent, which is a
+      different decision and deserves a deliberate yes.
+- [ ] 1.3 **Not a gate.** #34's rice-provenance question (whether the pooled model's `rice_3-10DAG`
+      half is `rice_3DAG_crown_6nodes_labels`) belongs to #49's §2, and #49 task 2.6 independently
+      checks the wheat blob's skeleton is crown-shaped. The seeded window comes from the *wheat* half
+      of the filename, so this does not block 1.4.
+- [ ] 1.4 **Pin the window's provenance.** Two of the three citations turned out to be verifiable and
+      an earlier draft claimed otherwise, which understated the change's own evidence:
+      **(a) `sleap-roots-analyze` is checked out** at `95dfcd1` — `configs/active/qc/qc_cylinder_edpie.yaml:55`
+      carries `crown: "seminal"  # Wheat: crown roots → seminal roots`. Cite that SHA and line.
+      **(b) The model artifact exists on the analysis machine** as
+      `250328_095645.multi_instance.n=1658.root_crown.slp`. Note the **`.root_crown` suffix**: the
+      pooled model's wheat output was already filed under `crown` at the trait stage, which
+      corroborates this change's thesis from a direction it did not claim.
+      **(c) Still unpinned, and it is the load-bearing one:**
+      `labels_seminal_wheat_5-14DAG_rice_3-10DAG.v005.slp` is absent everywhere. Pin a wandb artifact
+      URL and confirm the training-set composition, the 1,658 frame count, and **the window**.
+      **(d) Pin the epoch too.** The window is read off a `DAG`-labelled filename while the consumer
+      side reads Bloom's `plant_age_days`, whose epoch is asserted nowhere in either repo. Confirm
+      whether it is DAG or DAP; a mismatch shifts a 5-14 window by a fifth to a third of its span.
+      **(e) Once (c) and (d) land, write the concrete window into the wheat scenario before archive.**
+      Today no delta contains a single age digit, so every age scenario is self-referential and
+      `age_min=0, age_max=200` would satisfy all of them while defeating D4 entirely.
+- [ ] 1.5 Correct `sleap-roots-training/docs/roadmap.md:313`, which still reads
+      "(primary / lateral / seminal / crown keep their own skeletons)". Genuinely additive: #49's own
+      task 7.6 names `:221`, `:284`, `:326/:329` but not `:313`.
 
 ## 2. Implementation — tests first
 
@@ -117,11 +132,14 @@ the spec had already answered them, which made the section decoration.
       `uv run ruff check src tests`, `uv lock --check`, and the schema drift guard
       (`uv run python -m sleap_roots_contracts.schema` then `git diff --exit-code schema/`). At this
       point the guard asserts the new symbols restamp **nothing** — the version bump that does restamp
-      them is §4, and the guard must be re-run there. Also `grep -qE "^## \[0\.1\.0a9\]"
-      docs/CHANGELOG.md` for heading shape (the *dated* form is `build.yml`'s job at release), and
-      `uv build` + `uv run --isolated --with dist/*.whl python -c "from sleap_roots_contracts import
+      them is §4, and the guard must be re-run there. Also `rm -rf dist/` then `uv build` and
+      `uv run --isolated --with dist/*.whl python -c "from sleap_roots_contracts import
       canonical_root_type, ROOT_TYPE_ALIASES"` — the only check that 2.20's exports resolve from a
-      built wheel. Record which interpreter it ran under; CI matrixes 3.11 and 3.12.
+      built wheel. The `rm` is load-bearing: `dist/` is gitignored and never cleaned, so a second run
+      at §4.2 leaves both the a8 and a9 wheels there and `--with dist/*.whl` silently takes one and
+      treats the other as the command. Run it under **3.11**: `build.yml` pins 3.12 for the wheel
+      check it mirrors, so 3.11 is the leg no CI job covers. The changelog heading-shape check moves
+      to §3 (it tests a heading §3.1 adds, so it fails here if §2 lands first).
 
 ## 3. Docs
 
@@ -131,13 +149,17 @@ the spec had already answered them, which made the section decoration.
       (`[0.1.0a9]: .../compare/v0.1.0a8...v0.1.0a9`) and retarget `[Unreleased]` to
       `v0.1.0a9...HEAD`. Record that the `schema/*.json` delta is **`$id`-only**, since Bloom consumes
       those for codegen and migration-match.
-- [ ] 3.2 `openspec/project.md`: describe the alias table **beside the `Mode`/`RootType` vocabularies**
-      (the paragraph after the numbered list) and in the External Dependencies paragraph naming "the
-      controlled vocabularies contracts owns". **Not** in the six-contracts list — that list is data
+- [ ] 3.2 `openspec/project.md`. There is no "paragraph after the numbered list" holding the
+      vocabularies — `:4-27` is one unbroken paragraph containing both the six-contracts list and the
+      `Mode` sentence, and `RootType` is not documented there at all. Edit **`:79-84` Domain Context**,
+      which is the one place root types are enumerated as biology rather than as a type and the first
+      place a reader looks, and the **External Dependencies** paragraph at `:107-108` naming "the
+      controlled vocabularies contracts owns". **Not** the six-contracts list — that list is data
       contracts crossing a producer↔consumer boundary, and an alias table is not one.
 - [ ] 3.3 `README.md`: a paragraph mirroring how the `Mode` vocabulary is already documented there,
-      since 2.20 adds package-root exports. `prepare-release.md` Step 4 re-checks README at release,
-      so skipping it surfaces as a release blocker rather than a review comment.
+      since 2.20 adds package-root exports. **There is no safety net here** — an earlier draft claimed `prepare-release.md` Step 4 would catch
+      a missing paragraph; Step 4 checks only the Python badge, the install instructions and the
+      `pip`/`uv add` examples, so this is review-enforced.
 - [ ] 3.4 `docs/01-contract-library-design.md`: its staleness banner enumerates capability names
       verbatim and carries a per-version running note; it was touched in every release from a3 to a8.
       Append the `v0.1.0a9` sentence and add the new capability name.
@@ -149,24 +171,45 @@ the spec had already answered them, which made the section decoration.
 
 ## 4. Release — `0.1.0a9`
 
-- [ ] 4.1 Bump `pyproject.toml` **and re-lock in the same commit**; `uv lock --check` runs on every PR.
-- [ ] 4.2 **After** 4.1, order matters: `uv sync`, regenerate the schemas, then re-run the full 2.G
-      gate against the restamped `$id`. Splitting the bump from the restamp produces two red PR-CI
-      commits. Precedent: `4b2073b`.
+- [ ] 4.1 Bump `pyproject.toml`, re-lock, `uv sync`, regenerate the schemas, and commit **all three
+      of `pyproject.toml`, `uv.lock` and `schema/*.json` together**. Splitting them produces a commit
+      that passes `uv lock --check` and then fails the schema drift guard, because `schema.py` builds
+      `$id` from `__version__` while the committed schemas still say `v0.1.0a8`. Note the real reason
+      to combine is **bisect and revert hygiene**, not CI redness — CI evaluates the PR head, so
+      pushing both together shows no red run either way. Precedent and rationale: `4b2073b`.
+- [ ] 4.2 Re-run the full 2.G gate against the restamped `$id`. This is the run of the schema drift
+      guard that can actually fail; the one at 2.G asserts the new symbols restamp nothing.
 - [ ] 4.3 **Do not yank once published** — consumers pin with sdist and wheel hashes, so a vanished
       version fails `uv sync --locked` on every CI leg until the lock is regenerated.
 
 ## 5. Archive gate
 
-- [ ] 5.1 Enumerate the CLI binaries — they are **not on `PATH`**:
-      `for d in ~/.npm/_npx/*/node_modules/.bin/openspec; do echo "$($d --version) <- $d"; done`.
-      Invoke by **absolute path**, never `npx`, and record the resolved path and `--version` when
-      ticking, because the cached binary has updated in place **twice** (1.8.0 → 1.9.0 → 1.10.0).
+- [ ] 5.0 **BLOCKING: `contracts#33` MUST merge before this change archives.** The *merge* order of
+      #33 and #35 is free — neither touches a file the other touches. The *archive* order is not.
+      Archiving this first makes #33 unmergeable, and #33's blob is a generated archive snapshot
+      carrying five requirements, none of them `Alias Normalization Is An Ingestion Boundary Only`,
+      because it predates this change. So the natural resolution of that conflict — "take the
+      generated version" — **silently deletes this change's requirement from permanent spec with
+      nothing failing**. §5.2's dry run cannot catch it, because it archives in isolation and never
+      against #33. #33 is archive-only, `CLEAN`, and approved; merging it first removes the hazard.
+
+- [ ] 5.1 Enumerate the cached CLI binaries. **The glob is platform-specific** — it is
+      `~/.npm/_npx/*/node_modules/.bin/openspec` on macOS and `$LOCALAPPDATA/npm-cache/_npx/` on
+      Windows, so use whichever resolves. `openspec` **is** on `PATH`, but as `@fission-ai/openspec`
+      **0.13.0** — older than every cached copy — which makes pinning more important than a bare
+      invocation suggests, not less. Invoke by **absolute path or a version-pinned
+      `npx @fission-ai/openspec@<version>`**, never bare `npx`, and record the resolved path and
+      `--version` when ticking: the cached binary has updated in place more than once
+      (observed 1.9.0 → 1.10.0 on the authoring machine; no 1.8.0 is present on the review machine,
+      so the exact starting version is not reproducible and should not be asserted).
       Run the oldest as well as the newest: 1.5.0 rejects a requirement whose `SHALL` wraps past the
       first line, and these deltas carry many. The ≥1.8.0 MODIFIED-scenario check is irrelevant here,
       since both deltas are ADDED-only.
 - [ ] 5.2 Dry-run the archive into a throwaway copy **with the same binary that will archive**, and
-      assert every pre-existing spec file is byte-identical afterwards. Note `validate --strict` does
+      assert every spec file this change does **not** target is byte-identical; the targeted
+      `model-selection-contract` differs only by the appended requirement plus the archiver's
+      blank-line normalization (it inserts one after `## Purpose` and after `## Requirements`). A
+      literal byte-identity assertion on the targeted file trips every time and is not the check. Note `validate --strict` does
       **not** surface the proposal-length warning that `archive` does, so the dry run is not optional.
 - [ ] 5.3 The new capability's `Purpose` is written **into the delta file**, above
       `## ADDED Requirements` — verified to carry through the archiver verbatim. This avoids the

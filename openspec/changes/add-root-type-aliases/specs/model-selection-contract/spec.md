@@ -23,17 +23,14 @@ This is a normative statement this library makes about how consumers use it. It 
 by the type system: the normalization function accepts an already-canonical value by design, so
 nothing mechanically prevents calling it on both sides of a comparison. Enforcement is by review.
 
-#### Scenario: Normalized data is stored, not normalized at match time
-
-- **WHEN** a card is constructed from a source whose term was an alias
-- **THEN** the card's stored `root_type` is the canonical bucket
-- **AND** a selection request carrying that same canonical bucket matches it by exact equality
-
-#### Scenario: A non-canonical requested root type is rejected, not normalized
-
-- **WHEN** a selection request names a root type that is not a member of `RootType`
-- **THEN** it is rejected
-- **AND** it is not routed through the alias table into a canonical bucket
+Two consequences of that are stated here as prose rather than as scenarios, because no selection
+code lives in this repo and a scenario with no possible local test is a promise nothing keeps.
+Consumers SHALL store the canonical bucket at ingestion and match on it by exact equality; and a
+selection request naming a non-canonical root type SHALL be rejected, never routed through the alias
+table into a bucket. The precedent this requirement's placement follows,
+`No Tolerant Read Of The Legacy Flat Card`, had all three of its scenarios locally tested and rested
+its force on a re-added tolerance "visibly deleting a requirement and reddening tests" — that
+argument does not transfer to a scenario nothing here can exercise, so it is not borrowed.
 
 #### Scenario: An aliased term is not a legal card value
 
