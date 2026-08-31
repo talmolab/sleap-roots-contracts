@@ -202,11 +202,11 @@ they are called out explicitly in 3.9 rather than left to "the dependent tests".
       `ResultEnvelope` nor `AnalysisInputRow`: run `uv run python -m sleap_roots_contracts.schema`, then
       re-run the full gate (`uv run pytest -v`, `black --check`, `ruff check`, `uv lock --check`,
       `git diff --exit-code schema/`) against the restamped `$id`
-- [ ] 5.3 Set the ISO date on the `0.1.0a8` changelog heading in the release-cut commit, then tag and
+- [x] 5.3 Set the ISO date on the `0.1.0a8` changelog heading in the release-cut commit, then tag and
       publish `v0.1.0a8`. **Do not yank or delete it once published**: consumers pin it in `uv.lock`
       with sdist and wheel hashes, so a vanished version fails `uv sync --locked` on every CI leg until
       the lock is regenerated
-- [ ] 5.4 Verify from a clean isolated environment that `sleap-roots-contracts==0.1.0a8` installs and
+- [x] 5.4 Verify from a clean isolated environment that `sleap-roots-contracts==0.1.0a8` installs and
       `Selector` imports, and that a card round-trips from a JSON-native `selectors` list of dicts
 
 ## 6. Archive gate — MUST be closed before `openspec archive`
@@ -214,44 +214,47 @@ they are called out explicitly in 3.9 rather than left to "the dependent tests".
 Archiving folds the deltas into `openspec/specs/`, so anything wrong here becomes permanently wrong
 with no later prompt to fix it.
 
-- [ ] 6.1 **BLOCKING.** `0.1.0a8` must be tagged and published to PyPI before this change is archived
+- [x] 6.1 **BLOCKING.** `0.1.0a8` must be tagged and published to PyPI before this change is archived
       (mirrors the `add-label-selection-contract` and `add-run-manifest-contract` gates) — archiving a
       contract whose release never happened leaves `openspec/specs/` describing a version consumers
       cannot install. This is also what makes 7.1 tickable
-- [ ] 6.2 `openspec validate update-model-card-selectors --strict` passes
-- [ ] 6.3 Run validation on the **oldest and newest** CLI binaries available (currently 1.5.0 and
+- [x] 6.2 `openspec validate update-model-card-selectors --strict` passes
+- [x] 6.3 Run validation on the **oldest and newest** CLI binaries available (currently 1.5.0 and
       1.8.0), not just one, and for two different reasons. 1.5.0 rejects a requirement whose SHALL/MUST
       wraps past the first line while 1.6.0+ accepts it. Conversely **1.8.0 is the only version that
       checks MODIFIED-block scenario preservation** — verified by deleting a preserved scenario in a
       throwaway copy, where 1.8.0 fails with "omits scenario(s) the current spec still has" while
       1.5.0/1.6.0/1.7.0 all report valid. The binaries are in the npx cache, not on `PATH`:
       `for d in ~/.npm/_npx/*/node_modules/.bin/openspec; do echo "$($d --version) <- $d"; done`
-- [ ] 6.4 **Dry-run the archive into a throwaway copy anyway.** 1.8.0's check covers only scenario
+- [x] 6.4 **Dry-run the archive into a throwaway copy anyway.** 1.8.0's check covers only scenario
       *names*; **no** version checks that a normative prose clause survived, and none checks that a
       preserved clause is still *true*:
       `SB=$(mktemp -d); cp -R openspec "$SB/openspec"; (cd "$SB" && openspec archive update-model-card-selectors --yes)`
       Expect `+ 2 added, ~ 2 modified` for `model-selection-contract` and `~ 1 modified` for
       `param-resolution`
-- [ ] 6.5 Diff the resulting specs against the live ones and assert that **`Model Card To ModelRef
+- [x] 6.5 Diff the resulting specs against the live ones and assert that **`Model Card To ModelRef
       Conversion` is byte-identical** — it is the one `model-selection-contract` requirement this change
       does not touch
-- [ ] 6.6 Assert the same for `param-resolution`: every requirement except `Imaging Mode Resolution
-      Seam` byte-identical, and that requirement's three scenario names all still present. **Expect one
-      cosmetic non-requirement hunk** — the archiver deletes the blank line between the Purpose
-      paragraph and `## Requirements` in that file. It is not damage and it is not a reason to wave the
+- [x] 6.6 Assert the same for `param-resolution`: every requirement except `Imaging Mode Resolution
+      Seam` byte-identical, and that requirement's three scenario names all still present. **Expect two
+      cosmetic non-requirement hunks on CLI 1.9.0** — the archiver *adds* a blank line after
+      `## Requirements` (it preserves the one before it; an earlier note here had this backwards),
+      and strips the file's trailing blank line. (1.8.0
+      produced only the first; the npx-cached binary updated in place between the dry run and the
+      archive, so the dry run was re-done against 1.9.0 before archiving.) It is not damage and it is not a reason to wave the
       diff through
-- [ ] 6.7 Re-validate the **archived** tree, which the change-level gate does not cover:
+- [x] 6.7 Re-validate the **archived** tree, which the change-level gate does not cover:
       `(cd "$SB" && openspec validate --specs --strict)` — expect `7 passed, 0 failed`. Also assert the
-      structural counts: `model-selection-contract` should end with **5 requirements and 35 scenarios**
-      (19 on `Model Selection Card`, 8 on `Bundled Selection Selector`, 3 on `No Tolerant Read`, 4 on
+      structural counts: `model-selection-contract` should end with **5 requirements and 36 scenarios**
+      (20 on `Model Selection Card`, 8 on `Bundled Selection Selector`, 3 on `No Tolerant Read`, 4 on
       `Tolerant Construction`, 1 on `Model Card To ModelRef Conversion`)
-- [ ] 6.8 Fix the `model-selection-contract` spec **Purpose**, still the literal
+- [x] 6.8 Fix the `model-selection-contract` spec **Purpose**, still the literal
       `TBD - created by archiving change add-model-card-predict-inference-config. Update Purpose after
       archive.` placeholder. The archiver does not touch Purpose, so this is a manual edit and it will
       not prompt again. While in the file: the archiver appends ADDED requirements **after** the
       MODIFIED ones, so `Bundled Selection Selector` lands *below* the `Model Selection Card`
       requirement that references `Selector` — reorder so the type is defined before its use
-- [ ] 6.9 Grep `openspec/specs/` for `ModelCard` after the dry run and confirm every surviving mention
+- [x] 6.9 Grep `openspec/specs/` for `ModelCard` after the dry run and confirm every surviving mention
       is still true. Six survive in `param-resolution`: the Purpose line and `Species Name
       Normalization`'s two mentions, all untouched by this change — the latter deliberately left per
       `design.md` decision 9, which accepts a residual imprecision rather than claiming accuracy, so
@@ -260,11 +263,17 @@ with no later prompt to fix it.
       own and are correct by construction. Reference requirements by name, not by line number: the
       archiver's blank-line deletion shifts them by one
 
+**Post-archive corrections (2026-08-31).** Two tasks in this file were edited after the change was
+authored, so the archived record states what is true rather than what was predicted: 6.7's expected
+counts (35/19 → **36/20**, because `edfa5fc` added a scenario after the task was written) and 6.6's
+description of the archiver's cosmetic hunks, which was backwards. Both were caught in review of the
+archive PR. The rest of the file is the proposal as approved.
+
 ## 7. Prerequisites and follow-on (not this repo's checkboxes)
 
 Recorded so the ordering is greppable. Only 7.1 is ours, and it is gated on 6.1.
 
-- [ ] 7.1 Comment on talmolab/sleap-roots-contracts#31 when `0.1.0a8` is released, so the producer is
+- [x] 7.1 Comment on talmolab/sleap-roots-contracts#31 when `0.1.0a8` is released, so the producer is
       unblocked. No new issue is needed — #31 already carries the scope
 - **`sleap-roots-training`** (talmolab/sleap-roots-training#39, PR #47) — bumps the pin, rewrites
   expansion to per-physical-model, renames every collection id, re-seeds. Must land **after** the

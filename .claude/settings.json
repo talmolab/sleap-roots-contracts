@@ -1,0 +1,37 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//Users/anirudhannabathula/.npm-global/**)",
+      "Bash(npm ls *)",
+      "Read(//opt/homebrew/bin/**)",
+      "Bash(python3 -)",
+      "Bash(cp src/sleap_roots_contracts/models.py /private/tmp/claude-501/-Users-anirudhannabathula-Desktop-Talmo-sleap-roots-contracts/f67f3504-5143-4c55-b41f-9ccb384463be/scratchpad/models.py.bak)",
+      "Bash(gh repo *)",
+      "Bash(uv version *)",
+      "Bash(awk '{print $NF}')",
+      "Bash(grep -rnoE '\\\\*[A-Z][A-Za-z ]{5,60}\\\\*' --include=spec.md openspec)",
+      "Read(//private/tmp/**)",
+      "Bash(timeout 180 npx -y openspec@1.6.0 --version)",
+      "Bash(echo \"EXIT=$?\")",
+      "Bash(npx -y openspec@1.6.0 --version)",
+      "Bash(npm view *)",
+      "Bash(npx -y @fission-ai/openspec@1.5.0 validate add-label-selection-contract --strict)",
+      "Bash(npx --yes openspec@latest validate add-label-selection-contract --strict)",
+      "Bash(cp tests/test_label_card.py /private/tmp/claude-501/-Users-anirudhannabathula-Desktop-Talmo-sleap-roots-contracts/f67f3504-5143-4c55-b41f-9ccb384463be/scratchpad/test_label_card.py.bak)",
+      "Bash(npx --yes -p @fission-ai/openspec openspec validate add-label-selection-contract --strict)",
+      "Bash(npx -y @fission-ai/openspec@1.6.0 validate add-label-selection-contract --strict)",
+      "Bash(npx -y @fission-ai/openspec@1.7.0 validate add-label-selection-contract --strict)",
+      "Bash(npx --yes -p @fission-ai/openspec openspec validate tighten-model-card-validation --strict)",
+      "Bash(npx --yes -p @fission-ai/openspec openspec list)",
+      "Bash(npx -y @fission-ai/openspec@1.5.0 validate --all --strict)",
+      "Bash(echo \"exit=$?\")",
+      "Bash(command -v openspec)",
+      "Bash(npm --version)",
+      "Bash(/Users/anirudhannabathula/miniforge3/envs/talmo-sleap/bin/openspec --version)",
+      "Bash(/Users/anirudhannabathula/miniforge3/envs/talmo-sleap/bin/openspec validate *)",
+      "Bash(npx --yes -p @fission-ai/openspec openspec --version)",
+      "Bash(echo \"########## RAW EXIT=$?\")",
+      "Bash(cp src/sleap_roots_contracts/models.py /tmp/models_backup.py)"
+    ]
+  }
+}
