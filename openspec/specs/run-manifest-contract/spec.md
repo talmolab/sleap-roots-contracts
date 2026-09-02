@@ -1,7 +1,18 @@
 # run-manifest-contract Specification
 
 ## Purpose
-TBD - created by archiving change add-run-manifest-contract. Update Purpose after archive.
+
+Defines `RunManifest` — a run identifier plus the exact set of `scan_key`s that run covers — so a
+pipeline stage can be scoped to a known work list instead of discovering one.
+
+It exists to make a run's extent explicit and checkable: the keys are required to be non-empty and
+unique, so a manifest cannot silently cover nothing, and cannot double-count a scan into the
+idempotency machinery. The well-known filename is part of the contract precisely so producer and
+consumer do not agree on it by convention and then drift.
+
+`bloomctl` writes it; `sleap-roots-predict` and the traits stage read it. Like the prediction
+manifest it is a producer↔producer shape and is deliberately not emitted as JSON Schema.
+
 ## Requirements
 ### Requirement: Run Manifest Shape
 

@@ -1,0 +1,11 @@
+{
+  "name": "sleap-roots-contracts-tooling",
+  "private": true,
+  "description": "Pins the OpenSpec CLI so spec validation answers the same on every machine and in CI. Not a published package; this repo ships no JavaScript.",
+  "devDependencies": {
+    "@fission-ai/openspec": "1.11.0"
+  },
+  "scripts": {
+    "validate:specs": "openspec validate --all --strict"
+  }
+}

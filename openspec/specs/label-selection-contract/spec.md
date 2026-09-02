@@ -1,7 +1,22 @@
 # label-selection-contract Specification
 
 ## Purpose
-TBD - created by archiving change add-label-selection-contract. Update Purpose after archive.
+
+Defines `LabelCard`, the provenance shape for a published set of labels — what was labeled, of what
+species and root type, over what age window, with which skeleton, and where it came from.
+
+It is the label-registry counterpart to `ModelCard`, and it exists so a trained model can be joined
+back to the labels it was trained on. That join is the whole point: before it, a label set could not
+be traced to its experiment, and `cyl` in one registry against `cylinder` in the other meant the two
+sides could not be matched at all. The contract-owned `Mode` vocabulary closes that split by typing
+both registries' cards from one definition.
+
+It is deliberately **tolerant on read and strict on write**: `extra="ignore"` lets a card validate
+straight from a legacy wandb metadata blob, while every integer field rejects a `bool` rather than
+coercing it, so tolerating unknown keys never becomes tolerating wrong values. Provenance fields are
+optional because much of it is unrecoverable for the collections published before this contract
+existed, and fabricating it would be worse than recording its absence.
+
 ## Requirements
 ### Requirement: Capture Mode Vocabulary
 

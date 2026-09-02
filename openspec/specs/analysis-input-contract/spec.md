@@ -1,7 +1,18 @@
 # analysis-input-contract Specification
 
 ## Purpose
-TBD - created by archiving change add-analysis-input-contract. Update Purpose after archive.
+
+Defines the canonical wide trait table that downstream analysis reads, and the structural validator
+that accepts or rejects one.
+
+Its job is to fail a malformed table at the boundary rather than let a silently wrong dtype or a
+missing role column propagate into published numbers. Validation is **structural** — column roles
+and dtypes — not statistical; it does not judge whether the values are plausible.
+
+Like the result contract this is a **boundary** shape emitted as versioned JSON Schema for Bloom.
+`pandas` stays an optional extra: the validator is the one place in this library that needs it, and
+the runtime core must remain installable without it.
+
 ## Requirements
 ### Requirement: Analysis-Input Table Schema
 The library SHALL define a canonical schema for the wide analysis-input table as a Pydantic row
