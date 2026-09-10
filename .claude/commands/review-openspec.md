@@ -95,7 +95,7 @@ description: "Review OpenSpec format quality"
 > 6. Does the Impact section list ALL affected specs and code files?
 > 7. Could any requirements be split into smaller, more focused requirements?
 > 8. Is the change ID appropriate (verb-led, descriptive)?
-> 9. Run `openspec validate {CHANGE_ID} --strict` and report the result
+> 9. Run `npm exec --no-install -- openspec validate {CHANGE_ID} --strict` and report the result
 >
 > **Proposal to review:**
 > {PROPOSAL_MD}

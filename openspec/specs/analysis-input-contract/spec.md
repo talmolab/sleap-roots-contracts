@@ -10,8 +10,9 @@ missing role column propagate into published numbers. Validation is **structural
 and dtypes — not statistical; it does not judge whether the values are plausible.
 
 Like the result contract this is a **boundary** shape emitted as versioned JSON Schema for Bloom.
-`pandas` stays an optional extra: the validator is the one place in this library that needs it, and
-the runtime core must remain installable without it.
+`pandas` stays an optional extra, needed only by the DataFrame validator and the packaged-example
+accessor, both of which import it lazily behind a guided `ImportError`. The runtime core must remain
+installable without it.
 
 ## Requirements
 ### Requirement: Analysis-Input Table Schema

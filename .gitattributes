@@ -5,3 +5,4 @@ schema/*.json text eol=lf
 src/sleap_roots_contracts/examples/*.csv text eol=lf
 openspec/**/*.md text eol=lf
 docs/**/*.md text eol=lf
+package-lock.json text eol=lf linguist-generated=true -diff

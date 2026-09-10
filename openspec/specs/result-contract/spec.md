@@ -6,8 +6,8 @@ Defines the shape of one scan's pipeline result and the provenance that makes it
 `ResultEnvelope`, its `Provenance`, its `TraitValue` rows, and the `BlobRef`s pointing at the
 artifacts it produced.
 
-This is a **boundary** contract: it is emitted as versioned JSON Schema and Bloom consumes that
-artifact for codegen and migration-match, so its shape is not this repo's to change unilaterally.
+This is a **boundary** contract: it is emitted as versioned JSON Schema **for** Bloom to consume for
+codegen and migration-match, so its shape is not this repo's to change unilaterally.
 It owns producer-side `param_hash` computation because the hash feeds
 `Provenance.idempotency_key` under first-writer-wins — two producers hashing differently would both
 "win" the dedup race for the same logical scan and break idempotency with no error raised anywhere.

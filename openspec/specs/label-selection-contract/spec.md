@@ -9,11 +9,19 @@ It is the label-registry counterpart to `ModelCard`, and it exists so a trained 
 back to the labels it was trained on. That join is the whole point: before it, a label set could not
 be traced to its experiment, and `cyl` in one registry against `cylinder` in the other meant the two
 sides could not be matched at all. The contract-owned `Mode` vocabulary closes that split by typing
-both registries' cards from one definition.
+both registries from one definition — directly here as `LabelCard.mode`, and transitively on the
+model side through `Selector.mode`, since `ModelCard` carries no `mode` field of its own.
 
-It is deliberately **tolerant on read and strict on write**: `extra="ignore"` lets a card validate
-straight from a legacy wandb metadata blob, while every integer field rejects a `bool` rather than
-coercing it, so tolerating unknown keys never becomes tolerating wrong values. Provenance fields are
+It is deliberately **tolerant on read**: `extra="ignore"` lets a card validate straight from a legacy
+wandb metadata blob, and every integer field rejects a `bool` rather than coercing it. The tolerance
+is not free. An unknown or **misspelled** key is dropped silently, so `labler=` for `labeler=`
+constructs a valid card reading `None` with no `ValidationError` — a wrong value, produced by the
+same mechanism that buys the legacy compatibility. `NonBoolInt` cannot catch it, because it only
+fires on values that reach a declared field. A producer must therefore guard its own emitted key
+set: `extra="ignore"` buys legacy-blob compatibility on read at the cost of typo detection on write.
+
+Like the prediction and run manifests this is a producer↔producer shape and is not emitted as JSON
+Schema. Provenance fields are
 optional because much of it is unrecoverable for the collections published before this contract
 existed, and fabricating it would be worse than recording its absence.
 

@@ -4,6 +4,13 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -47,13 +54,25 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
-          node-version: "20"
+          node-version: "22"
           cache: npm
       - name: Install the pinned OpenSpec CLI
-        run: npm ci
-      - name: Report the resolved version
-        run: npx openspec --version
+        run: npm ci --ignore-scripts
+      # Printing the version proves nothing on its own -- it reports whatever ran, so a
+      # fallback binary would print its own version and the job would stay green. Compare
+      # it to package.json instead. `npm exec --no-install` is what removes the fallback:
+      # bare `npx openspec` resolves a global install, or auto-installs the UNSCOPED
+      # `openspec` package from npm (a different, unrelated package) on a non-TTY, both
+      # silently and both at exit 0.
+      - name: Assert the pin held
+        run: |
+          want=$(node -p "require('./package.json').devDependencies['@fission-ai/openspec']")
+          got=$(npm exec --no-install -- openspec --version)
+          echo "pinned=$want resolved=$got"
+          [ "$want" = "$got" ]
+      # Consumes the package.json script rather than repeating the command, so the two
+      # cannot drift. `npm run` puts node_modules/.bin on PATH with no install fallback.
       - name: Validate all specs
-        run: npx openspec validate --all --strict
+        run: npm run validate:specs

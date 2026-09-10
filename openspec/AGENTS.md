@@ -2,6 +2,20 @@
 
 Instructions for AI coding assistants using OpenSpec for spec-driven development.
 
+> **Run the pinned CLI, not a bare `openspec`.** This repo pins `@fission-ai/openspec` in
+> `package.json`, and CI validates at that pin. A bare `openspec` on your PATH, or a bare
+> `npx openspec`, may be an entirely different version — the npx cache updates in place, and
+> versions genuinely disagree about the same tree (1.9.0 and 1.10.0 pass a spec that 1.11.0
+> fails). Every `openspec ...` command below means:
+>
+> ```bash
+> npm ci                       # once, installs the pinned CLI
+> npm run validate:specs       # openspec validate --all --strict, at the pin
+> npm exec --no-install -- openspec <anything else>
+> ```
+>
+> `--no-install` is what stops npm silently fetching something else when the pin is missing.
+
 ## TL;DR Quick Checklist
 
 - Search existing work: `openspec spec list --long`, `openspec list` (use `rg` only for full-text search)

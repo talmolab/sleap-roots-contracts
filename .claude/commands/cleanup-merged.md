@@ -69,7 +69,7 @@ openspec archive <change-id> --yes --skip-specs
 ### Validate after archival
 
 ```bash
-openspec validate --all --strict
+npm run validate:specs
 ```
 
 **`--all` is required, not optional.** Bare `openspec validate --strict` has no target — after
