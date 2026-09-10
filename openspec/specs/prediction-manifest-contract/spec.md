@@ -1,7 +1,18 @@
 # prediction-manifest-contract Specification
 
 ## Purpose
-TBD - created by archiving change add-prediction-manifest-contract. Update Purpose after archive.
+
+Defines what `sleap-roots-predict` writes for one scan — `PredictionArtifact` per output blob, and
+the `PredictionManifest` that lists them — so `bloomctl` can find and attribute those outputs without
+inferring anything from filenames.
+
+It is a **producer↔producer** shape: it never crosses the Bloom boundary and is deliberately not
+emitted as JSON Schema, so it can change with its two consumers rather than on Bloom's migration
+cadence.
+
+It describes what was produced, not what was measured. Trait numbers are `TraitValue` rows in the
+result contract; this contract carries the blobs and their identity.
+
 ## Requirements
 ### Requirement: Prediction Artifact Shape
 

@@ -4,6 +4,13 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -31,3 +38,41 @@ jobs:
           git diff --exit-code schema/
       - name: Test
         run: uv run pytest --cov=src/sleap_roots_contracts --cov-report=term-missing -v
+
+  # Spec validity was gated entirely on whoever happened to run the CLI locally, and on
+  # which version answered. `openspec` is distributed via npx and the cached binary updates
+  # in place, so the same tree has validated differently on different days — 1.9.0 -> 1.10.0
+  # -> 1.11.0 over the course of a single change, and 1.11.0 added a check the earlier ones
+  # did not have. That version drift already cost a full review round on #28, where 1.5.0 and
+  # 1.6.0 disagreed about the same commit and two reviewers reached opposite conclusions.
+  # The exact pin in package.json is what makes a green check here mean something specific.
+  #
+  # Its own job rather than a step in `test`: it is Python-independent, so running it once
+  # per matrix leg would just install Node twice to compute the same answer.
+  specs:
+    name: Validate specs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Install the pinned OpenSpec CLI
+        run: npm ci --ignore-scripts
+      # Printing the version proves nothing on its own -- it reports whatever ran, so a
+      # fallback binary would print its own version and the job would stay green. Compare
+      # it to package.json instead. `npm exec --no-install` is what removes the fallback:
+      # bare `npx openspec` resolves a global install, or auto-installs the UNSCOPED
+      # `openspec` package from npm (a different, unrelated package) on a non-TTY, both
+      # silently and both at exit 0.
+      - name: Assert the pin held
+        run: |
+          want=$(node -p "require('./package.json').devDependencies['@fission-ai/openspec']")
+          got=$(npm exec --no-install -- openspec --version)
+          echo "pinned=$want resolved=$got"
+          [ "$want" = "$got" ]
+      # Consumes the package.json script rather than repeating the command, so the two
+      # cannot drift. `npm run` puts node_modules/.bin on PATH with no install fallback.
+      - name: Validate all specs
+        run: npm run validate:specs

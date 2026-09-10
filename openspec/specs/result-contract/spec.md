@@ -1,7 +1,20 @@
 # result-contract Specification
 
 ## Purpose
-TBD - created by archiving change add-result-provenance-contract. Update Purpose after archive.
+
+Defines the shape of one scan's pipeline result and the provenance that makes it reproducible —
+`ResultEnvelope`, its `Provenance`, its `TraitValue` rows, and the `BlobRef`s pointing at the
+artifacts it produced.
+
+This is a **boundary** contract: it is emitted as versioned JSON Schema **for** Bloom to consume for
+codegen and migration-match, so its shape is not this repo's to change unilaterally.
+It owns producer-side `param_hash` computation because the hash feeds
+`Provenance.idempotency_key` under first-writer-wins — two producers hashing differently would both
+"win" the dedup race for the same logical scan and break idempotency with no error raised anywhere.
+
+It carries results, not decisions. Which model produced a trait is recorded here; which model
+*should have* is the model-selection contract's business.
+
 ## Requirements
 ### Requirement: Result Envelope Structure
 The library SHALL define a `ResultEnvelope` that bundles exactly one `Provenance`, a list of

@@ -25,7 +25,7 @@ uv run python -m sleap_roots_contracts.schema && git diff --exit-code schema/
 
 # If an OpenSpec change is in flight:
 openspec list
-openspec validate <change-id> --strict
+npm exec --no-install -- openspec validate <change-id> --strict
 ```
 
 ## Phase 3: Documentation
