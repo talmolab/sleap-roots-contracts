@@ -7,7 +7,9 @@ processing to exactly the `scan_keys` a run was given, instead of directory-wide
 whatever sidecars happen to be present (see talmolab/sleap-roots-pipeline#37).
 """
 
+import os
 import re
+from collections.abc import Mapping
 
 from pydantic import BaseModel, ConfigDict, model_validator
 
@@ -68,6 +70,56 @@ def run_manifest_filename(pipeline_run_id: str) -> str:
             "'.', '_' and '-'"
         )
     return f"{_FILENAME_PREFIX}{pipeline_run_id}{_FILENAME_SUFFIX}"
+
+
+#: The environment variable every pipeline stage reads its run identity from. Set to Argo's
+#: `{{workflow.name}}` on the four stage templates that touch the manifest — images-downloader,
+#: predictor, trait-extractor and write-back — and deliberately absent from the `local-WSL2-*`
+#: templates, which is what keeps local runs on the legacy filename. The fifth cluster template,
+#: exit-gate, does not set it and does not read the manifest. Exported so consumers import it
+#: rather than hardcoding the string.
+PIPELINE_RUN_ID_ENV_VAR = "ARGO_WORKFLOW_NAME"
+
+
+def pipeline_run_id_from_env(env: Mapping[str, str] | None = None) -> str | None:
+    """Return this process's run identity, or ``None`` when it has none.
+
+    The single definition of "which run am I". Both writers and readers must use it: a writer
+    that reads the variable itself can disagree with a reader about whitespace or blankness,
+    and :func:`check_run_manifest_identity` would then fail on every stage.
+
+    Args:
+        env: Environment mapping to read. Defaults to ``os.environ``. Injectable so callers and
+            tests need no monkeypatching.
+
+    Returns:
+        The stripped value of ``ARGO_WORKFLOW_NAME``, or ``None`` when unset or blank. ``None``
+        means "not running under orchestration"; it is not an error.
+    """
+    source = os.environ if env is None else env
+    value = source.get(PIPELINE_RUN_ID_ENV_VAR)
+    if value is None:
+        return None
+    return value.strip() or None
+
+
+def run_manifest_name_for_writing(pipeline_run_id: str | None) -> str:
+    """Return the filename a writer should publish its manifest under.
+
+    Args:
+        pipeline_run_id: This run's identity, from :func:`pipeline_run_id_from_env`.
+
+    Returns:
+        The per-run filename when an identity is known, else ``RUN_MANIFEST_FILENAME``. Keying
+        per-run naming to the presence of an identity is what leaves local and ``local-WSL2-*``
+        runs on exactly their previous behavior, with no template changes.
+
+    Raises:
+        ValueError: If ``pipeline_run_id`` is not usable as a filename component.
+    """
+    if pipeline_run_id is None:
+        return RUN_MANIFEST_FILENAME
+    return run_manifest_filename(pipeline_run_id)
 
 
 class RunManifest(BaseModel):

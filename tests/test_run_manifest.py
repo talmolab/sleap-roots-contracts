@@ -4,9 +4,12 @@ import pytest
 from pydantic import ValidationError
 
 from sleap_roots_contracts.run_manifest import (
+    PIPELINE_RUN_ID_ENV_VAR,
     RUN_MANIFEST_FILENAME,
     RunManifest,
+    pipeline_run_id_from_env,
     run_manifest_filename,
+    run_manifest_name_for_writing,
 )
 from sleap_roots_contracts.schema import MODELS
 
@@ -195,3 +198,53 @@ def test_run_manifest_filename_rejects_a_non_string_id():
     """A non-str id is a programming error, surfaced as ValueError not TypeError."""
     with pytest.raises(ValueError):
         run_manifest_filename(12345)
+
+
+def test_pipeline_run_id_from_env_returns_the_workflow_name():
+    """ARGO_WORKFLOW_NAME is the run identity."""
+    assert (
+        pipeline_run_id_from_env({"ARGO_WORKFLOW_NAME": "sleap-roots-pipeline-9s92h"})
+        == "sleap-roots-pipeline-9s92h"
+    )
+
+
+def test_pipeline_run_id_from_env_is_none_when_unset():
+    """No variable means no run identity — the local/dev case."""
+    assert pipeline_run_id_from_env({}) is None
+
+
+def test_pipeline_run_id_from_env_is_none_when_blank():
+    """A set-but-empty variable is common in k8s manifests and means the same as unset."""
+    assert pipeline_run_id_from_env({"ARGO_WORKFLOW_NAME": "   "}) is None
+
+
+def test_pipeline_run_id_from_env_strips_surrounding_whitespace():
+    """A stray newline from a shell-substituted value must not change the filename."""
+    assert pipeline_run_id_from_env({"ARGO_WORKFLOW_NAME": " wf1\n"}) == "wf1"
+
+
+def test_pipeline_run_id_from_env_reads_os_environ_by_default(monkeypatch):
+    """Omitting env reads the real process environment."""
+    monkeypatch.setenv("ARGO_WORKFLOW_NAME", "wf-from-os")
+    assert pipeline_run_id_from_env() == "wf-from-os"
+
+
+def test_env_var_name_is_exported():
+    """Consumers must not hardcode the variable name (bloomctl currently does)."""
+    assert PIPELINE_RUN_ID_ENV_VAR == "ARGO_WORKFLOW_NAME"
+
+
+def test_name_for_writing_is_per_run_when_the_id_is_known():
+    """A writer under orchestration names the file for its own run."""
+    assert run_manifest_name_for_writing("wf1") == "run_manifest.wf1.json"
+
+
+def test_name_for_writing_is_the_legacy_name_without_an_id():
+    """No run identity means the legacy name, which keeps local runs behaving as before."""
+    assert run_manifest_name_for_writing(None) == RUN_MANIFEST_FILENAME
+
+
+def test_name_for_writing_rejects_an_invalid_id():
+    """An unsafe id fails at the writer too, not only at the reader."""
+    with pytest.raises(ValueError):
+        run_manifest_name_for_writing("../escape")
