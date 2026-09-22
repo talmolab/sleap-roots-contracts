@@ -2,14 +2,15 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Revision 2 (2026-09-22)** — rewritten after `/review-openspec`. Revision 1's `exists`-predicate
-API is gone; see "What changed in revision 2". Do not implement from a cached copy of revision 1.
+**Revision 3 (2026-09-22)** — revision 2 rewrote the API after `/review-openspec`; revision 3
+closes what the re-review then found in it. Revision 1's `exists`-predicate API is gone. See
+"What changed". Do not implement from a cached copy of any earlier revision.
 
 **Goal:** Add the naming and resolution contract that lets each pipeline run read its own
 `run_manifest.<pipeline_run_id>.json` instead of a shared `run_manifest.json` that accumulates
 every run's `scan_keys`.
 
-**Architecture:** Six functions and two exceptions in `run_manifest.py`. One reader
+**Architecture:** Five functions, a result type and three exceptions in `run_manifest.py`. One reader
 (`read_run_manifest`) owns the candidate order, the open, and the fail-loud decision for all four
 consumer call sites, so none of them re-invents it. It returns the bytes it read, not a path, so
 there is no probe/read window.
@@ -38,23 +39,27 @@ there is no probe/read window.
 - Docstrings required in `src/` (google convention); tests exempt.
 - Checks: `uv run pytest -v`, `uv run black --check src tests`, `uv run ruff check src tests`.
 
-## What changed in revision 2
+## What changed
 
-| revision 1 | revision 2 | why |
+| before | after | why |
 |---|---|---|
-| `resolve_run_manifest_name(id, exists)` | `read_run_manifest(directory, id, *, allow_legacy)` returning `(filename, data, is_per_run)` | the `exists` boolean collapsed `EACCES` into "absent" (falling through to the stale legacy file, which `ingest.py:115-127` deliberately guards against) and reopened a probe/read window `run_batch` works to avoid |
+| `resolve_run_manifest_name(id, exists)` | `read_run_manifest(directory, id, *, allow_legacy)` returning `(filename, data, mode, is_per_run)` | the `exists` boolean collapsed `EACCES` into "absent" (falling through to the stale legacy file, which `ingest.py:115-127` deliberately guards against) and reopened a probe/read window `run_batch` works to avoid |
 | justified by "the library does no filesystem I/O" | justified by "no caller-directory reads in the model surface" | the original premise was false — see Global Constraints |
 | legacy fallback unconditional | `allow_legacy` keyword-only and **required** | unconditional fallback always succeeds in the shared trees, so `RunManifestMissingError` could never fire and the fail-loud guarantee was decorative (design §2.9) |
 | — | added `run_manifest_name_for_writing`, exported `PIPELINE_RUN_ID_ENV_VAR` | otherwise the writer-side rule and the env-var name live only in prose, and bloomctl keeps a hardcoded string |
 | cross-check always applies | no-op on the legacy filename | otherwise all four sites write the same `if filename != RUN_MANIFEST_FILENAME` guard |
 | cap 200 | cap 237 | 200 could reject a legal name and then crash every stage |
 | delta purely ADDED | one **MODIFIED** requirement | "single source of truth for the manifest's on-disk filename" becomes false once a second convention exists |
+| *(rev 3)* `allow_legacy` gated the legacy name always | it is ignored when there is no run identity | `RUN_MANIFEST_FILENAME` is the *correct* name without an identity, not a fallback; gating it built an empty candidate list and silently unscoped every local run at design §4 step 6 |
+| *(rev 3)* returned `(filename, data, is_per_run)` | adds `mode` | predict must reproduce the source's permissions without a second stat; the fd is already open, so `fstat` is free |
+| *(rev 3)* `RunManifestIdentityError(ValueError)` | `RunManifestError` base; identity error is not a `ValueError` | pydantic's `ValidationError` is a `ValueError`, so a generic parse handler would have swallowed "this tree is not yours" |
+| *(rev 3)* `-k read_run_manifest` | `-k test_read` | no test name contained that substring, so the gate collected zero tests |
 
 ## File Structure
 
 | File | Responsibility |
 |---|---|
-| `src/sleap_roots_contracts/run_manifest.py` | modify — the six functions + two exceptions |
+| `src/sleap_roots_contracts/run_manifest.py` | modify — five functions, `RunManifestRead`, three exceptions |
 | `src/sleap_roots_contracts/__init__.py` | modify — re-export, extend `__all__` |
 | `tests/test_run_manifest.py` | modify — tests per task |
 | `openspec/changes/add-per-run-manifest-filename/` | modify — proposal, tasks, delta (Task 1 revision) |
@@ -110,8 +115,14 @@ def test_run_manifest_filename_is_built_from_the_run_id():
     )
 
 
-def test_run_manifest_filename_accepts_the_local_placeholder():
-    """bloomctl's non-Argo placeholder shape is a valid id."""
+def test_run_manifest_filename_accepts_an_id_of_the_local_placeholder_shape():
+    """An id of this shape is filename-safe.
+
+    This asserts only that the shape passes validation. It is NOT sanction for naming a file
+    after bloomctl's `local-<uuid8>` placeholder: design §2.3 forbids that, because no other
+    process can reproduce another's placeholder, so a writer must pass `None` here and use
+    `run_manifest_name_for_writing`, which selects the legacy name when there is no identity.
+    """
     assert run_manifest_filename("local-ab12cd34") == "run_manifest.local-ab12cd34.json"
 
 
@@ -306,9 +317,11 @@ Add `import os` and `from collections.abc import Mapping` to the module imports.
 
 ```python
 #: The environment variable every pipeline stage reads its run identity from. Set to Argo's
-#: `{{workflow.name}}` on all five cluster templates and deliberately absent from the
-#: `local-WSL2-*` templates, which is what keeps local runs on the legacy filename. Exported so
-#: consumers import it rather than hardcoding the string.
+#: `{{workflow.name}}` on the four stage templates that touch the manifest — images-downloader,
+#: predictor, trait-extractor and write-back — and deliberately absent from the `local-WSL2-*`
+#: templates, which is what keeps local runs on the legacy filename. The fifth cluster template,
+#: exit-gate, does not set it and does not read the manifest. Exported so consumers import it
+#: rather than hardcoding the string.
 PIPELINE_RUN_ID_ENV_VAR = "ARGO_WORKFLOW_NAME"
 
 
@@ -373,12 +386,14 @@ git commit -m "feat(run-manifest): add the env reader and the writer-side naming
 
 **Interfaces:**
 - Consumes: `run_manifest_filename` (Task 2), `RUN_MANIFEST_FILENAME`.
-- Produces: `RunManifestRead(NamedTuple)` with fields `filename: str`, `data: bytes`,
-  `is_per_run: bool`; `RunManifestMissingError(LookupError)`; and
+- Produces: `RunManifestError(Exception)`, `RunManifestMissingError(RunManifestError, LookupError)`,
+  `RunManifestRead(NamedTuple)` with fields `filename: str`, `data: bytes`, `mode: int`,
+  `is_per_run: bool`; and
   `read_run_manifest(directory, pipeline_run_id, *, allow_legacy) -> RunManifestRead | None`.
   This is the function all four consumer call sites use.
 
-This is the task that carries the change's safety property. Read design §2.2 and §2.9 first.
+This is the task that carries the change's safety property. Read design §2.2 and §2.9 first —
+especially §2.9's asymmetry, which is the single easiest thing to get wrong here.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -402,10 +417,57 @@ def test_read_falls_back_to_the_legacy_manifest(tmp_path):
 
 
 def test_read_refuses_the_legacy_manifest_when_the_fallback_is_off(tmp_path):
-    """Post-migration, a stale legacy file must not silently re-scope a run."""
+    """Post-migration, a stale legacy file must not silently re-scope an identified run."""
     (tmp_path / RUN_MANIFEST_FILENAME).write_bytes(b'{"legacy": true}')
     with pytest.raises(RunManifestMissingError):
         read_run_manifest(tmp_path, "wf1", allow_legacy=False)
+
+
+def test_read_still_uses_the_legacy_name_without_an_identity_when_the_fallback_is_off(tmp_path):
+    """allow_legacy governs identified runs only — it must not unscope local ones.
+
+    With no run identity, RUN_MANIFEST_FILENAME is not a fallback: per design §2.3 it is the
+    correct and only name. Gating it on allow_legacy would make the fleet-wide flip in design
+    §4 step 6 silently regress every local-WSL2 run from scoped to unscoped.
+    """
+    (tmp_path / RUN_MANIFEST_FILENAME).write_bytes(b'{"legacy": true}')
+    result = read_run_manifest(tmp_path, None, allow_legacy=False)
+    assert result.filename == RUN_MANIFEST_FILENAME
+    assert result.is_per_run is False
+
+
+def test_read_returns_none_without_an_identity_when_nothing_is_present_and_fallback_is_off(
+    tmp_path,
+):
+    """The degenerate call still has one candidate, and its absence is not an error."""
+    assert read_run_manifest(tmp_path, None, allow_legacy=False) is None
+
+
+def test_read_rejects_a_blank_run_id(tmp_path):
+    """A blank-but-not-None id is invalid, not 'no identity' — it must not silently
+    become the legacy path."""
+    with pytest.raises(ValueError):
+        read_run_manifest(tmp_path, "", allow_legacy=True)
+
+
+def test_read_reports_a_missing_directory_as_such(tmp_path):
+    """ENOENT on the directory is also FileNotFoundError, so say which is missing.
+
+    Without this, a mis-mounted stage-in — the likelier cause under Argo — reports as a
+    missing manifest and sends the reader hunting the wrong problem.
+    """
+    missing = tmp_path / "nope"
+    with pytest.raises(FileNotFoundError) as excinfo:
+        read_run_manifest(missing, "wf1", allow_legacy=True)
+    assert "nope" in str(excinfo.value)
+
+
+def test_read_returns_the_source_file_mode(tmp_path):
+    """predict forwards the manifest and must reproduce its mode without a second stat."""
+    target = tmp_path / RUN_MANIFEST_FILENAME
+    target.write_bytes(b"{}")
+    result = read_run_manifest(tmp_path, None, allow_legacy=True)
+    assert result.mode == (target.stat().st_mode & 0o777)
 
 
 def test_read_raises_when_the_run_id_is_known_and_nothing_is_present(tmp_path):
@@ -465,7 +527,7 @@ Add `from pathlib import Path` to the test imports.
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `uv run pytest tests/test_run_manifest.py -k read_run_manifest -v`
+Run: `uv run pytest tests/test_run_manifest.py -k test_read -v`
 Expected: FAIL — `ImportError: cannot import name 'read_run_manifest'`
 
 - [ ] **Step 3: Write the implementation**
@@ -473,22 +535,38 @@ Expected: FAIL — `ImportError: cannot import name 'read_run_manifest'`
 Add `from pathlib import Path` and `from typing import NamedTuple` to the module imports.
 
 ```python
-class RunManifestMissingError(LookupError):
+class RunManifestError(Exception):
+    """Base for every run-manifest failure this module raises.
+
+    Deliberately not a ``ValueError``. Pydantic's ``ValidationError`` is one, and consumers
+    already wrap manifest parsing in ``except ValueError`` — inheriting from it would let a
+    generic parse handler swallow "this tree is not the one you think it is".
+    """
+
+
+class RunManifestMissingError(RunManifestError, LookupError):
     """No run manifest was found for a caller that knows which run it is.
 
-    A ``LookupError`` subclass so a consumer can catch it alongside its own not-found handling
+    Also a ``LookupError`` so a consumer can catch it alongside its own not-found handling
     while still re-raising it as that repo's own error type (``click.ClickException`` in
     bloomctl, for instance).
     """
 
 
 class RunManifestRead(NamedTuple):
-    """One manifest read: the name it came from, its bytes, and which convention it used.
+    """One manifest read: where it came from, its bytes, its mode, and which convention.
+
+    Consumers SHOULD use attribute access rather than tuple unpacking, so that fields can be
+    appended without breaking them.
 
     Attributes:
         filename: The name actually read, so a forwarding stage can republish under it.
         data: The raw bytes, returned rather than a path so there is no window in which the
             file changes between being found and being read.
+        mode: The source file's permission bits, taken by ``fstat`` on the descriptor already
+            open — so it describes the bytes returned, not whatever is at that path later. A
+            forwarding stage needs it: ``mkstemp`` creates at ``0600``, and the next container
+            runs as a different uid on the same shared mount.
         is_per_run: Whether ``filename`` is the per-run form. Consumers use it to decide
             whether the identity cross-check applies, instead of each comparing against
             ``RUN_MANIFEST_FILENAME`` themselves.
@@ -496,6 +574,7 @@ class RunManifestRead(NamedTuple):
 
     filename: str
     data: bytes
+    mode: int
     is_per_run: bool
 
 
@@ -507,21 +586,31 @@ def read_run_manifest(
 ) -> RunManifestRead | None:
     """Read the run manifest this caller should use, if there is one.
 
-    Candidate order is the per-run filename (only when ``pipeline_run_id`` is not ``None``),
-    then ``RUN_MANIFEST_FILENAME`` (only when ``allow_legacy``). Each candidate is *opened*, not
-    probed: only ``FileNotFoundError`` advances to the next one, so an unreadable manifest
-    raises instead of being mistaken for an absent one and falling through to an older run's
-    scope.
+    Candidate order depends on whether a run identity exists:
+
+    * With one — the per-run filename, then ``RUN_MANIFEST_FILENAME`` if ``allow_legacy``.
+    * Without one — ``RUN_MANIFEST_FILENAME`` alone, **regardless of** ``allow_legacy``,
+      because with no identity that name is not a legacy fallback but the correct name
+      (design §2.3). Gating it would silently unscope every local run when the fleet flips.
+
+    Each candidate is *opened*, not probed: only ``FileNotFoundError`` advances to the next
+    one, so an unreadable manifest raises instead of being mistaken for an absent one and
+    falling through to an older run's scope.
 
     Args:
-        directory: Directory to look in. Not searched recursively.
+        directory: Directory to look in. Not searched recursively. Its own absence raises
+            ``FileNotFoundError`` naming the directory, rather than being reported as a
+            missing manifest — under Argo a mis-mounted stage-in is the likelier cause.
         pipeline_run_id: This run's identity, or ``None`` (see
-            :func:`pipeline_run_id_from_env`).
-        allow_legacy: Whether ``RUN_MANIFEST_FILENAME`` may satisfy the read. Required and
-            keyword-only, with no default, so every call site states its position and the
-            fleet's migration state is greppable. Pass ``True`` while any stage may still be
-            writing the legacy name; pass ``False`` once the fleet is migrated and the stale
-            files are deleted, which is what makes the missing-manifest error reachable at all.
+            :func:`pipeline_run_id_from_env`). A blank string is **not** ``None``: it is an
+            invalid id and raises ``ValueError``.
+        allow_legacy: Whether a caller that *knows its own identity* may accept a manifest
+            written under the identity-less name. Required and keyword-only, with no default,
+            so every call site states its position and the fleet's migration state is
+            greppable. Pass ``True`` while any stage may still be writing the legacy name;
+            pass ``False`` once the fleet is migrated and the stale files are deleted, which
+            is what makes the missing-manifest error reachable at all. Ignored when
+            ``pipeline_run_id`` is ``None``.
 
     Returns:
         A :class:`RunManifestRead`, or ``None`` when nothing was found and
@@ -540,21 +629,31 @@ def read_run_manifest(
     base = Path(directory)
 
     candidates: list[tuple[str, bool]] = []
-    if pipeline_run_id is not None:
-        candidates.append((run_manifest_filename(pipeline_run_id), True))
-    if allow_legacy:
+    if pipeline_run_id is None:
+        # No identity: the legacy name is the right name, not a fallback, so `allow_legacy`
+        # has no say. Gating it here would unscope every non-Argo run at design §4 step 6.
         candidates.append((RUN_MANIFEST_FILENAME, False))
+    else:
+        candidates.append((run_manifest_filename(pipeline_run_id), True))
+        if allow_legacy:
+            candidates.append((RUN_MANIFEST_FILENAME, False))
 
     for name, is_per_run in candidates:
         try:
             with (base / name).open("rb") as handle:
                 data = handle.read()
+                mode = os.fstat(handle.fileno()).st_mode & 0o777
         except FileNotFoundError:
+            # Distinguish "this candidate is absent" from "the directory is not there" —
+            # both are FileNotFoundError, and only the first should advance.
+            if not base.is_dir():
+                raise FileNotFoundError(
+                    f"run manifest directory does not exist: {base.as_posix()}"
+                ) from None
             continue
-        except IsADirectoryError:
-            # A directory where the manifest should be is a staging error, not an absence.
-            raise
-        return RunManifestRead(filename=name, data=data, is_per_run=is_per_run)
+        return RunManifestRead(
+            filename=name, data=data, mode=mode, is_per_run=is_per_run
+        )
 
     if pipeline_run_id is not None:
         looked_for = ", ".join(repr(name) for name, _ in candidates)
@@ -567,8 +666,8 @@ def read_run_manifest(
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `uv run pytest tests/test_run_manifest.py -k read_run_manifest -v`
-Expected: PASS (9 tests)
+Run: `uv run pytest tests/test_run_manifest.py -k test_read -v`
+Expected: PASS (14 tests)
 
 - [ ] **Step 5: Commit**
 
@@ -620,9 +719,21 @@ def test_identity_check_is_a_noop_for_the_legacy_filename():
     assert check_run_manifest_identity(manifest, "wf1", RUN_MANIFEST_FILENAME) is None
 
 
-def test_identity_error_is_a_value_error():
-    """Consumers already catching ValueError around manifest parsing keep working."""
-    assert issubclass(RunManifestIdentityError, ValueError)
+def test_identity_error_is_not_swallowed_by_a_generic_parse_handler():
+    """An identity mismatch must survive `except ValueError` around manifest parsing.
+
+    pydantic's ValidationError IS a ValueError, and consumers wrap parsing in handlers that
+    catch it. If RunManifestIdentityError were also a ValueError, "this tree is not the one
+    you think it is" would be swallowed as though it were a malformed file.
+    """
+    assert not issubclass(RunManifestIdentityError, ValueError)
+
+
+def test_both_errors_share_one_catchable_base():
+    """Consumers can catch RunManifestError alone and re-raise as their own type."""
+    assert issubclass(RunManifestIdentityError, RunManifestError)
+    assert issubclass(RunManifestMissingError, RunManifestError)
+    assert issubclass(RunManifestMissingError, LookupError)
 
 
 def test_new_names_are_exported_from_the_package_root():
@@ -631,6 +742,7 @@ def test_new_names_are_exported_from_the_package_root():
 
     for name in (
         "PIPELINE_RUN_ID_ENV_VAR",
+        "RunManifestError",
         "RunManifestIdentityError",
         "RunManifestMissingError",
         "RunManifestRead",
@@ -659,11 +771,14 @@ Expected: FAIL — `ImportError: cannot import name 'check_run_manifest_identity
 In `run_manifest.py`:
 
 ```python
-class RunManifestIdentityError(ValueError):
+class RunManifestIdentityError(RunManifestError):
     """A manifest read under a per-run filename names a different run.
 
-    A ``ValueError`` because it is the same class of problem as a manifest that fails
-    validation: the file is not what its name claims.
+    Deliberately **not** a ``ValueError``, unlike a parse failure. A malformed manifest and a
+    manifest belonging to someone else are different problems with different responses, and
+    consumers wrap parsing in handlers that catch ``ValueError`` (pydantic's
+    ``ValidationError`` is one). Sharing that base would let a generic parse handler swallow
+    the stronger signal.
     """
 
 
@@ -710,7 +825,7 @@ In `__init__.py`, extend the run_manifest import and `__all__` with all nine nam
 - [ ] **Step 4: Run the full suite plus linters**
 
 Run: `uv run pytest -q && uv run black --check src tests && uv run ruff check src tests`
-Expected: all pass. Baseline was 460 tests; expect 460 + 40.
+Expected: all pass. Baseline was 460 tests; expect 460 + 46 (16 + 9 + 14 + 7).
 
 - [ ] **Step 5: Commit**
 
@@ -889,6 +1004,26 @@ Task 2. `pipeline_run_id_from_env() -> str | None` feeds both of those, whose pa
 `str | None`. `read_run_manifest` returns `RunManifestRead | None`; `check_run_manifest_identity`
 takes that read's `.filename`. Exception names match across Tasks 4, 5 and the delta.
 
-**Known residual.** S2's TOCTOU is closed for the read itself, but a per-run file created between
-the two candidate opens still leaves the reader on the legacy file. That window shuts for good at
-design §4 step 6, when `allow_legacy` goes to `False`. Recorded rather than fixed.
+**Re-review coverage (revision 3).** N1 (`allow_legacy` unscoping identity-less readers) → Task 4's
+asymmetric candidate list plus the "still uses the legacy name without an identity" test. N2
+(missing mode) → `RunManifestRead.mode` via `fstat` on the already-open descriptor. N3 ("all five
+cluster templates" — false; exit-gate does not set it) → the `PIPELINE_RUN_ID_ENV_VAR` docstring in
+Task 3. N4 (a missing directory reported as a missing manifest) → the `base.is_dir()` branch and its
+test. N5 (a test docstring that read as sanction for keying on the local placeholder) → reworded in
+Task 2. N6 (exception taxonomy) → `RunManifestError` base; the identity error is no longer a
+`ValueError`. N7 (dead `IsADirectoryError` branch) → removed. The broken `-k read_run_manifest`
+selector, which collected zero tests → `-k test_read`. Lens 1's IMPORTANT-1 (blank id through the
+reader) and SUGGESTION-1 (the zero-candidate call) → two new Task 4 tests.
+
+**Known residuals, recorded rather than fixed.**
+- A per-run file created between the two candidate opens still leaves the reader on the legacy
+  file. That window shuts for good at design §4 step 6, when `allow_legacy` goes to `False`.
+- The new "New Names Are Exported From The Package Root" requirement and the existing untouched
+  "Package Export" requirement now both govern package-root exports. Not a contradiction; fold
+  them together the next time this capability is modified.
+- The MODIFIED requirement's second scenario duplicates one in "The Writer's Filename Rule". That
+  is deliberate — it anchors the cross-reference and satisfies the one-scenario minimum — and is
+  noted here so a later scenario-count audit does not read it as an accident.
+- `bloomctl` still owns the two-value rule (filename identity `None` locally, body value
+  `local-<hex8>`); the API has no helper for the body value, so that rule lives in design §3.2
+  prose and must be carried into plan 3's bloomctl task.
