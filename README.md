@@ -2,11 +2,14 @@
 
 Shared **result + provenance contract** for the sleap-roots ↔ Bloom pipeline.
 
-This is a small, dependency-light library — code-agnostic toward Bloom (no Bloom import, no
-DB/network/filesystem I/O) — that defines the shape of a per-scan pipeline result and its
-provenance (Pydantic v2 models), emits a versioned JSON Schema artifact, and ships a
-trait-definitions registry. The Python producers (`sleap-roots-predict`, `sleap-roots-traits`)
-import it; Bloom consumes the emitted schema.
+This is a small, dependency-light library — code-agnostic toward Bloom (no Bloom import; no DB
+or network I/O, and no ambient filesystem reads in the contract-model surface — the exceptions
+are deliberate and named: `emit_schema` writes the JSON Schema artifacts, `registry`/`examples`
+read packaged resources, and `read_run_manifest` reads one named file from a caller-supplied
+directory) — that defines the shape of a per-scan pipeline result and its provenance (Pydantic
+v2 models), emits a versioned JSON Schema artifact, and ships a trait-definitions registry. The
+Python producers (`sleap-roots-predict`, `sleap-roots-traits`) import it; Bloom consumes the
+emitted schema.
 
 It also defines the **analysis-input contract** — the canonical shape of the wide trait
 table that crosses the `sleap-roots-analyze` ↔ Bloom boundary.
@@ -54,7 +57,16 @@ Since `0.1.0a7` it also defines the **run-manifest contract** — `RunManifest`/
 `RUN_MANIFEST_FILENAME`, the run-scoping shape written by `bloomctl` and read by
 `sleap-roots-predict`/`sleap-roots-traits` to scope processing to exactly the `scan_key`s a run
 was given. Like `ModelCard`, it is a producer↔producer contract and is **not** emitted to the
-JSON Schema.
+JSON Schema. Since `0.1.0a9` it also defines the per-run filename convention and the shared
+resolution policy — `run_manifest_filename`, `pipeline_run_id_from_env`,
+`run_manifest_name_for_writing`, `read_run_manifest`, `check_run_manifest_identity`, and
+`load_run_manifest` (the **recommended entry point**, composing the three read/parse/check
+primitives in one call; `LoadedRunManifest` is its result) — so the four consumer call sites
+agree on one definition rather than three (talmolab/sleap-roots-pipeline#71). Adopters must
+bump readers before the writer: once a writer
+publishes `run_manifest.<pipeline_run_id>.json`, an un-adopted reader no longer finds
+`run_manifest.json` and falls back to its own whole-tree discovery, which is worse than the
+shared-manifest defect this release fixes.
 
 Since `0.1.0a4` it also ships the **param-resolution oracle** —
 `resolve_params(metadata, overrides=None) -> ResolvedParams` maps a single Bloom

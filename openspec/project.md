@@ -3,8 +3,11 @@
 ## Purpose
 `sleap-roots-contracts` is the shared **data contract** library for the sleap-roots ↔ Bloom
 pipeline. It is a small, dependency-light leaf library — **code-agnostic toward Bloom** (no Bloom
-import, no DB/network/filesystem I/O), though since `0.1.0a4` no longer **vocabulary**-agnostic
-(see the param-resolution note below). It defines six contracts: (1) the **result + provenance
+import; no DB or network I/O, and no ambient filesystem reads in the contract-model surface — the
+exceptions are deliberate and named: `emit_schema` writes the JSON Schema artifacts,
+`registry`/`examples` read packaged resources, and `read_run_manifest` reads one named file from a
+caller-supplied directory), though since `0.1.0a4` no longer **vocabulary**-agnostic (see the
+param-resolution note below). It defines six contracts: (1) the **result + provenance
 contract** — the shape of a per-scan pipeline result and its provenance (Pydantic v2 models);
 (2) the **analysis-input contract** — the canonical wide trait table, with a structural
 `validate_analysis_input` validator; (3) the **model-selection contract** — `ModelCard`, the
@@ -16,7 +19,13 @@ since `0.1.0a5`, the **prediction-manifest contract** — `PredictionArtifact`/`
 predict's per-scan output shape shared by `sleap-roots-predict` (writer) and `bloomctl` (reader);
 and (6), since `0.1.0a7`, the **run-manifest contract** — `RunManifest`, the run-scoping shape
 (a run identifier plus the exact `scan_key`s it covers) shared by `bloomctl` (writer) and
-`sleap-roots-predict`/`sleap-roots`-traits (readers).
+`sleap-roots-predict`/`sleap-roots`-traits (readers). Since `0.1.0a9` it also defines the per-run
+filename convention and the shared resolution policy — `run_manifest_filename`,
+`pipeline_run_id_from_env`, `run_manifest_name_for_writing`, `read_run_manifest`,
+`check_run_manifest_identity`, and `load_run_manifest` (the **recommended entry point**,
+composing the three read/parse/check primitives in one call; `LoadedRunManifest` is its
+result) — so the four consumer call sites agree on one definition rather than three
+(talmolab/sleap-roots-pipeline#71).
 Contracts (1) and (2) emit versioned JSON Schema artifacts (Bloom consumes them); contracts (3),
 (4), (5) and (6) are producer↔producer shapes that never cross the Bloom boundary and are **not**
 emitted to JSON Schema. The contract-owned `Mode` capture-mode vocabulary types `mode` on both
@@ -96,9 +105,8 @@ Runtime core is pydantic + pyyaml; pandas is an optional `[pandas]` extra (only
 model-selection contract (`ModelCard` → `ModelRef`) and imports `resolve_params`; `bloomctl`
 (in the `bloom` repo) imports `resolve_params` to author each scan's `params` sidecar and, since
 `0.1.0a7`, writes the run-manifest contract (`RunManifest`/`RUN_MANIFEST_FILENAME`) during
-`images-downloader`; `sleap-roots-predict`/`sleap-roots-traits` will read it to scope processing
-to exactly the `scan_key`s a run was given, once their consuming PRs land (not yet, as of this
-release — see talmolab/sleap-roots-pipeline#37);
+`images-downloader`; `sleap-roots-predict`/`sleap-roots-traits` read it to scope processing to
+exactly the `scan_key`s a run was given (landed; see talmolab/sleap-roots-pipeline#37);
 `sleap-roots-analyze` + `bloom-mcp` (call `validate_analysis_input`); and Bloom (consumes
 `schema/*.json`). `sleap-roots-training`
 is a **coordinating writer**: at model promotion it emits the `ModelCard` selection fields as
