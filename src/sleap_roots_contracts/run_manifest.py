@@ -208,9 +208,14 @@ def read_run_manifest(
       because with no identity that name is not a legacy fallback but the correct name
       (design §2.3). Gating it would silently unscope every local run when the fleet flips.
 
-    Each candidate is *opened*, not probed: only ``FileNotFoundError`` advances to the next
-    one, so an unreadable manifest raises instead of being mistaken for an absent one and
-    falling through to an older run's scope.
+    Each candidate is *opened*, not probed: only a candidate that is *genuinely absent*
+    advances to the next one, and that is a condition on the path rather than the exception
+    type. ``open()`` raises ``FileNotFoundError`` both for a candidate that does not exist
+    and for one that exists as a **dangling symlink** — the link is present, its target is
+    not — so the exception alone cannot tell the two apart. A candidate that exists as a
+    symlink therefore raises ``FileNotFoundError`` naming that path rather than advancing: a
+    dangling link is a broken tree, not an absent candidate, and advancing past it would hand
+    this run an older run's scope through the legacy name.
 
     Args:
         directory: Directory to look in. Not searched recursively. Its own absence raises
@@ -238,8 +243,8 @@ def read_run_manifest(
             ingesting other runs' scans. A stage that knows its run id is running under
             orchestration, where a manifest is always written, so its absence is a fault.
         ValueError: If ``pipeline_run_id`` is not usable as a filename component.
-        OSError: Any failure other than the candidate being absent — notably
-            ``PermissionError``.
+        OSError: Any failure other than the candidate being genuinely absent — notably
+            ``PermissionError`` and a dangling-symlink candidate.
     """
     base = Path(directory)
 
@@ -270,6 +275,19 @@ def read_run_manifest(
                     # the three-arg form's filename slot wants, and on the POSIX filesystems
                     # this runs on it is identical to `str(base)`.
                     base.as_posix(),
+                ) from exc
+            if (base / name).is_symlink():
+                # `is_symlink()` uses `lstat`, so it is True for a DANGLING link — the link
+                # itself exists, only its target does not. `open()` raises the same
+                # `FileNotFoundError` for that as for a genuinely absent candidate, so the
+                # exception type alone cannot tell them apart. A dangling link is a broken
+                # tree, not an absent candidate, and advancing past it would hand this run
+                # an older run's scope through the legacy name — exactly the silent foreign
+                # scope that opening rather than probing exists to prevent.
+                raise FileNotFoundError(
+                    errno.ENOENT,
+                    "run manifest is a symlink with a missing target",
+                    (base / name).as_posix(),
                 ) from exc
             continue
         return RunManifestRead(
@@ -343,9 +361,15 @@ def check_run_manifest_identity(
     and a second derivation would be a second source of truth that disagrees the moment a
     caller holds anything but a bare filename.
 
-    ``pipeline_run_id=None`` needs no branch of its own. A caller with no identity only ever
-    gets ``is_per_run=False`` from :func:`read_run_manifest`, which no-ops the check, so the
-    natural read → parse → check call chain can pass its ``str | None`` id straight through.
+    ``pipeline_run_id=None`` with a non-per-run read needs no branch of its own. A caller with
+    no identity only ever gets ``is_per_run=False`` from :func:`read_run_manifest` — without an
+    identity the per-run filename is never a candidate — so the check no-ops, letting the
+    natural read → parse → check call chain pass its ``str | None`` id straight through.
+    ``pipeline_run_id=None`` with ``read.is_per_run`` true is a different case: that
+    combination can never come from :func:`read_run_manifest`, so it indicates a caller bug —
+    a hand-built or mismatched :class:`RunManifestRead` — rather than a foreign manifest, and
+    raises ``ValueError`` rather than :class:`RunManifestIdentityError`; the latter would tell
+    a consumer to escalate a tree problem that is actually a bug in the calling code.
 
     For a per-run-named file this is the cross-check bloom#703 asked for, possible for the
     first time.
@@ -362,10 +386,17 @@ def check_run_manifest_identity(
         None.
 
     Raises:
+        ValueError: If ``pipeline_run_id`` is ``None`` and ``read.is_per_run`` is true — a
+            combination :func:`read_run_manifest` never produces, so it is a caller bug.
         RunManifestIdentityError: If a per-run-named manifest names a different run.
     """
     if not read.is_per_run:
         return
+    if pipeline_run_id is None:
+        raise ValueError(
+            "a caller with no run identity cannot have read a per-run manifest; "
+            f"{read.filename!r} was reported as per-run"
+        )
     if manifest.pipeline_run_id != pipeline_run_id:
         raise RunManifestIdentityError(
             f"{read.filename} was read as run {pipeline_run_id!r}'s manifest but names run "

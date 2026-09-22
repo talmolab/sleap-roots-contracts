@@ -1,5 +1,6 @@
 """Tests for the run-manifest contract (RunManifest)."""
 
+import sys
 from pathlib import Path
 
 import pytest
@@ -421,6 +422,53 @@ def test_read_rejects_allow_legacy_positionally(tmp_path):
         read_run_manifest(tmp_path, "wf1", True)
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="symlink creation needs privilege on Windows"
+)
+def test_read_raises_for_a_dangling_symlink_at_the_per_run_name(tmp_path):
+    """A dangling per-run symlink must not be mistaken for an absent candidate.
+
+    This is the regression test for the bug: `open()` raises `FileNotFoundError` both for a
+    candidate that is genuinely absent and for one that exists as a symlink whose target is
+    gone, so a loop that only checks the exception type advances to the legacy manifest in
+    both cases — silently handing this run an older run's scope. A readable legacy manifest
+    is present, so a wrong implementation would return its content instead of raising.
+    """
+    per_run = tmp_path / "run_manifest.wf1.json"
+    per_run.symlink_to(tmp_path / "does-not-exist.json")
+    (tmp_path / RUN_MANIFEST_FILENAME).write_bytes(b'{"legacy": true}')
+
+    with pytest.raises(FileNotFoundError) as excinfo:
+        read_run_manifest(tmp_path, "wf1", allow_legacy=True)
+    assert "run_manifest.wf1.json" in str(excinfo.value)
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="symlink creation needs privilege on Windows"
+)
+def test_read_raises_for_a_dangling_symlink_at_the_legacy_name(tmp_path):
+    """A dangling legacy symlink with no other candidate also raises rather than returning None."""
+    legacy = tmp_path / RUN_MANIFEST_FILENAME
+    legacy.symlink_to(tmp_path / "does-not-exist.json")
+
+    with pytest.raises(FileNotFoundError) as excinfo:
+        read_run_manifest(tmp_path, None, allow_legacy=True)
+    assert RUN_MANIFEST_FILENAME in str(excinfo.value)
+
+
+def test_read_still_advances_past_a_genuinely_absent_per_run_candidate(tmp_path):
+    """Non-regression: an absent (not dangling) per-run candidate still falls through.
+
+    The dangling-symlink fix must discriminate the two FileNotFoundError causes, not turn
+    every miss on the per-run candidate into a raise.
+    """
+    (tmp_path / RUN_MANIFEST_FILENAME).write_bytes(b'{"legacy": true}')
+    result = read_run_manifest(tmp_path, "wf1", allow_legacy=True)
+    assert result.filename == RUN_MANIFEST_FILENAME
+    assert result.is_per_run is False
+    assert result.data == b'{"legacy": true}'
+
+
 def make_read(filename, *, is_per_run):
     """Build a RunManifestRead standing in for what read_run_manifest returned."""
     return RunManifestRead(
@@ -485,6 +533,23 @@ def test_identity_check_uses_the_flag_not_the_filename():
     foreign = make_manifest(pipeline_run_id="wf2")
     with pytest.raises(RunManifestIdentityError):
         check_run_manifest_identity(foreign, "wf1", read)
+
+
+def test_identity_check_raises_value_error_for_no_identity_with_a_per_run_read():
+    """`None` identity with a per-run read is a caller bug, not a foreign manifest.
+
+    `read_run_manifest` never hands a caller with no identity a per-run read — without an
+    identity the per-run filename is never a candidate — so this combination can only arise
+    from a hand-built or mismatched `RunManifestRead`. The error type must say "caller bug",
+    not "escalate this tree": `RunManifestIdentityError` is not a `ValueError`, so a bare
+    `pytest.raises(ValueError)` genuinely discriminates between the two.
+    """
+    manifest = make_manifest(pipeline_run_id="wf1")
+    read = make_read("run_manifest.wf1.json", is_per_run=True)
+    with pytest.raises(ValueError) as excinfo:
+        check_run_manifest_identity(manifest, None, read)
+    assert not isinstance(excinfo.value, RunManifestIdentityError)
+    assert "run_manifest.wf1.json" in str(excinfo.value)
 
 
 def test_identity_error_is_not_swallowed_by_a_generic_parse_handler():
