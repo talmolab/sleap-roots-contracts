@@ -1031,3 +1031,140 @@ reader) and SUGGESTION-1 (the zero-candidate call) → two new Task 4 tests.
 - `bloomctl` still owns the two-value rule (filename identity `None` locally, body value
   `local-<hex8>`); the API has no helper for the body value, so that rule lives in design §3.2
   prose and must be carried into plan 3's bloomctl task.
+
+---
+
+# Revision 4 — `/review-pr` findings (PR #38)
+
+Five adversarial lenses on the open PR found two correctness bugs and three structural gaps. No
+consumer has adopted the API, so these are fixed here rather than filed. **OpenSpec order applies:
+Task 9 amends the spec delta first; Tasks 10-11 are TDD against it; Task 12 is docs.**
+
+## Designs (decided — do not re-derive)
+
+**D1 — a dangling symlink must not advance.** `open()` on a dangling symlink raises
+`FileNotFoundError(ENOENT)` (verified on Linux), so the current loop treats it as "absent" and
+falls through to the legacy manifest — a silent foreign scope, exactly what open-don't-probe
+exists to prevent. The rule must test the *condition*, not the exception type:
+
+```python
+        except FileNotFoundError as exc:
+            if not base.is_dir():
+                raise FileNotFoundError(
+                    errno.ENOENT, "run manifest directory does not exist", str(base)
+                ) from exc
+            if (base / name).is_symlink():
+                # is_symlink() uses lstat, so it is True for a DANGLING link. The link exists;
+                # its target does not. That is a broken tree, not an absent candidate, and
+                # advancing would hand this run an older run's scope.
+                raise FileNotFoundError(
+                    errno.ENOENT,
+                    "run manifest is a symlink with a missing target",
+                    str(base / name),
+                ) from exc
+            continue
+```
+
+**D2 — `None` identity with a per-run read is a caller error, not a foreign manifest.**
+`check_run_manifest_identity` currently raises `RunManifestIdentityError` ("read as run None's
+manifest"), which tells consumers to escalate a tree problem. The combination is impossible from
+`read_run_manifest`, so it is a programming error:
+
+```python
+    if pipeline_run_id is None:
+        if read.is_per_run:
+            raise ValueError(
+                "a caller with no run identity cannot have read a per-run manifest; "
+                f"{read.filename!r} was reported as per-run"
+            )
+        return
+    if not read.is_per_run:
+        return
+    if manifest.pipeline_run_id != pipeline_run_id:
+        raise RunManifestIdentityError(...)   # unchanged message
+```
+
+**D3 — a composed entry point, so the safe sequence is the short one.** Three primitives that
+four repos must compose in order, where omitting the third is silent, is the divergence this
+module exists to prevent.
+
+```python
+class LoadedRunManifest(NamedTuple):
+    manifest: RunManifest
+    read: RunManifestRead
+
+
+def load_run_manifest(directory, pipeline_run_id, *, allow_legacy) -> LoadedRunManifest | None:
+    """read -> parse -> cross-check, in that order. Returns None only when there is no
+    manifest and no run identity. Forwarding stages get `.read.data`/`.read.mode`/
+    `.read.filename`; scope-only readers use `.manifest`."""
+```
+
+The primitives stay exported as the escape hatch. Export count goes 12 -> 14.
+
+**D4 — `RunManifestRead.filename` is pinned as a bare filename.** Documented as such, and the
+test that blesses an absolute path is changed to assert that shape is *rejected* rather than
+supported.
+
+## Task 9 — amend the spec delta (docs only, no code)
+
+- [ ] **Manifest Resolution And Reading**: state that only a candidate that is genuinely absent
+      advances; a path that exists as a dangling symlink SHALL raise. Add a scenario.
+- [ ] **Run Identity Cross-Check**: state the `None`-identity rule — no-op for a non-per-run
+      read, `ValueError` for a per-run read. Add two scenarios.
+- [ ] **NEW requirement: Composed Load** — `load_run_manifest` and `LoadedRunManifest`, the
+      order it performs, and that it is the recommended entry point. At least three scenarios.
+- [ ] **MODIFIED Package Export**: fourteen names.
+- [ ] Note in **Manifest Resolution And Reading** that `RunManifestRead.filename` is always a
+      bare filename.
+- [ ] Update `proposal.md`'s What Changes and Impact.
+- [ ] `openspec validate add-per-run-manifest-filename --strict`, commit.
+
+## Task 10 — TDD: resolution hardening (D1, D2)
+
+- [ ] Failing tests first: a dangling symlink at the per-run name with a readable legacy file
+      present raises rather than returning the legacy one (**skip on Windows** —
+      `os.symlink` needs privilege there; CI is ubuntu); `None` + a per-run read raises
+      `ValueError`, not `RunManifestIdentityError`; `None` + a non-per-run read is still a no-op.
+- [ ] Confirm red, implement D1 and D2, confirm green.
+- [ ] Full suite + black + ruff. Commit.
+
+## Task 11 — TDD: the composed entry point (D3)
+
+- [ ] Failing tests first: happy path returns manifest and read; a foreign per-run manifest
+      raises `RunManifestIdentityError` *through* the composed call; no manifest and no identity
+      returns `None`; no manifest with an identity raises `RunManifestMissingError`; a malformed
+      manifest raises pydantic's `ValidationError`; the legacy path skips the cross-check.
+- [ ] Confirm red, implement, confirm green. Export both new names.
+- [ ] Full suite + black + ruff. Commit.
+
+## Task 12 — docs and test-quality (no behavior change)
+
+- [ ] `run_manifest.py:29-30` — the comment calling `RUN_MANIFEST_FILENAME` the "Single source of
+      truth for the manifest's on-disk filename" is false by this change's own spec delta.
+      Reword as the delta's requirement was reworded.
+- [ ] `run_manifest.py:33` — drop the "may not begin with a dot" half of the collision argument;
+      only non-emptiness matters.
+- [ ] **Reader-before-writer ordering is normative and currently lives only in another repo's
+      design doc.** Add it to the module docstring and `README.md`: adopting the writer first
+      makes un-adopted readers find no legacy manifest and fall back to whole-tree discovery,
+      which is worse than the defect being fixed.
+- [ ] Document that a maximum-length run id leaves no headroom for a forwarder's temp filename
+      (`mkstemp(prefix=name + ".")` would exceed `NAME_MAX`), so writers must size their own.
+- [ ] `test_read_returns_the_source_file_mode` — `chmod` the source to `0o600` first so it can
+      distinguish `fstat(fd)` from `stat(path)`; **skip on Windows**.
+- [ ] `test_read_propagates_a_permission_error_rather_than_advancing` — record opened paths and
+      assert the legacy file was not read, matching its sibling.
+- [ ] Both `Path.open` monkeypatches — match on the full path, not the basename.
+- [ ] Fix this plan's own Task 5 sample, which still shows the superseded
+      `check_run_manifest_identity(..., filename: str)`.
+- [ ] Full suite + black + ruff + `openspec validate --strict`. Commit.
+
+## Deliberately NOT fixed here
+
+- The `base.is_dir()` race (`os.open(..., O_DIRECTORY)` + `dir_fd=`) — a real improvement and a
+  real refactor of the read loop, days after the rest is verified. File it.
+- Narrowing `_RUN_ID_PATTERN` to lowercase-only — would reject ids the spec currently accepts,
+  so it is a breaking narrowing, not a fix.
+- `is_run_manifest_name` / cleanup-glob helper — no caller yet; add it with the cleanup work.
+- A frozen dataclass instead of `NamedTuple` — churn without a caller to protect.
