@@ -28,7 +28,20 @@ from .models import (
 from .params import resolve_params
 from .prediction_manifest import PredictionArtifact, PredictionManifest
 from .registry import TraitDefinition, load_registry, validate_trait
-from .run_manifest import RUN_MANIFEST_FILENAME, RunManifest
+from .run_manifest import (
+    PIPELINE_RUN_ID_ENV_VAR,
+    RUN_MANIFEST_FILENAME,
+    RunManifest,
+    RunManifestError,
+    RunManifestIdentityError,
+    RunManifestMissingError,
+    RunManifestRead,
+    check_run_manifest_identity,
+    pipeline_run_id_from_env,
+    read_run_manifest,
+    run_manifest_filename,
+    run_manifest_name_for_writing,
+)
 
 # Single source of version truth is pyproject.toml; resolve it from installed
 # package metadata so the version (and the schema $id derived from it in
@@ -60,6 +73,16 @@ __all__ = [
     # JSON Schema).
     "RunManifest",
     "RUN_MANIFEST_FILENAME",
+    "PIPELINE_RUN_ID_ENV_VAR",
+    "RunManifestError",
+    "RunManifestIdentityError",
+    "RunManifestMissingError",
+    "RunManifestRead",
+    "check_run_manifest_identity",
+    "pipeline_run_id_from_env",
+    "read_run_manifest",
+    "run_manifest_filename",
+    "run_manifest_name_for_writing",
     "TraitDefinition",
     "load_registry",
     "validate_trait",

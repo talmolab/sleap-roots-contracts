@@ -143,6 +143,17 @@ class RunManifestMissingError(RunManifestError, LookupError):
     """
 
 
+class RunManifestIdentityError(RunManifestError):
+    """A manifest read under a per-run filename names a different run.
+
+    Deliberately **not** a ``ValueError``, unlike a parse failure. A malformed manifest and a
+    manifest belonging to someone else are different problems with different responses, and
+    consumers wrap parsing in handlers that catch ``ValueError`` (pydantic's
+    ``ValidationError`` is one). Sharing that base would let a generic parse handler swallow
+    the stronger signal.
+    """
+
+
 class RunManifestRead(NamedTuple):
     """One manifest read: where it came from, its bytes, its mode, and which convention.
 
@@ -293,3 +304,38 @@ class RunManifest(BaseModel):
                 "scan_keys must not contain a blank or whitespace-only entry"
             )
         return self
+
+
+def check_run_manifest_identity(
+    manifest: RunManifest,
+    pipeline_run_id: str,
+    filename: str,
+) -> None:
+    """Verify a per-run-named manifest names the run that is reading it.
+
+    A no-op when ``filename`` is ``RUN_MANIFEST_FILENAME``: the legacy name carries no run
+    identity, and before per-run naming the producer overwrote ``pipeline_run_id`` on every
+    merge, so a legacy file routinely names some earlier run. Callers may therefore pass
+    whatever :func:`read_run_manifest` returned without testing the name themselves.
+
+    For a per-run-named file this is the cross-check bloom#703 asked for, possible for the
+    first time.
+
+    Args:
+        manifest: The parsed manifest.
+        pipeline_run_id: The reader's own run identity.
+        filename: The name it was read from.
+
+    Returns:
+        None.
+
+    Raises:
+        RunManifestIdentityError: If a per-run-named manifest names a different run.
+    """
+    if filename == RUN_MANIFEST_FILENAME:
+        return
+    if manifest.pipeline_run_id != pipeline_run_id:
+        raise RunManifestIdentityError(
+            f"{filename} was read as run {pipeline_run_id!r}'s manifest but names run "
+            f"{manifest.pipeline_run_id!r}"
+        )

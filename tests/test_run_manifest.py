@@ -9,7 +9,10 @@ from sleap_roots_contracts.run_manifest import (
     PIPELINE_RUN_ID_ENV_VAR,
     RUN_MANIFEST_FILENAME,
     RunManifest,
+    RunManifestError,
+    RunManifestIdentityError,
     RunManifestMissingError,
+    check_run_manifest_identity,
     pipeline_run_id_from_env,
     read_run_manifest,
     run_manifest_filename,
@@ -397,3 +400,72 @@ def test_read_rejects_allow_legacy_positionally(tmp_path):
     """Keyword-only: `read_run_manifest(dir, id, True)` must not silently mean allow_legacy."""
     with pytest.raises(TypeError):
         read_run_manifest(tmp_path, "wf1", True)
+
+
+def test_identity_check_passes_for_the_owning_run():
+    """The ordinary case: the file this run wrote names this run."""
+    manifest = make_manifest(pipeline_run_id="wf1")
+    assert check_run_manifest_identity(manifest, "wf1", "run_manifest.wf1.json") is None
+
+
+def test_identity_check_rejects_a_foreign_manifest():
+    """A per-run-named file naming a different run means the tree is not what we think."""
+    manifest = make_manifest(pipeline_run_id="wf2")
+    with pytest.raises(RunManifestIdentityError) as excinfo:
+        check_run_manifest_identity(manifest, "wf1", "run_manifest.wf1.json")
+    message = str(excinfo.value)
+    assert "wf1" in message
+    assert "wf2" in message
+    assert "run_manifest.wf1.json" in message
+
+
+def test_identity_check_is_a_noop_for_the_legacy_filename():
+    """The legacy name carries no identity, so a mismatch there is expected, not an error.
+
+    Without this, all four call sites would write the same
+    `if filename != RUN_MANIFEST_FILENAME` guard themselves.
+    """
+    manifest = make_manifest(pipeline_run_id="some-older-run")
+    assert check_run_manifest_identity(manifest, "wf1", RUN_MANIFEST_FILENAME) is None
+
+
+def test_identity_error_is_not_swallowed_by_a_generic_parse_handler():
+    """An identity mismatch must survive `except ValueError` around manifest parsing.
+
+    pydantic's ValidationError IS a ValueError, and consumers wrap parsing in handlers that
+    catch it. If RunManifestIdentityError were also a ValueError, "this tree is not the one
+    you think it is" would be swallowed as though it were a malformed file.
+    """
+    assert not issubclass(RunManifestIdentityError, ValueError)
+
+
+def test_both_errors_share_one_catchable_base():
+    """Consumers can catch RunManifestError alone and re-raise as their own type."""
+    assert issubclass(RunManifestIdentityError, RunManifestError)
+    assert issubclass(RunManifestMissingError, RunManifestError)
+    assert issubclass(RunManifestMissingError, LookupError)
+
+
+def test_new_names_are_exported_from_the_package_root():
+    """Every new name is importable from the package root and listed in __all__."""
+    import sleap_roots_contracts as pkg
+
+    for name in (
+        "PIPELINE_RUN_ID_ENV_VAR",
+        "RunManifestError",
+        "RunManifestIdentityError",
+        "RunManifestMissingError",
+        "RunManifestRead",
+        "check_run_manifest_identity",
+        "pipeline_run_id_from_env",
+        "read_run_manifest",
+        "run_manifest_filename",
+        "run_manifest_name_for_writing",
+    ):
+        assert hasattr(pkg, name), name
+        assert name in pkg.__all__, name
+
+
+def test_legacy_filename_constant_is_unchanged():
+    """This release is additive — the existing constant keeps its exact value."""
+    assert RUN_MANIFEST_FILENAME == "run_manifest.json"
