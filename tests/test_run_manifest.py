@@ -1,5 +1,7 @@
 """Tests for the run-manifest contract (RunManifest)."""
 
+from pathlib import Path
+
 import pytest
 from pydantic import ValidationError
 
@@ -7,7 +9,9 @@ from sleap_roots_contracts.run_manifest import (
     PIPELINE_RUN_ID_ENV_VAR,
     RUN_MANIFEST_FILENAME,
     RunManifest,
+    RunManifestMissingError,
     pipeline_run_id_from_env,
+    read_run_manifest,
     run_manifest_filename,
     run_manifest_name_for_writing,
 )
@@ -248,3 +252,132 @@ def test_name_for_writing_rejects_an_invalid_id():
     """An unsafe id fails at the writer too, not only at the reader."""
     with pytest.raises(ValueError):
         run_manifest_name_for_writing("../escape")
+
+
+def test_read_prefers_the_per_run_manifest(tmp_path):
+    """With both present, the run's own manifest wins."""
+    (tmp_path / "run_manifest.wf1.json").write_bytes(b'{"per_run": true}')
+    (tmp_path / RUN_MANIFEST_FILENAME).write_bytes(b'{"legacy": true}')
+    result = read_run_manifest(tmp_path, "wf1", allow_legacy=True)
+    assert result.filename == "run_manifest.wf1.json"
+    assert result.data == b'{"per_run": true}'
+    assert result.is_per_run is True
+
+
+def test_read_falls_back_to_the_legacy_manifest(tmp_path):
+    """Mid-rollout, a new reader still finds an old writer's file."""
+    (tmp_path / RUN_MANIFEST_FILENAME).write_bytes(b'{"legacy": true}')
+    result = read_run_manifest(tmp_path, "wf1", allow_legacy=True)
+    assert result.filename == RUN_MANIFEST_FILENAME
+    assert result.is_per_run is False
+
+
+def test_read_refuses_the_legacy_manifest_when_the_fallback_is_off(tmp_path):
+    """Post-migration, a stale legacy file must not silently re-scope an identified run."""
+    (tmp_path / RUN_MANIFEST_FILENAME).write_bytes(b'{"legacy": true}')
+    with pytest.raises(RunManifestMissingError):
+        read_run_manifest(tmp_path, "wf1", allow_legacy=False)
+
+
+def test_read_still_uses_the_legacy_name_without_an_identity_when_the_fallback_is_off(
+    tmp_path,
+):
+    """allow_legacy governs identified runs only — it must not unscope local ones.
+
+    With no run identity, RUN_MANIFEST_FILENAME is not a fallback: per design §2.3 it is the
+    correct and only name. Gating it on allow_legacy would make the fleet-wide flip in design
+    §4 step 6 silently regress every local-WSL2 run from scoped to unscoped.
+    """
+    (tmp_path / RUN_MANIFEST_FILENAME).write_bytes(b'{"legacy": true}')
+    result = read_run_manifest(tmp_path, None, allow_legacy=False)
+    assert result.filename == RUN_MANIFEST_FILENAME
+    assert result.is_per_run is False
+
+
+def test_read_returns_none_without_an_identity_when_nothing_is_present_and_fallback_is_off(
+    tmp_path,
+):
+    """The degenerate call still has one candidate, and its absence is not an error."""
+    assert read_run_manifest(tmp_path, None, allow_legacy=False) is None
+
+
+def test_read_rejects_a_blank_run_id(tmp_path):
+    """A blank-but-not-None id is invalid, not 'no identity' — it must not silently
+    become the legacy path."""
+    with pytest.raises(ValueError):
+        read_run_manifest(tmp_path, "", allow_legacy=True)
+
+
+def test_read_reports_a_missing_directory_as_such(tmp_path):
+    """ENOENT on the directory is also FileNotFoundError, so say which is missing.
+
+    Without this, a mis-mounted stage-in — the likelier cause under Argo — reports as a
+    missing manifest and sends the reader hunting the wrong problem.
+    """
+    missing = tmp_path / "nope"
+    with pytest.raises(FileNotFoundError) as excinfo:
+        read_run_manifest(missing, "wf1", allow_legacy=True)
+    assert "nope" in str(excinfo.value)
+
+
+def test_read_returns_the_source_file_mode(tmp_path):
+    """predict forwards the manifest and must reproduce its mode without a second stat."""
+    target = tmp_path / RUN_MANIFEST_FILENAME
+    target.write_bytes(b"{}")
+    result = read_run_manifest(tmp_path, None, allow_legacy=True)
+    assert result.mode == (target.stat().st_mode & 0o777)
+
+
+def test_read_raises_when_the_run_id_is_known_and_nothing_is_present(tmp_path):
+    """Under orchestration a missing manifest is a fault, never 'scope to everything'."""
+    with pytest.raises(RunManifestMissingError) as excinfo:
+        read_run_manifest(tmp_path, "wf1", allow_legacy=True)
+    assert "run_manifest.wf1.json" in str(excinfo.value)
+
+
+def test_read_returns_none_when_there_is_no_run_id_and_nothing_is_present(tmp_path):
+    """Locally, an absent manifest keeps today's unscoped behavior."""
+    assert read_run_manifest(tmp_path, None, allow_legacy=True) is None
+
+
+def test_read_ignores_a_per_run_manifest_when_the_run_id_is_unknown(tmp_path):
+    """A caller with no identity must not adopt some other run's scope."""
+    (tmp_path / "run_manifest.wf1.json").write_bytes(b'{"per_run": true}')
+    assert read_run_manifest(tmp_path, None, allow_legacy=True) is None
+
+
+def test_read_propagates_an_invalid_run_id(tmp_path):
+    """An unsafe id is a programming error, surfaced as ValueError not 'missing'."""
+    with pytest.raises(ValueError):
+        read_run_manifest(tmp_path, "../escape", allow_legacy=True)
+
+
+def test_read_propagates_a_permission_error_rather_than_advancing(
+    tmp_path, monkeypatch
+):
+    """An unreadable manifest must never be mistaken for an absent one.
+
+    This is the reason the function opens rather than probing: a boolean predicate collapses
+    EACCES into "absent", which would fall through to a stale legacy manifest. bloomctl's
+    ingest.py avoids .is_file() for exactly this reason.
+    """
+    target = tmp_path / "run_manifest.wf1.json"
+    target.write_bytes(b"{}")
+    (tmp_path / RUN_MANIFEST_FILENAME).write_bytes(b'{"legacy": true}')
+
+    real_open = Path.open
+
+    def deny(self, *args, **kwargs):
+        if self.name == "run_manifest.wf1.json":
+            raise PermissionError(13, "Permission denied")
+        return real_open(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", deny)
+    with pytest.raises(PermissionError):
+        read_run_manifest(tmp_path, "wf1", allow_legacy=True)
+
+
+def test_read_accepts_a_string_directory(tmp_path):
+    """Consumers pass str paths in places; accept them like the rest of the library."""
+    (tmp_path / RUN_MANIFEST_FILENAME).write_bytes(b"{}")
+    assert read_run_manifest(str(tmp_path), None, allow_legacy=True).data == b"{}"

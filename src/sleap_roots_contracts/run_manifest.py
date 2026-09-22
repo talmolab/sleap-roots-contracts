@@ -10,6 +10,8 @@ whatever sidecars happen to be present (see talmolab/sleap-roots-pipeline#37).
 import os
 import re
 from collections.abc import Mapping
+from pathlib import Path
+from typing import NamedTuple
 
 from pydantic import BaseModel, ConfigDict, model_validator
 
@@ -120,6 +122,135 @@ def run_manifest_name_for_writing(pipeline_run_id: str | None) -> str:
     if pipeline_run_id is None:
         return RUN_MANIFEST_FILENAME
     return run_manifest_filename(pipeline_run_id)
+
+
+class RunManifestError(Exception):
+    """Base for every run-manifest failure this module raises.
+
+    Deliberately not a ``ValueError``. Pydantic's ``ValidationError`` is one, and consumers
+    already wrap manifest parsing in ``except ValueError`` — inheriting from it would let a
+    generic parse handler swallow "this tree is not the one you think it is".
+    """
+
+
+class RunManifestMissingError(RunManifestError, LookupError):
+    """No run manifest was found for a caller that knows which run it is.
+
+    Also a ``LookupError`` so a consumer can catch it alongside its own not-found handling
+    while still re-raising it as that repo's own error type (``click.ClickException`` in
+    bloomctl, for instance).
+    """
+
+
+class RunManifestRead(NamedTuple):
+    """One manifest read: where it came from, its bytes, its mode, and which convention.
+
+    Consumers SHOULD use attribute access rather than tuple unpacking, so that fields can be
+    appended without breaking them.
+
+    Attributes:
+        filename: The name actually read, so a forwarding stage can republish under it.
+        data: The raw bytes, returned rather than a path so there is no window in which the
+            file changes between being found and being read.
+        mode: The source file's permission bits, taken by ``fstat`` on the descriptor already
+            open — so it describes the bytes returned, not whatever is at that path later. A
+            forwarding stage needs it: ``mkstemp`` creates at ``0600``, and the next container
+            runs as a different uid on the same shared mount.
+        is_per_run: Whether ``filename`` is the per-run form. Consumers use it to decide
+            whether the identity cross-check applies, instead of each comparing against
+            ``RUN_MANIFEST_FILENAME`` themselves.
+    """
+
+    filename: str
+    data: bytes
+    mode: int
+    is_per_run: bool
+
+
+def read_run_manifest(
+    directory: str | Path,
+    pipeline_run_id: str | None,
+    *,
+    allow_legacy: bool,
+) -> RunManifestRead | None:
+    """Read the run manifest this caller should use, if there is one.
+
+    Candidate order depends on whether a run identity exists:
+
+    * With one — the per-run filename, then ``RUN_MANIFEST_FILENAME`` if ``allow_legacy``.
+    * Without one — ``RUN_MANIFEST_FILENAME`` alone, **regardless of** ``allow_legacy``,
+      because with no identity that name is not a legacy fallback but the correct name
+      (design §2.3). Gating it would silently unscope every local run when the fleet flips.
+
+    Each candidate is *opened*, not probed: only ``FileNotFoundError`` advances to the next
+    one, so an unreadable manifest raises instead of being mistaken for an absent one and
+    falling through to an older run's scope.
+
+    Args:
+        directory: Directory to look in. Not searched recursively. Its own absence raises
+            ``FileNotFoundError`` naming the directory, rather than being reported as a
+            missing manifest — under Argo a mis-mounted stage-in is the likelier cause.
+        pipeline_run_id: This run's identity, or ``None`` (see
+            :func:`pipeline_run_id_from_env`). A blank string is **not** ``None``: it is an
+            invalid id and raises ``ValueError``.
+        allow_legacy: Whether a caller that *knows its own identity* may accept a manifest
+            written under the identity-less name. Required and keyword-only, with no default,
+            so every call site states its position and the fleet's migration state is
+            greppable. Pass ``True`` while any stage may still be writing the legacy name;
+            pass ``False`` once the fleet is migrated and the stale files are deleted, which
+            is what makes the missing-manifest error reachable at all. Ignored when
+            ``pipeline_run_id`` is ``None``.
+
+    Returns:
+        A :class:`RunManifestRead`, or ``None`` when nothing was found and
+        ``pipeline_run_id`` is ``None``.
+
+    Raises:
+        RunManifestMissingError: If ``pipeline_run_id`` is not ``None`` and no candidate was
+            found. Deliberately not ``None``: every consumer treats an absent manifest as
+            "discover everything here", which under a shared output tree means processing and
+            ingesting other runs' scans. A stage that knows its run id is running under
+            orchestration, where a manifest is always written, so its absence is a fault.
+        ValueError: If ``pipeline_run_id`` is not usable as a filename component.
+        OSError: Any failure other than the candidate being absent — notably
+            ``PermissionError``.
+    """
+    base = Path(directory)
+
+    candidates: list[tuple[str, bool]] = []
+    if pipeline_run_id is None:
+        # No identity: the legacy name is the right name, not a fallback, so `allow_legacy`
+        # has no say. Gating it here would unscope every non-Argo run at design §4 step 6.
+        candidates.append((RUN_MANIFEST_FILENAME, False))
+    else:
+        candidates.append((run_manifest_filename(pipeline_run_id), True))
+        if allow_legacy:
+            candidates.append((RUN_MANIFEST_FILENAME, False))
+
+    for name, is_per_run in candidates:
+        try:
+            with (base / name).open("rb") as handle:
+                data = handle.read()
+                mode = os.fstat(handle.fileno()).st_mode & 0o777
+        except FileNotFoundError:
+            # Distinguish "this candidate is absent" from "the directory is not there" —
+            # both are FileNotFoundError, and only the first should advance.
+            if not base.is_dir():
+                raise FileNotFoundError(
+                    f"run manifest directory does not exist: {base.as_posix()}"
+                ) from None
+            continue
+        return RunManifestRead(
+            filename=name, data=data, mode=mode, is_per_run=is_per_run
+        )
+
+    if pipeline_run_id is not None:
+        looked_for = ", ".join(repr(name) for name, _ in candidates)
+        raise RunManifestMissingError(
+            f"no run manifest for run {pipeline_run_id!r} in {base.as_posix()}: "
+            f"looked for {looked_for}"
+        )
+    return None
 
 
 class RunManifest(BaseModel):
