@@ -7,6 +7,7 @@ processing to exactly the `scan_keys` a run was given, instead of directory-wide
 whatever sidecars happen to be present (see talmolab/sleap-roots-pipeline#37).
 """
 
+import errno
 import os
 import re
 from collections.abc import Mapping
@@ -232,13 +233,13 @@ def read_run_manifest(
             with (base / name).open("rb") as handle:
                 data = handle.read()
                 mode = os.fstat(handle.fileno()).st_mode & 0o777
-        except FileNotFoundError:
+        except FileNotFoundError as exc:
             # Distinguish "this candidate is absent" from "the directory is not there" —
             # both are FileNotFoundError, and only the first should advance.
             if not base.is_dir():
                 raise FileNotFoundError(
-                    f"run manifest directory does not exist: {base.as_posix()}"
-                ) from None
+                    errno.ENOENT, "run manifest directory does not exist", str(base)
+                ) from exc
             continue
         return RunManifestRead(
             filename=name, data=data, mode=mode, is_per_run=is_per_run

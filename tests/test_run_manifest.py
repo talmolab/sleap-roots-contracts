@@ -381,3 +381,19 @@ def test_read_accepts_a_string_directory(tmp_path):
     """Consumers pass str paths in places; accept them like the rest of the library."""
     (tmp_path / RUN_MANIFEST_FILENAME).write_bytes(b"{}")
     assert read_run_manifest(str(tmp_path), None, allow_legacy=True).data == b"{}"
+
+
+def test_read_requires_allow_legacy_to_be_passed(tmp_path):
+    """No default: a caller must state its position on the legacy fallback.
+
+    A default would let the fleet-wide migration state go unstated at a call site, which is
+    the hazard the required parameter exists to prevent.
+    """
+    with pytest.raises(TypeError):
+        read_run_manifest(tmp_path, "wf1")
+
+
+def test_read_rejects_allow_legacy_positionally(tmp_path):
+    """Keyword-only: `read_run_manifest(dir, id, True)` must not silently mean allow_legacy."""
+    with pytest.raises(TypeError):
+        read_run_manifest(tmp_path, "wf1", True)
