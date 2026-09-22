@@ -3,7 +3,11 @@
 import pytest
 from pydantic import ValidationError
 
-from sleap_roots_contracts.run_manifest import RUN_MANIFEST_FILENAME, RunManifest
+from sleap_roots_contracts.run_manifest import (
+    RUN_MANIFEST_FILENAME,
+    RunManifest,
+    run_manifest_filename,
+)
 from sleap_roots_contracts.schema import MODELS
 
 
@@ -137,3 +141,57 @@ def test_manifest_round_trips_through_a_real_file(tmp_path):
     reloaded = RunManifest.model_validate_json(path.read_text(encoding="utf-8"))
 
     assert reloaded == manifest
+
+
+def test_run_manifest_filename_is_built_from_the_run_id():
+    """The per-run filename interpolates the run id between prefix and suffix."""
+    assert (
+        run_manifest_filename("sleap-roots-pipeline-9s92h")
+        == "run_manifest.sleap-roots-pipeline-9s92h.json"
+    )
+
+
+def test_run_manifest_filename_accepts_an_id_of_the_local_placeholder_shape():
+    """An id of this shape is filename-safe.
+
+    This asserts only that the shape passes validation. It is NOT sanction for naming a file
+    after bloomctl's `local-<uuid8>` placeholder: design §2.3 forbids that, because no other
+    process can reproduce another's placeholder, so a writer must pass `None` here and use
+    `run_manifest_name_for_writing`, which selects the legacy name when there is no identity.
+    """
+    assert run_manifest_filename("local-ab12cd34") == "run_manifest.local-ab12cd34.json"
+
+
+def test_run_manifest_filename_accepts_the_maximum_length_id():
+    """237 is the positive boundary: 237 + len("run_manifest.") + len(".json") == 255."""
+    longest = "a" * 237
+    assert len(run_manifest_filename(longest)) == 255
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        "",
+        "   ",
+        "..",
+        ".",
+        "../etc/passwd",
+        "a/b",
+        "a\\b",
+        ".hidden",
+        "-leading-dash",
+        "has space",
+        "has\x00null",
+        "a" * 238,
+    ],
+)
+def test_run_manifest_filename_rejects_an_unsafe_id(bad):
+    """The id becomes a path component, so anything unsafe raises rather than escaping."""
+    with pytest.raises(ValueError):
+        run_manifest_filename(bad)
+
+
+def test_run_manifest_filename_rejects_a_non_string_id():
+    """A non-str id is a programming error, surfaced as ValueError not TypeError."""
+    with pytest.raises(ValueError):
+        run_manifest_filename(12345)
