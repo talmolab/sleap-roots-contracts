@@ -2,281 +2,104 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+**Revision 2 (2026-09-22)** — rewritten after `/review-openspec`. Revision 1's `exists`-predicate
+API is gone; see "What changed in revision 2". Do not implement from a cached copy of revision 1.
+
 **Goal:** Add the naming and resolution contract that lets each pipeline run read its own
 `run_manifest.<pipeline_run_id>.json` instead of a shared `run_manifest.json` that accumulates
 every run's `scan_keys`.
 
-**Architecture:** Four additions to `run_manifest.py`, all **pure** — no filesystem access. A
-filename builder, an env reader, a resolution-policy function that takes an `exists` predicate
-supplied by the caller, and an identity cross-check. The policy lives here so `bloomctl`,
-`sleap-roots-predict` and `sleap-roots` share one definition instead of three; the I/O stays in
-those consumers, which preserves this library's no-filesystem-I/O invariant.
+**Architecture:** Six functions and two exceptions in `run_manifest.py`. One reader
+(`read_run_manifest`) owns the candidate order, the open, and the fail-loud decision for all four
+consumer call sites, so none of them re-invents it. It returns the bytes it read, not a path, so
+there is no probe/read window.
 
 **Tech Stack:** Python ≥3.11, Pydantic v2, pytest, ruff (pydocstyle/google), black (line-length 88), uv.
 
 **Spec:** `sleap-roots-pipeline/docs/superpowers/specs/2026-09-21-per-run-run-manifest-identity-design.md`
+(at commit `ab90185` or later — earlier revisions carry the withdrawn purity premise).
 
 ## Global Constraints
 
-- **No filesystem, network, or DB I/O in `src/`.** Stated in `openspec/project.md` as a defining
-  property of this library. This is why the resolver takes an `exists` callable (see Deviation).
-- **Purely additive.** `RUN_MANIFEST_FILENAME` and `RunManifest` keep their current behavior and
-  values; nothing existing changes shape. Consumers on 0.1.0a8 must keep working untouched.
+- **No ambient, caller-supplied-directory reads in the contract-model surface.** This is the real
+  invariant, and it is narrower than `openspec/project.md` currently claims. `emit_schema()`
+  (`schema.py:93-98`) writes files, `_default_schema_dir()` falls back to `Path.cwd()`, and
+  `registry.py`/`examples/` read packaged resources. `read_run_manifest` is a deliberate,
+  documented exception for one named file; `project.md`'s wording gets corrected in Task 7.
+- **Purely additive to existing names.** `RUN_MANIFEST_FILENAME` and `RunManifest` keep their
+  current values and behavior. 0.1.0a8 consumers must keep working untouched.
 - **Target version `0.1.0a9`.** Current `origin/main` is `0.1.0a8` (tagged). Do **not** hand-edit
   `pyproject.toml`'s version — the Version Bump workflow (`.github/workflows/version.yml`,
-  `workflow_dispatch`) owns it and opens its own PR, where CHANGELOG and schema regeneration land.
-- **No JSON Schema emission.** `RunManifest` is a producer↔producer shape; `schema.MODELS` must
-  stay `{result_envelope, analysis_input}`. There is an existing test asserting this — keep it green.
+  `workflow_dispatch`) owns it and opens its own PR.
+- **No JSON Schema emission.** `schema.MODELS` must stay `{result_envelope, analysis_input}`.
+- **The run-id cap is 237, not 253.** The filename adds 18 characters (`run_manifest.` +
+  `.json`) and 237 + 18 = 255 = `NAME_MAX`. Kubernetes allows 253-character names, which this
+  deliberately cannot support; Argo's `generateName` emits ~26.
 - Docstrings required in `src/` (google convention); tests exempt.
-- Run checks with: `uv run pytest -v`, `uv run black --check src tests`, `uv run ruff check src tests`.
+- Checks: `uv run pytest -v`, `uv run black --check src tests`, `uv run ruff check src tests`.
 
-## Deviation from the approved design — read before Task 2
+## What changed in revision 2
 
-The design's §3.1 proposed `resolve_run_manifest_path(directory, pipeline_run_id) -> Path | None`,
-which stats the filesystem. That contradicts `openspec/project.md`, which states this library does
-**no filesystem I/O** — a property Bloom-side consumers rely on and that the whole "dependency-light
-leaf library" framing rests on.
-
-This plan therefore ships `resolve_run_manifest_name(pipeline_run_id, exists)` instead: identical
-policy (per-run name → legacy name → raise-or-None), but the caller supplies the existence
-predicate. Single definition of the policy is preserved — which was the actual goal — and the
-policy becomes unit-testable with a dict-backed fake instead of `tmp_path`. Consumers gain three
-lines each (`lambda name: (directory / name).is_file()`).
-
-**This is a refinement, not a reversal.** Flag it if you disagree before starting Task 2.
+| revision 1 | revision 2 | why |
+|---|---|---|
+| `resolve_run_manifest_name(id, exists)` | `read_run_manifest(directory, id, *, allow_legacy)` returning `(filename, data, is_per_run)` | the `exists` boolean collapsed `EACCES` into "absent" (falling through to the stale legacy file, which `ingest.py:115-127` deliberately guards against) and reopened a probe/read window `run_batch` works to avoid |
+| justified by "the library does no filesystem I/O" | justified by "no caller-directory reads in the model surface" | the original premise was false — see Global Constraints |
+| legacy fallback unconditional | `allow_legacy` keyword-only and **required** | unconditional fallback always succeeds in the shared trees, so `RunManifestMissingError` could never fire and the fail-loud guarantee was decorative (design §2.9) |
+| — | added `run_manifest_name_for_writing`, exported `PIPELINE_RUN_ID_ENV_VAR` | otherwise the writer-side rule and the env-var name live only in prose, and bloomctl keeps a hardcoded string |
+| cross-check always applies | no-op on the legacy filename | otherwise all four sites write the same `if filename != RUN_MANIFEST_FILENAME` guard |
+| cap 200 | cap 237 | 200 could reject a legal name and then crash every stage |
+| delta purely ADDED | one **MODIFIED** requirement | "single source of truth for the manifest's on-disk filename" becomes false once a second convention exists |
 
 ## File Structure
 
 | File | Responsibility |
 |---|---|
-| `src/sleap_roots_contracts/run_manifest.py` | modify — add the four functions + two exceptions alongside `RunManifest` and `RUN_MANIFEST_FILENAME` |
-| `src/sleap_roots_contracts/__init__.py` | modify — re-export the new names, extend `__all__` |
-| `tests/test_run_manifest.py` | modify — add tests for each new behavior |
-| `openspec/changes/add-per-run-manifest-filename/` | create — proposal, tasks, spec delta on `run-manifest-contract` |
+| `src/sleap_roots_contracts/run_manifest.py` | modify — the six functions + two exceptions |
+| `src/sleap_roots_contracts/__init__.py` | modify — re-export, extend `__all__` |
+| `tests/test_run_manifest.py` | modify — tests per task |
+| `openspec/changes/add-per-run-manifest-filename/` | modify — proposal, tasks, delta (Task 1 revision) |
 | `docs/CHANGELOG.md` | modify — Unreleased entry |
-| `.gitignore` | modify — add `.worktrees/` (currently only in `.git/info/exclude`, untracked) |
-
-Everything lives in `run_manifest.py` rather than a new module: it is currently ~60 lines, the
-additions are ~70, and the filename convention and the model that lives in the file are one
-concept. Splitting would separate `RUN_MANIFEST_FILENAME` from the function that generalizes it.
+| `README.md` | modify — the run-manifest paragraph (lines ~53-57) |
+| `openspec/project.md` | modify — two false claims, plus the new API |
 
 ---
 
-### Task 1: OpenSpec proposal for the contract change
+### Task 1R: Revise the OpenSpec proposal
 
-**Files:**
-- Create: `openspec/changes/add-per-run-manifest-filename/proposal.md`
-- Create: `openspec/changes/add-per-run-manifest-filename/tasks.md`
-- Create: `openspec/changes/add-per-run-manifest-filename/specs/run-manifest-contract/spec.md`
+**Files:** all three under `openspec/changes/add-per-run-manifest-filename/`.
 
-**Interfaces:**
-- Consumes: nothing.
-- Produces: the requirement text Tasks 2–5 implement. No code.
+Task 1 already landed (`1113874`). This revises it against the review. The full replacement text
+for `proposal.md` and the spec delta is in the dispatch brief for this task — use it verbatim.
 
-- [ ] **Step 1: Read the existing capability spec so the delta matches its voice**
+Key deltas from the committed version:
+- The `## ADDED Requirements` section replaces `resolve_run_manifest_name` with
+  `read_run_manifest`, adds `run_manifest_name_for_writing`, adds `PIPELINE_RUN_ID_ENV_VAR` to
+  the export requirement, and raises the cap to 237.
+- A new `## MODIFIED Requirements` section restates **Well-Known Filename Constant** in full
+  (OpenSpec requires the complete text, not a diff), adding one sentence that it is the name used
+  when no run identity is available, and cross-referencing the per-run convention.
+- New scenarios: the 237-char positive boundary; a non-`str` id; a blank-but-not-`None` id;
+  `EACCES` propagating rather than advancing to the next candidate; `allow_legacy=False`
+  refusing the legacy file.
+- `## Impact` gains `README.md` and `openspec/project.md`.
 
-Run: `cat openspec/specs/run-manifest-contract/spec.md`
-
-Note its five existing requirements. You are **adding** requirements, not modifying them —
-`RUN_MANIFEST_FILENAME` keeps its literal value, so "Well-Known Filename Constant" is untouched.
-
-- [ ] **Step 2: Write `proposal.md`**
-
-```markdown
-# Add a per-run run-manifest filename and its resolution policy
-
-## Why
-
-`bloomctl`'s `write_run_manifest` unions `scan_keys` into a single shared `run_manifest.json`
-and never prunes, and `sleap-roots-pipeline#37` established that `out_dir` is permanently shared
-across all runs by design (isolating it breaks the skip-if-done the batch oracle depends on). So
-every run operates on the union of all runs. Measured four times on 2026-09-21 on current pins: a
-1-scan request carried a 12-key manifest and write-back delivered all 12, creating
-`cyl_trait_sources` rows for eleven unrequested scans.
-
-Fix shape (a) from talmolab/sleap-roots-pipeline#71: give the manifest a per-run *identity*
-while artifacts stay shared, so dedup keeps working. That needs a filename convention, and it
-needs one shared definition of how a reader resolves and falls back — three consumers
-(`bloomctl`, `sleap-roots-predict`, `sleap-roots`) must agree exactly or the rollout skews.
-
-## What Changes
-
-- **ADDED** `run_manifest_filename(pipeline_run_id)` — the per-run filename, with validation that
-  the id is safe to use as a path component.
-- **ADDED** `pipeline_run_id_from_env()` — one definition of "which run am I", read from
-  `ARGO_WORKFLOW_NAME`.
-- **ADDED** `resolve_run_manifest_name(pipeline_run_id, exists)` — the resolution policy: per-run
-  name, then the legacy name, then raise if the run id is known and neither is present, else
-  `None`. Pure: the caller supplies `exists`, so the library keeps doing no filesystem I/O.
-- **ADDED** `check_run_manifest_identity(...)` — the cross-check that a per-run-named manifest
-  names the run reading it. This is bloom#703's cross-check, possible for the first time.
-- **ADDED** `RunManifestMissingError`, `RunManifestIdentityError`.
-
-`RUN_MANIFEST_FILENAME` and `RunManifest` are unchanged. This release is additive; 0.1.0a8
-consumers are unaffected until they adopt the new names.
-
-## Impact
-
-- Affected specs: `run-manifest-contract`
-- Affected code: `src/sleap_roots_contracts/run_manifest.py`, `__init__.py`
-- Downstream (separate changes, not this one): `salk-bloom` bloomctl writer + ingest reader,
-  `sleap-roots-predict`, `sleap-roots` traits, then template pin bumps in `sleap-roots-pipeline`.
-```
-
-- [ ] **Step 3: Write the spec delta**
-
-Create `openspec/changes/add-per-run-manifest-filename/specs/run-manifest-contract/spec.md`:
-
-```markdown
-## ADDED Requirements
-
-### Requirement: Per-Run Manifest Filename
-
-The library SHALL export `run_manifest_filename(pipeline_run_id: str) -> str`, returning
-`"run_manifest.<pipeline_run_id>.json"`. Because the returned value is used as a path component
-and `pipeline_run_id` originates in an environment variable, the function SHALL reject any id
-that is not a safe single path component: it SHALL accept only ids matching
-`[A-Za-z0-9][A-Za-z0-9._-]*` with length at most 200, and SHALL raise `ValueError` otherwise.
-
-#### Scenario: Filename is built from the run id
-- **WHEN** `run_manifest_filename("sleap-roots-pipeline-9s92h")` is called
-- **THEN** it returns `"run_manifest.sleap-roots-pipeline-9s92h.json"`
-
-#### Scenario: A path separator is rejected
-- **WHEN** `run_manifest_filename("../etc/passwd")` is called
-- **THEN** `ValueError` is raised
-
-#### Scenario: An empty or blank id is rejected
-- **WHEN** `run_manifest_filename("")` or `run_manifest_filename("   ")` is called
-- **THEN** `ValueError` is raised
-
-#### Scenario: An over-long id is rejected
-- **WHEN** `run_manifest_filename("a" * 201)` is called
-- **THEN** `ValueError` is raised
-
-### Requirement: Run Identity Is Read From One Place
-
-The library SHALL export `pipeline_run_id_from_env(env=None) -> str | None`, returning the value
-of `ARGO_WORKFLOW_NAME` when it is set and not blank, and `None` otherwise. Leading and trailing
-whitespace SHALL be stripped. When `env` is omitted, `os.environ` is read.
-
-#### Scenario: The run id is returned when set
-- **WHEN** `ARGO_WORKFLOW_NAME` is `"sleap-roots-pipeline-9s92h"`
-- **THEN** `pipeline_run_id_from_env()` returns `"sleap-roots-pipeline-9s92h"`
-
-#### Scenario: An unset variable reads as no run identity
-- **WHEN** `ARGO_WORKFLOW_NAME` is not present in the environment
-- **THEN** `pipeline_run_id_from_env()` returns `None`
-
-#### Scenario: A blank variable reads as no run identity
-- **WHEN** `ARGO_WORKFLOW_NAME` is `"   "`
-- **THEN** `pipeline_run_id_from_env()` returns `None`
-
-### Requirement: Manifest Resolution Policy
-
-The library SHALL export `resolve_run_manifest_name(pipeline_run_id, exists) -> str | None`,
-where `exists` is a callable taking a filename and returning whether it is present. The library
-SHALL perform no filesystem access itself. Resolution order SHALL be: the per-run filename when
-`pipeline_run_id` is not `None`; then `RUN_MANIFEST_FILENAME`. When neither is present, the
-function SHALL raise `RunManifestMissingError` if `pipeline_run_id` is not `None`, and SHALL
-return `None` otherwise.
-
-The asymmetry is deliberate. A caller that knows its run id is running under orchestration, where
-a missing manifest is a fault; a caller with no run id is running locally, where unscoped
-discovery is the established behavior.
-
-#### Scenario: The per-run manifest is preferred
-- **GIVEN** both `run_manifest.wf1.json` and `run_manifest.json` exist
-- **WHEN** `resolve_run_manifest_name("wf1", exists)` is called
-- **THEN** it returns `"run_manifest.wf1.json"`
-
-#### Scenario: Falls back to the legacy name
-- **GIVEN** only `run_manifest.json` exists
-- **WHEN** `resolve_run_manifest_name("wf1", exists)` is called
-- **THEN** it returns `"run_manifest.json"`
-
-#### Scenario: A known run id with no manifest is an error
-- **GIVEN** neither file exists
-- **WHEN** `resolve_run_manifest_name("wf1", exists)` is called
-- **THEN** `RunManifestMissingError` is raised
-
-#### Scenario: An unknown run id with no manifest is not an error
-- **GIVEN** neither file exists
-- **WHEN** `resolve_run_manifest_name(None, exists)` is called
-- **THEN** it returns `None`
-
-#### Scenario: An unknown run id never looks for a per-run name
-- **GIVEN** only `run_manifest.wf1.json` exists
-- **WHEN** `resolve_run_manifest_name(None, exists)` is called
-- **THEN** it returns `None`
-
-### Requirement: Run Identity Cross-Check
-
-The library SHALL export `check_run_manifest_identity(manifest, pipeline_run_id, filename)`,
-raising `RunManifestIdentityError` when `manifest.pipeline_run_id` differs from `pipeline_run_id`,
-and returning `None` otherwise. Consumers call it only for a manifest read under a per-run
-filename, where the two are required to agree.
-
-#### Scenario: A matching identity passes
-- **WHEN** a manifest with `pipeline_run_id="wf1"` is checked against `"wf1"`
-- **THEN** no exception is raised
-
-#### Scenario: A foreign manifest is rejected
-- **WHEN** a manifest with `pipeline_run_id="wf2"` is checked against `"wf1"`
-- **THEN** `RunManifestIdentityError` is raised, and its message names both ids and the filename
-
-### Requirement: New Names Are Exported From The Package Root
-
-The library SHALL export `run_manifest_filename`, `pipeline_run_id_from_env`,
-`resolve_run_manifest_name`, `check_run_manifest_identity`, `RunManifestMissingError` and
-`RunManifestIdentityError` from the package root, and list them in `__all__`.
-
-#### Scenario: Names importable from the package root
-- **WHEN** a consumer imports all six names from `sleap_roots_contracts`
-- **THEN** the import succeeds and each name appears in `sleap_roots_contracts.__all__`
-```
-
-- [ ] **Step 4: Write `tasks.md` mirroring Tasks 2–6 of this plan**
-
-One `- [ ]` per task below, each naming its validation command. Keep it short; this plan is the
-detailed version.
-
-- [ ] **Step 5: Validate strictly**
-
-Run: `openspec validate add-per-run-manifest-filename --strict`
-Expected: passes with 0 failures. Fix every issue before continuing.
-
-- [ ] **Step 6: Commit**
-
-```bash
-git add openspec/changes/add-per-run-manifest-filename .gitignore
-git commit -m "docs(openspec): propose the per-run run-manifest filename (#71)"
-```
-
-Add `.worktrees/` to `.gitignore` in this same commit — it is currently only in
-`.git/info/exclude`, so it is protected locally but not for anyone else.
-
-- [ ] **Step 7: STOP — user approval gate**
-
-Present the change-id, the affected capability (`run-manifest-contract`, all ADDED), and the
-Deviation note above. Do not start Task 2 until the user approves.
+- [ ] Steps are in the dispatch brief. Validate with
+      `openspec validate add-per-run-manifest-filename --strict`, then commit.
 
 ---
 
 ### Task 2: `run_manifest_filename`
 
-**Files:**
-- Modify: `src/sleap_roots_contracts/run_manifest.py`
-- Test: `tests/test_run_manifest.py`
+**Files:** modify `src/sleap_roots_contracts/run_manifest.py`; test `tests/test_run_manifest.py`.
 
 **Interfaces:**
 - Consumes: `RUN_MANIFEST_FILENAME` (existing).
 - Produces: `run_manifest_filename(pipeline_run_id: str) -> str`, raising `ValueError` on an
-  unsafe id. Tasks 3 and 5 call it.
+  unsafe id. Tasks 4 and 5 call it.
 
 - [ ] **Step 1: Write the failing tests**
 
-Append to `tests/test_run_manifest.py`:
+Append to `tests/test_run_manifest.py`, extending the existing import line:
 
 ```python
 def test_run_manifest_filename_is_built_from_the_run_id():
@@ -292,6 +115,12 @@ def test_run_manifest_filename_accepts_the_local_placeholder():
     assert run_manifest_filename("local-ab12cd34") == "run_manifest.local-ab12cd34.json"
 
 
+def test_run_manifest_filename_accepts_the_maximum_length_id():
+    """237 is the positive boundary: 237 + len("run_manifest.") + len(".json") == 255."""
+    longest = "a" * 237
+    assert len(run_manifest_filename(longest)) == 255
+
+
 @pytest.mark.parametrize(
     "bad",
     [
@@ -303,9 +132,10 @@ def test_run_manifest_filename_accepts_the_local_placeholder():
         "a/b",
         "a\\b",
         ".hidden",
+        "-leading-dash",
         "has space",
         "has\x00null",
-        "a" * 201,
+        "a" * 238,
     ],
 )
 def test_run_manifest_filename_rejects_an_unsafe_id(bad):
@@ -314,12 +144,11 @@ def test_run_manifest_filename_rejects_an_unsafe_id(bad):
         run_manifest_filename(bad)
 
 
-def test_run_manifest_filename_never_collides_with_the_legacy_name():
-    """No id can produce the legacy filename, so the two namespaces stay distinct."""
-    assert run_manifest_filename("x") != RUN_MANIFEST_FILENAME
+def test_run_manifest_filename_rejects_a_non_string_id():
+    """A non-str id is a programming error, surfaced as ValueError not TypeError."""
+    with pytest.raises(ValueError):
+        run_manifest_filename(12345)
 ```
-
-Add `run_manifest_filename` to the existing import at the top of the file.
 
 - [ ] **Step 2: Run tests to verify they fail**
 
@@ -328,22 +157,26 @@ Expected: FAIL — `ImportError: cannot import name 'run_manifest_filename'`
 
 - [ ] **Step 3: Write the implementation**
 
-Add to `src/sleap_roots_contracts/run_manifest.py`, after `RUN_MANIFEST_FILENAME`:
+Add `import re` to the module imports, then after `RUN_MANIFEST_FILENAME`:
 
 ```python
-# The per-run filename's fixed parts. `RUN_MANIFEST_FILENAME` stays the legacy/local name, so
-# the two forms never collide: a valid run id can never be empty, and the pattern below forbids
-# a leading dot, so "run_manifest." + id + ".json" is always longer and differently shaped.
+# The per-run filename's fixed parts. `RUN_MANIFEST_FILENAME` stays the legacy/local name; the
+# two forms can never collide, because a valid run id is non-empty and may not begin with a dot.
 _FILENAME_PREFIX = "run_manifest."
 _FILENAME_SUFFIX = ".json"
 
-# A run id becomes a path component, and it arrives from an environment variable, so it is
-# validated as an allowlist rather than by blocking known-bad characters. An Argo workflow name
-# is an RFC-1123 label (lowercase alphanumerics and '-'), and bloomctl's non-Argo placeholder is
-# `local-<hex8>`; both match. Requiring the first character to be alphanumeric is what rejects
-# "." and ".." without special-casing them.
+# A run id becomes a path component and arrives from an environment variable, so it is validated
+# against an allowlist rather than by blocking known-bad characters. An Argo workflow name is an
+# RFC-1123 label (lowercase alphanumerics and '-'); bloomctl's non-Argo placeholder is
+# `local-<hex8>`. Requiring an alphanumeric first character is what rejects "." and ".." and a
+# leading dash without special-casing any of them.
 _RUN_ID_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
-_RUN_ID_MAX_LENGTH = 200
+
+# 255 is NAME_MAX on the Linux filesystems this runs on; the wrapper costs 18 characters. This is
+# below Kubernetes' own 253-character object-name limit, so a maximally long workflow name is
+# rejected rather than silently truncated — Argo's generateName emits about 26, so the gap is
+# theoretical, and a loud ValueError beats an unwritable filename.
+_RUN_ID_MAX_LENGTH = 255 - len(_FILENAME_PREFIX) - len(_FILENAME_SUFFIX)
 
 
 def run_manifest_filename(pipeline_run_id: str) -> str:
@@ -356,17 +189,20 @@ def run_manifest_filename(pipeline_run_id: str) -> str:
         ``"run_manifest.<pipeline_run_id>.json"``.
 
     Raises:
-        ValueError: If ``pipeline_run_id`` is not usable as a single path component —
-            empty, over-long, or containing anything outside
-            ``[A-Za-z0-9][A-Za-z0-9._-]*``. Raised rather than sanitized: a silently
+        ValueError: If ``pipeline_run_id`` is not usable as a single path component — not a
+            string, empty, over ``_RUN_ID_MAX_LENGTH`` characters, or not matching the
+            module's run-id pattern (it must start with a letter or digit and contain only
+            letters, digits, ``.``, ``_`` and ``-``). Raised rather than sanitized: a silently
             rewritten id would name a file no other stage in the run would look for.
     """
     if not isinstance(pipeline_run_id, str):
-        raise ValueError(f"pipeline_run_id must be a str, got {type(pipeline_run_id)!r}")
+        raise ValueError(
+            f"pipeline_run_id must be a str, got {type(pipeline_run_id).__name__}"
+        )
     if len(pipeline_run_id) > _RUN_ID_MAX_LENGTH:
         raise ValueError(
-            f"pipeline_run_id is {len(pipeline_run_id)} characters, "
-            f"over the {_RUN_ID_MAX_LENGTH} limit"
+            f"pipeline_run_id is {len(pipeline_run_id)} characters, over the "
+            f"{_RUN_ID_MAX_LENGTH} limit that keeps the filename within NAME_MAX"
         )
     if not _RUN_ID_PATTERN.fullmatch(pipeline_run_id):
         raise ValueError(
@@ -377,12 +213,13 @@ def run_manifest_filename(pipeline_run_id: str) -> str:
     return f"{_FILENAME_PREFIX}{pipeline_run_id}{_FILENAME_SUFFIX}"
 ```
 
-Add `import re` to the module's imports.
+Note the docstring describes the rule in words and does **not** re-quote the character class —
+the spec and `_RUN_ID_PATTERN` are the two places the literal lives.
 
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `uv run pytest tests/test_run_manifest.py -k run_manifest_filename -v`
-Expected: PASS (15 tests — 2 explicit + 11 parametrized + 1 collision)
+Expected: PASS (16 tests — 4 explicit + 12 parametrized)
 
 - [ ] **Step 5: Commit**
 
@@ -393,16 +230,17 @@ git commit -m "feat(run-manifest): add run_manifest_filename with path-component
 
 ---
 
-### Task 3: `pipeline_run_id_from_env`
+### Task 3: `pipeline_run_id_from_env` and `run_manifest_name_for_writing`
 
-**Files:**
-- Modify: `src/sleap_roots_contracts/run_manifest.py`
-- Test: `tests/test_run_manifest.py`
+**Files:** modify `src/sleap_roots_contracts/run_manifest.py`; test `tests/test_run_manifest.py`.
 
 **Interfaces:**
-- Consumes: nothing.
-- Produces: `pipeline_run_id_from_env(env: Mapping[str, str] | None = None) -> str | None`.
-  Consumers in other repos call it to decide whether they know their run identity.
+- Consumes: `run_manifest_filename` (Task 2), `RUN_MANIFEST_FILENAME`.
+- Produces: `PIPELINE_RUN_ID_ENV_VAR`, `pipeline_run_id_from_env(env=None) -> str | None`, and
+  `run_manifest_name_for_writing(pipeline_run_id: str | None) -> str`.
+
+These ship together because the writer rule is meaningless without the env reader, and pairing
+them is what stops bloomctl keeping a parallel env read (design §3.2).
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -434,221 +272,323 @@ def test_pipeline_run_id_from_env_reads_os_environ_by_default(monkeypatch):
     """Omitting env reads the real process environment."""
     monkeypatch.setenv("ARGO_WORKFLOW_NAME", "wf-from-os")
     assert pipeline_run_id_from_env() == "wf-from-os"
+
+
+def test_env_var_name_is_exported():
+    """Consumers must not hardcode the variable name (bloomctl currently does)."""
+    assert PIPELINE_RUN_ID_ENV_VAR == "ARGO_WORKFLOW_NAME"
+
+
+def test_name_for_writing_is_per_run_when_the_id_is_known():
+    """A writer under orchestration names the file for its own run."""
+    assert run_manifest_name_for_writing("wf1") == "run_manifest.wf1.json"
+
+
+def test_name_for_writing_is_the_legacy_name_without_an_id():
+    """No run identity means the legacy name, which keeps local runs behaving as before."""
+    assert run_manifest_name_for_writing(None) == RUN_MANIFEST_FILENAME
+
+
+def test_name_for_writing_rejects_an_invalid_id():
+    """An unsafe id fails at the writer too, not only at the reader."""
+    with pytest.raises(ValueError):
+        run_manifest_name_for_writing("../escape")
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `uv run pytest tests/test_run_manifest.py -k pipeline_run_id_from_env -v`
+Run: `uv run pytest tests/test_run_manifest.py -k "from_env or name_for_writing or env_var_name" -v`
 Expected: FAIL — `ImportError: cannot import name 'pipeline_run_id_from_env'`
 
 - [ ] **Step 3: Write the implementation**
 
+Add `import os` and `from collections.abc import Mapping` to the module imports.
+
 ```python
 #: The environment variable every pipeline stage reads its run identity from. Set to Argo's
-#: `{{workflow.name}}` on all five cluster templates; deliberately absent from the local-WSL2
-#: templates, which is what keeps local runs on the legacy filename and legacy semantics.
+#: `{{workflow.name}}` on all five cluster templates and deliberately absent from the
+#: `local-WSL2-*` templates, which is what keeps local runs on the legacy filename. Exported so
+#: consumers import it rather than hardcoding the string.
 PIPELINE_RUN_ID_ENV_VAR = "ARGO_WORKFLOW_NAME"
 
 
-def pipeline_run_id_from_env(
-    env: Mapping[str, str] | None = None,
-) -> str | None:
+def pipeline_run_id_from_env(env: Mapping[str, str] | None = None) -> str | None:
     """Return this process's run identity, or ``None`` when it has none.
 
+    The single definition of "which run am I". Both writers and readers must use it: a writer
+    that reads the variable itself can disagree with a reader about whitespace or blankness,
+    and :func:`check_run_manifest_identity` would then fail on every stage.
+
     Args:
-        env: Environment mapping to read. Defaults to ``os.environ``. Injectable so callers
-            and tests need no monkeypatching.
+        env: Environment mapping to read. Defaults to ``os.environ``. Injectable so callers and
+            tests need no monkeypatching.
 
     Returns:
-        The stripped value of ``ARGO_WORKFLOW_NAME``, or ``None`` when it is unset or blank.
-        ``None`` means "not running under orchestration" and is what selects the legacy
-        filename and today's unscoped-discovery behavior; it is not an error.
+        The stripped value of ``ARGO_WORKFLOW_NAME``, or ``None`` when unset or blank. ``None``
+        means "not running under orchestration"; it is not an error.
     """
     source = os.environ if env is None else env
     value = source.get(PIPELINE_RUN_ID_ENV_VAR)
     if value is None:
         return None
-    stripped = value.strip()
-    return stripped or None
-```
+    return value.strip() or None
 
-Add `import os` and `from collections.abc import Mapping` to the module's imports.
+
+def run_manifest_name_for_writing(pipeline_run_id: str | None) -> str:
+    """Return the filename a writer should publish its manifest under.
+
+    Args:
+        pipeline_run_id: This run's identity, from :func:`pipeline_run_id_from_env`.
+
+    Returns:
+        The per-run filename when an identity is known, else ``RUN_MANIFEST_FILENAME``. Keying
+        per-run naming to the presence of an identity is what leaves local and ``local-WSL2-*``
+        runs on exactly their previous behavior, with no template changes.
+
+    Raises:
+        ValueError: If ``pipeline_run_id`` is not usable as a filename component.
+    """
+    if pipeline_run_id is None:
+        return RUN_MANIFEST_FILENAME
+    return run_manifest_filename(pipeline_run_id)
+```
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `uv run pytest tests/test_run_manifest.py -k pipeline_run_id_from_env -v`
-Expected: PASS (5 tests)
+Run: `uv run pytest tests/test_run_manifest.py -k "from_env or name_for_writing or env_var_name" -v`
+Expected: PASS (9 tests)
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add src/sleap_roots_contracts/run_manifest.py tests/test_run_manifest.py
-git commit -m "feat(run-manifest): add pipeline_run_id_from_env"
+git commit -m "feat(run-manifest): add the env reader and the writer-side naming rule"
 ```
 
 ---
 
-### Task 4: `resolve_run_manifest_name` and `RunManifestMissingError`
+### Task 4: `read_run_manifest` and `RunManifestMissingError`
 
-**Files:**
-- Modify: `src/sleap_roots_contracts/run_manifest.py`
-- Test: `tests/test_run_manifest.py`
+**Files:** modify `src/sleap_roots_contracts/run_manifest.py`; test `tests/test_run_manifest.py`.
 
 **Interfaces:**
 - Consumes: `run_manifest_filename` (Task 2), `RUN_MANIFEST_FILENAME`.
-- Produces: `RunManifestMissingError(LookupError)` and
-  `resolve_run_manifest_name(pipeline_run_id: str | None, exists: Callable[[str], bool]) -> str | None`.
-  This is the function all three consumer repos call.
+- Produces: `RunManifestRead(NamedTuple)` with fields `filename: str`, `data: bytes`,
+  `is_per_run: bool`; `RunManifestMissingError(LookupError)`; and
+  `read_run_manifest(directory, pipeline_run_id, *, allow_legacy) -> RunManifestRead | None`.
+  This is the function all four consumer call sites use.
+
+This is the task that carries the change's safety property. Read design §2.2 and §2.9 first.
 
 - [ ] **Step 1: Write the failing tests**
 
 ```python
-def _exists_among(*names):
-    """Build an `exists` predicate over a fixed set of present filenames."""
-    present = set(names)
-    return lambda name: name in present
-
-
-def test_resolve_prefers_the_per_run_manifest():
+def test_read_prefers_the_per_run_manifest(tmp_path):
     """With both present, the run's own manifest wins."""
-    exists = _exists_among("run_manifest.wf1.json", RUN_MANIFEST_FILENAME)
-    assert resolve_run_manifest_name("wf1", exists) == "run_manifest.wf1.json"
+    (tmp_path / "run_manifest.wf1.json").write_bytes(b'{"per_run": true}')
+    (tmp_path / RUN_MANIFEST_FILENAME).write_bytes(b'{"legacy": true}')
+    result = read_run_manifest(tmp_path, "wf1", allow_legacy=True)
+    assert result.filename == "run_manifest.wf1.json"
+    assert result.data == b'{"per_run": true}'
+    assert result.is_per_run is True
 
 
-def test_resolve_falls_back_to_the_legacy_manifest():
+def test_read_falls_back_to_the_legacy_manifest(tmp_path):
     """Mid-rollout, a new reader still finds an old writer's file."""
-    exists = _exists_among(RUN_MANIFEST_FILENAME)
-    assert resolve_run_manifest_name("wf1", exists) == RUN_MANIFEST_FILENAME
+    (tmp_path / RUN_MANIFEST_FILENAME).write_bytes(b'{"legacy": true}')
+    result = read_run_manifest(tmp_path, "wf1", allow_legacy=True)
+    assert result.filename == RUN_MANIFEST_FILENAME
+    assert result.is_per_run is False
 
 
-def test_resolve_raises_when_the_run_id_is_known_and_nothing_is_present():
+def test_read_refuses_the_legacy_manifest_when_the_fallback_is_off(tmp_path):
+    """Post-migration, a stale legacy file must not silently re-scope a run."""
+    (tmp_path / RUN_MANIFEST_FILENAME).write_bytes(b'{"legacy": true}')
+    with pytest.raises(RunManifestMissingError):
+        read_run_manifest(tmp_path, "wf1", allow_legacy=False)
+
+
+def test_read_raises_when_the_run_id_is_known_and_nothing_is_present(tmp_path):
     """Under orchestration a missing manifest is a fault, never 'scope to everything'."""
-    exists = _exists_among()
     with pytest.raises(RunManifestMissingError) as excinfo:
-        resolve_run_manifest_name("wf1", exists)
+        read_run_manifest(tmp_path, "wf1", allow_legacy=True)
     assert "run_manifest.wf1.json" in str(excinfo.value)
-    assert RUN_MANIFEST_FILENAME in str(excinfo.value)
 
 
-def test_resolve_returns_none_when_there_is_no_run_id_and_nothing_is_present():
+def test_read_returns_none_when_there_is_no_run_id_and_nothing_is_present(tmp_path):
     """Locally, an absent manifest keeps today's unscoped behavior."""
-    assert resolve_run_manifest_name(None, _exists_among()) is None
+    assert read_run_manifest(tmp_path, None, allow_legacy=True) is None
 
 
-def test_resolve_ignores_a_per_run_manifest_when_the_run_id_is_unknown():
+def test_read_ignores_a_per_run_manifest_when_the_run_id_is_unknown(tmp_path):
     """A caller with no identity must not adopt some other run's scope."""
-    exists = _exists_among("run_manifest.wf1.json")
-    assert resolve_run_manifest_name(None, exists) is None
+    (tmp_path / "run_manifest.wf1.json").write_bytes(b'{"per_run": true}')
+    assert read_run_manifest(tmp_path, None, allow_legacy=True) is None
 
 
-def test_resolve_does_not_call_exists_for_the_per_run_name_when_the_run_id_is_unknown():
-    """The per-run candidate is not merely skipped in the result — it is never probed."""
-    probed = []
-
-    def exists(name):
-        probed.append(name)
-        return False
-
-    resolve_run_manifest_name(None, exists)
-    assert probed == [RUN_MANIFEST_FILENAME]
-
-
-def test_resolve_propagates_an_invalid_run_id():
-    """An unsafe id is a programming error, surfaced as ValueError, not swallowed as 'missing'."""
+def test_read_propagates_an_invalid_run_id(tmp_path):
+    """An unsafe id is a programming error, surfaced as ValueError not 'missing'."""
     with pytest.raises(ValueError):
-        resolve_run_manifest_name("../escape", _exists_among())
+        read_run_manifest(tmp_path, "../escape", allow_legacy=True)
+
+
+def test_read_propagates_a_permission_error_rather_than_advancing(tmp_path, monkeypatch):
+    """An unreadable manifest must never be mistaken for an absent one.
+
+    This is the reason the function opens rather than probing: a boolean predicate collapses
+    EACCES into "absent", which would fall through to a stale legacy manifest. bloomctl's
+    ingest.py avoids .is_file() for exactly this reason.
+    """
+    target = tmp_path / "run_manifest.wf1.json"
+    target.write_bytes(b"{}")
+    (tmp_path / RUN_MANIFEST_FILENAME).write_bytes(b'{"legacy": true}')
+
+    real_open = Path.open
+
+    def deny(self, *args, **kwargs):
+        if self.name == "run_manifest.wf1.json":
+            raise PermissionError(13, "Permission denied")
+        return real_open(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", deny)
+    with pytest.raises(PermissionError):
+        read_run_manifest(tmp_path, "wf1", allow_legacy=True)
+
+
+def test_read_accepts_a_string_directory(tmp_path):
+    """Consumers pass str paths in places; accept them like the rest of the library."""
+    (tmp_path / RUN_MANIFEST_FILENAME).write_bytes(b"{}")
+    assert read_run_manifest(str(tmp_path), None, allow_legacy=True).data == b"{}"
 ```
+
+Add `from pathlib import Path` to the test imports.
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `uv run pytest tests/test_run_manifest.py -k resolve -v`
-Expected: FAIL — `ImportError: cannot import name 'resolve_run_manifest_name'`
+Run: `uv run pytest tests/test_run_manifest.py -k read_run_manifest -v`
+Expected: FAIL — `ImportError: cannot import name 'read_run_manifest'`
 
 - [ ] **Step 3: Write the implementation**
+
+Add `from pathlib import Path` and `from typing import NamedTuple` to the module imports.
 
 ```python
 class RunManifestMissingError(LookupError):
     """No run manifest was found for a caller that knows which run it is.
 
-    A subclass of ``LookupError`` so a consumer can catch it alongside its own
-    not-found handling, but distinct enough to re-raise as that repo's own error type
-    (``click.ClickException`` in bloomctl, for instance).
+    A ``LookupError`` subclass so a consumer can catch it alongside its own not-found handling
+    while still re-raising it as that repo's own error type (``click.ClickException`` in
+    bloomctl, for instance).
     """
 
 
-def resolve_run_manifest_name(
-    pipeline_run_id: str | None,
-    exists: Callable[[str], bool],
-) -> str | None:
-    """Return the manifest filename this caller should read, if any.
+class RunManifestRead(NamedTuple):
+    """One manifest read: the name it came from, its bytes, and which convention it used.
 
-    The library performs no filesystem access; ``exists`` is the caller's probe, typically
-    ``lambda name: (directory / name).is_file()``. Keeping the policy here and the I/O in the
-    caller is what lets bloomctl, predict and traits share one definition of the fallback order
-    without this library growing a filesystem dependency.
+    Attributes:
+        filename: The name actually read, so a forwarding stage can republish under it.
+        data: The raw bytes, returned rather than a path so there is no window in which the
+            file changes between being found and being read.
+        is_per_run: Whether ``filename`` is the per-run form. Consumers use it to decide
+            whether the identity cross-check applies, instead of each comparing against
+            ``RUN_MANIFEST_FILENAME`` themselves.
+    """
+
+    filename: str
+    data: bytes
+    is_per_run: bool
+
+
+def read_run_manifest(
+    directory: str | Path,
+    pipeline_run_id: str | None,
+    *,
+    allow_legacy: bool,
+) -> RunManifestRead | None:
+    """Read the run manifest this caller should use, if there is one.
+
+    Candidate order is the per-run filename (only when ``pipeline_run_id`` is not ``None``),
+    then ``RUN_MANIFEST_FILENAME`` (only when ``allow_legacy``). Each candidate is *opened*, not
+    probed: only ``FileNotFoundError`` advances to the next one, so an unreadable manifest
+    raises instead of being mistaken for an absent one and falling through to an older run's
+    scope.
 
     Args:
-        pipeline_run_id: This run's identity, or ``None`` when the caller has none (see
+        directory: Directory to look in. Not searched recursively.
+        pipeline_run_id: This run's identity, or ``None`` (see
             :func:`pipeline_run_id_from_env`).
-        exists: Predicate answering whether a filename is present where the caller is looking.
+        allow_legacy: Whether ``RUN_MANIFEST_FILENAME`` may satisfy the read. Required and
+            keyword-only, with no default, so every call site states its position and the
+            fleet's migration state is greppable. Pass ``True`` while any stage may still be
+            writing the legacy name; pass ``False`` once the fleet is migrated and the stale
+            files are deleted, which is what makes the missing-manifest error reachable at all.
 
     Returns:
-        The per-run filename when it is present; else ``RUN_MANIFEST_FILENAME`` when that is
-        present; else ``None``, but only when ``pipeline_run_id`` is ``None``.
+        A :class:`RunManifestRead`, or ``None`` when nothing was found and
+        ``pipeline_run_id`` is ``None``.
 
     Raises:
-        RunManifestMissingError: If ``pipeline_run_id`` is not ``None`` and neither candidate is
-            present. Deliberately not ``None``: every consumer treats an absent manifest as
-            "discover everything in this directory", which under a shared output tree means
-            processing and ingesting other runs' scans. A stage that knows its run id is running
-            under orchestration, where a manifest is always written, so its absence is a fault.
+        RunManifestMissingError: If ``pipeline_run_id`` is not ``None`` and no candidate was
+            found. Deliberately not ``None``: every consumer treats an absent manifest as
+            "discover everything here", which under a shared output tree means processing and
+            ingesting other runs' scans. A stage that knows its run id is running under
+            orchestration, where a manifest is always written, so its absence is a fault.
         ValueError: If ``pipeline_run_id`` is not usable as a filename component.
+        OSError: Any failure other than the candidate being absent — notably
+            ``PermissionError``.
     """
-    candidates: list[str] = []
-    if pipeline_run_id is not None:
-        candidates.append(run_manifest_filename(pipeline_run_id))
-    candidates.append(RUN_MANIFEST_FILENAME)
+    base = Path(directory)
 
-    for name in candidates:
-        if exists(name):
-            return name
+    candidates: list[tuple[str, bool]] = []
+    if pipeline_run_id is not None:
+        candidates.append((run_manifest_filename(pipeline_run_id), True))
+    if allow_legacy:
+        candidates.append((RUN_MANIFEST_FILENAME, False))
+
+    for name, is_per_run in candidates:
+        try:
+            with (base / name).open("rb") as handle:
+                data = handle.read()
+        except FileNotFoundError:
+            continue
+        except IsADirectoryError:
+            # A directory where the manifest should be is a staging error, not an absence.
+            raise
+        return RunManifestRead(filename=name, data=data, is_per_run=is_per_run)
 
     if pipeline_run_id is not None:
+        looked_for = ", ".join(repr(name) for name, _ in candidates)
         raise RunManifestMissingError(
-            f"no run manifest for run {pipeline_run_id!r}: looked for "
-            f"{' then '.join(repr(c) for c in candidates)}"
+            f"no run manifest for run {pipeline_run_id!r} in {base.as_posix()}: "
+            f"looked for {looked_for}"
         )
     return None
 ```
 
-Add `Callable` to the `collections.abc` import.
-
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `uv run pytest tests/test_run_manifest.py -k resolve -v`
-Expected: PASS (7 tests)
+Run: `uv run pytest tests/test_run_manifest.py -k read_run_manifest -v`
+Expected: PASS (9 tests)
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add src/sleap_roots_contracts/run_manifest.py tests/test_run_manifest.py
-git commit -m "feat(run-manifest): add resolve_run_manifest_name with fail-loud policy"
+git commit -m "feat(run-manifest): add read_run_manifest with an explicit legacy fallback"
 ```
 
 ---
 
 ### Task 5: `check_run_manifest_identity` and package exports
 
-**Files:**
-- Modify: `src/sleap_roots_contracts/run_manifest.py`
-- Modify: `src/sleap_roots_contracts/__init__.py`
-- Test: `tests/test_run_manifest.py`
+**Files:** modify `src/sleap_roots_contracts/run_manifest.py` and
+`src/sleap_roots_contracts/__init__.py`; test `tests/test_run_manifest.py`.
 
 **Interfaces:**
-- Consumes: `RunManifest` (existing).
+- Consumes: `RunManifest` (existing), `RUN_MANIFEST_FILENAME`.
 - Produces: `RunManifestIdentityError(ValueError)` and
-  `check_run_manifest_identity(manifest: RunManifest, pipeline_run_id: str, filename: str) -> None`.
-  Plus all six new names re-exported from the package root.
+  `check_run_manifest_identity(manifest, pipeline_run_id, filename) -> None`. Plus all nine new
+  names re-exported from the package root.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -656,9 +596,7 @@ git commit -m "feat(run-manifest): add resolve_run_manifest_name with fail-loud 
 def test_identity_check_passes_for_the_owning_run():
     """The ordinary case: the file this run wrote names this run."""
     manifest = make_manifest(pipeline_run_id="wf1")
-    assert (
-        check_run_manifest_identity(manifest, "wf1", "run_manifest.wf1.json") is None
-    )
+    assert check_run_manifest_identity(manifest, "wf1", "run_manifest.wf1.json") is None
 
 
 def test_identity_check_rejects_a_foreign_manifest():
@@ -672,25 +610,38 @@ def test_identity_check_rejects_a_foreign_manifest():
     assert "run_manifest.wf1.json" in message
 
 
+def test_identity_check_is_a_noop_for_the_legacy_filename():
+    """The legacy name carries no identity, so a mismatch there is expected, not an error.
+
+    Without this, all four call sites would write the same
+    `if filename != RUN_MANIFEST_FILENAME` guard themselves.
+    """
+    manifest = make_manifest(pipeline_run_id="some-older-run")
+    assert check_run_manifest_identity(manifest, "wf1", RUN_MANIFEST_FILENAME) is None
+
+
 def test_identity_error_is_a_value_error():
     """Consumers already catching ValueError around manifest parsing keep working."""
     assert issubclass(RunManifestIdentityError, ValueError)
 
 
 def test_new_names_are_exported_from_the_package_root():
-    """The six new names are importable from the package root and listed in __all__."""
-    import sleap_roots_contracts as src_pkg
+    """Every new name is importable from the package root and listed in __all__."""
+    import sleap_roots_contracts as pkg
 
     for name in (
-        "run_manifest_filename",
-        "pipeline_run_id_from_env",
-        "resolve_run_manifest_name",
-        "check_run_manifest_identity",
-        "RunManifestMissingError",
+        "PIPELINE_RUN_ID_ENV_VAR",
         "RunManifestIdentityError",
+        "RunManifestMissingError",
+        "RunManifestRead",
+        "check_run_manifest_identity",
+        "pipeline_run_id_from_env",
+        "read_run_manifest",
+        "run_manifest_filename",
+        "run_manifest_name_for_writing",
     ):
-        assert hasattr(src_pkg, name), name
-        assert name in src_pkg.__all__, name
+        assert hasattr(pkg, name), name
+        assert name in pkg.__all__, name
 
 
 def test_legacy_filename_constant_is_unchanged():
@@ -723,22 +674,27 @@ def check_run_manifest_identity(
 ) -> None:
     """Verify a per-run-named manifest names the run that is reading it.
 
-    Only meaningful for a manifest resolved under :func:`run_manifest_filename`; the legacy
-    filename carries no run identity in its name, and before per-run naming existed the
-    producer overwrote ``pipeline_run_id`` on every merge, so the field could never disagree.
-    This is the cross-check bloom#703 asked for, possible for the first time.
+    A no-op when ``filename`` is ``RUN_MANIFEST_FILENAME``: the legacy name carries no run
+    identity, and before per-run naming the producer overwrote ``pipeline_run_id`` on every
+    merge, so a legacy file routinely names some earlier run. Callers may therefore pass
+    whatever :func:`read_run_manifest` returned without testing the name themselves.
+
+    For a per-run-named file this is the cross-check bloom#703 asked for, possible for the
+    first time.
 
     Args:
         manifest: The parsed manifest.
         pipeline_run_id: The reader's own run identity.
-        filename: The name it was read from, used in the error message.
+        filename: The name it was read from.
 
     Returns:
         None.
 
     Raises:
-        RunManifestIdentityError: If the manifest names a different run.
+        RunManifestIdentityError: If a per-run-named manifest names a different run.
     """
+    if filename == RUN_MANIFEST_FILENAME:
+        return
     if manifest.pipeline_run_id != pipeline_run_id:
         raise RunManifestIdentityError(
             f"{filename} was read as run {pipeline_run_id!r}'s manifest but names run "
@@ -746,27 +702,15 @@ def check_run_manifest_identity(
         )
 ```
 
-In `__init__.py`, extend the existing run_manifest import and `__all__`:
-
-```python
-from .run_manifest import (
-    RUN_MANIFEST_FILENAME,
-    RunManifest,
-    RunManifestIdentityError,
-    RunManifestMissingError,
-    check_run_manifest_identity,
-    pipeline_run_id_from_env,
-    resolve_run_manifest_name,
-    run_manifest_filename,
-)
-```
-
-and add the six new names to `__all__` alongside `"RunManifest"` and `"RUN_MANIFEST_FILENAME"`.
+In `__init__.py`, extend the run_manifest import and `__all__` with all nine names:
+`PIPELINE_RUN_ID_ENV_VAR`, `RunManifestIdentityError`, `RunManifestMissingError`,
+`RunManifestRead`, `check_run_manifest_identity`, `pipeline_run_id_from_env`,
+`read_run_manifest`, `run_manifest_filename`, `run_manifest_name_for_writing`.
 
 - [ ] **Step 4: Run the full suite plus linters**
 
 Run: `uv run pytest -q && uv run black --check src tests && uv run ruff check src tests`
-Expected: all pass. The baseline was 460 tests; expect 460 + the ~32 added here.
+Expected: all pass. Baseline was 460 tests; expect 460 + 40.
 
 - [ ] **Step 5: Commit**
 
@@ -777,65 +721,120 @@ git commit -m "feat(run-manifest): add the identity cross-check and export the n
 
 ---
 
-### Task 6: Module docstring, CHANGELOG, and OpenSpec task sync
+### Task 6: Module docstring and CHANGELOG
 
-**Files:**
-- Modify: `src/sleap_roots_contracts/run_manifest.py` (module docstring)
-- Modify: `docs/CHANGELOG.md`
-- Modify: `openspec/changes/add-per-run-manifest-filename/tasks.md`
-
-**Interfaces:**
-- Consumes: everything from Tasks 2–5.
-- Produces: no code.
+**Files:** modify `src/sleap_roots_contracts/run_manifest.py` (module docstring only);
+`docs/CHANGELOG.md`.
 
 - [ ] **Step 1: Extend the module docstring**
 
-The current docstring describes only the shared-file model. Append:
+Append to the existing module docstring:
 
 ```
 Since 0.1.0a9 the manifest may also be named per run — ``run_manifest.<pipeline_run_id>.json``,
-built by :func:`run_manifest_filename` — so that runs sharing an output directory no longer
-share a manifest. ``RUN_MANIFEST_FILENAME`` remains the name used when a stage has no run
-identity (no ``ARGO_WORKFLOW_NAME``), which keeps local and ``local-WSL2-*`` runs on the
-previous behavior. :func:`resolve_run_manifest_name` is the single definition of how a reader
-chooses between the two and what a missing manifest means; see
+built by :func:`run_manifest_filename` — so runs sharing an output directory no longer share a
+manifest. ``RUN_MANIFEST_FILENAME`` remains the name used when a stage has no run identity (no
+``ARGO_WORKFLOW_NAME``), which keeps local and ``local-WSL2-*`` runs on their previous
+behavior. :func:`read_run_manifest` is the single definition of how a reader chooses between
+the two, what a missing manifest means, and when the legacy name is still acceptable; see
 talmolab/sleap-roots-pipeline#71.
 ```
 
 - [ ] **Step 2: Add the CHANGELOG entry**
 
-Under `## [Unreleased]` in `docs/CHANGELOG.md`, matching the file's existing style:
+Under `## [Unreleased]` in `docs/CHANGELOG.md`:
 
 ```markdown
 ### Added
-- Per-run run-manifest naming: `run_manifest_filename`, `pipeline_run_id_from_env`,
-  `resolve_run_manifest_name`, `check_run_manifest_identity`, and the
+- Per-run run-manifest naming and resolution: `run_manifest_filename`,
+  `pipeline_run_id_from_env`, `run_manifest_name_for_writing`, `read_run_manifest`,
+  `check_run_manifest_identity`, `RunManifestRead`, `PIPELINE_RUN_ID_ENV_VAR`, and the
   `RunManifestMissingError` / `RunManifestIdentityError` exceptions
-  (talmolab/sleap-roots-pipeline#71). Additive — `RunManifest` and `RUN_MANIFEST_FILENAME`
-  are unchanged, so 0.1.0a8 consumers are unaffected until they adopt the new names.
+  (talmolab/sleap-roots-pipeline#71). Additive — `RunManifest` and `RUN_MANIFEST_FILENAME` are
+  unchanged, so 0.1.0a8 consumers are unaffected until they adopt the new names.
 ```
 
-- [ ] **Step 3: Tick the OpenSpec tasks**
+- [ ] **Step 3: Run the checks**
 
-Mark Tasks 2–6 `- [x]` in `openspec/changes/add-per-run-manifest-filename/tasks.md`.
-
-- [ ] **Step 4: Re-validate and run everything**
-
-Run: `openspec validate add-per-run-manifest-filename --strict && uv run pytest -q && uv run black --check src tests && uv run ruff check src tests`
+Run: `uv run pytest -q && uv run black --check src tests && uv run ruff check src tests`
 Expected: all pass.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
-git add src/sleap_roots_contracts/run_manifest.py docs/CHANGELOG.md openspec/changes/add-per-run-manifest-filename/tasks.md
-git commit -m "docs(run-manifest): document per-run naming and close the change's tasks"
+git add src/sleap_roots_contracts/run_manifest.py docs/CHANGELOG.md
+git commit -m "docs(run-manifest): document per-run naming in the module and CHANGELOG"
 ```
 
 ---
 
-### Task 7: PR, then the version bump
+### Task 7: Correct two false claims in `project.md`, and update `README.md`
 
-**Files:** none in this repo's source.
+**Files:** modify `openspec/project.md`, `README.md`,
+`openspec/changes/add-per-run-manifest-filename/tasks.md`.
+
+Both `project.md` claims below were verified false during review. They are independent of this
+change but sit in the paragraphs it edits, so leaving them would be the worst option.
+
+- [ ] **Step 1: Fix the I/O claim in `openspec/project.md`**
+
+It currently says the library is "code-agnostic toward Bloom (no Bloom import, no DB/network/
+filesystem I/O)". That is false: `schema.py:93-98`'s `emit_schema()` writes files,
+`_default_schema_dir()` (`schema.py:19-23`) falls back to `Path.cwd()`, `registry.py:25-27` reads
+the packaged YAML, and `examples/__init__.py:70` returns filesystem paths. Replace the
+parenthetical with:
+
+```
+(no Bloom import; no DB or network I/O, and no ambient filesystem reads in the contract-model
+surface — the exceptions are deliberate and named: `emit_schema` writes the JSON Schema
+artifacts, `registry`/`examples` read packaged resources, and `read_run_manifest` reads one
+named file from a caller-supplied directory)
+```
+
+- [ ] **Step 2: Fix the stale consumer claim in `openspec/project.md`**
+
+Around lines 99-101 it says predict/traits "will read it to scope processing to exactly the
+`scan_key`s a run was given, once their consuming PRs land (not yet, as of this release — see
+talmolab/sleap-roots-pipeline#37)". They have read it since 0.1.0a7:
+`sleap-roots/trait_extractor/extractor.py:194` calls `load_run_manifest`, and
+`sleap-roots-predict/sleap_roots_predict/batch.py:131-139` parses `RunManifest`. Replace with:
+
+```
+`sleap-roots-predict`/`sleap-roots-traits` read it to scope processing to exactly the
+`scan_key`s a run was given (landed; see talmolab/sleap-roots-pipeline#37)
+```
+
+- [ ] **Step 3: Describe the new API in `project.md` and `README.md`**
+
+Append one sentence to the run-manifest paragraph in both (`README.md` ~lines 53-57,
+`project.md` ~lines 17-19):
+
+```
+Since `0.1.0a9` it also defines the per-run filename convention and the shared resolution
+policy — `run_manifest_filename`, `pipeline_run_id_from_env`, `run_manifest_name_for_writing`,
+`read_run_manifest`, `check_run_manifest_identity` — so the four consumer call sites agree on
+one definition rather than three (talmolab/sleap-roots-pipeline#71).
+```
+
+- [ ] **Step 4: Tick the OpenSpec tasks**
+
+Mark Tasks 2-7 `- [x]` in `openspec/changes/add-per-run-manifest-filename/tasks.md`.
+
+- [ ] **Step 5: Run every check**
+
+Run: `openspec validate add-per-run-manifest-filename --strict && uv run pytest -q && uv run black --check src tests && uv run ruff check src tests`
+Expected: all pass.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add openspec/project.md README.md openspec/changes/add-per-run-manifest-filename/tasks.md
+git commit -m "docs: correct two false claims in project.md and describe the new API"
+```
+
+---
+
+### Task 8: PR, then the version bump
 
 - [ ] **Step 1: Push and open the PR**
 
@@ -844,44 +843,52 @@ git push -u origin add-per-run-manifest-filename
 ```
 
 Use `/pr-description`. Reference change-id `add-per-run-manifest-filename` and
-talmolab/sleap-roots-pipeline#71. State plainly that this is additive and that **no consumer is
-affected until it bumps its pin** — reviewers should not expect downstream changes here.
+talmolab/sleap-roots-pipeline#71. The body must state:
+
+- This is **additive**; no consumer is affected until it bumps its pin. The claim rests on the
+  pre-existing suite staying green plus `test_legacy_filename_constant_is_unchanged` — there is
+  no dedicated cross-version regression test, and the PR should say so rather than imply one.
+- **Rollback:** if 0.1.0a9 is broken, consumers stay pinned to `==0.1.0a8`; nothing in a9 is
+  required until a consumer opts in. A PyPI yank is available if the release must be withdrawn.
+- The two `project.md` corrections are pre-existing defects fixed in passing, not caused here.
 
 - [ ] **Step 2: Run `/review-pr` before merging**
 
 - [ ] **Step 3: After merge, trigger the version bump to `0.1.0a9`**
 
-`.github/workflows/version.yml` is `workflow_dispatch` with a `bump_type` choice — use `alpha`,
-or `custom_version` `0.1.0a9`. It bumps `pyproject.toml` via `uv version` and opens its own PR;
-CHANGELOG finalization and schema regeneration happen on that PR. Do **not** hand-edit the
-version in this branch.
+`.github/workflows/version.yml` is `workflow_dispatch`: use `bump_type: alpha`, or
+`custom_version: 0.1.0a9`. It bumps `pyproject.toml` via `uv version` and opens its own PR where
+CHANGELOG finalization lands.
 
 - [ ] **Step 4: Confirm the release is installable before any consumer work starts**
 
-Run: `uv run --with "sleap-roots-contracts==0.1.0a9" --no-project python -c "from sleap_roots_contracts import run_manifest_filename; print(run_manifest_filename('wf1'))"`
-Expected: prints `run_manifest.wf1.json`.
+Run: `uv run --with "sleap-roots-contracts==0.1.0a9" --no-project python -c "from sleap_roots_contracts import read_run_manifest, run_manifest_name_for_writing; print('ok')"`
+Expected: prints `ok`.
 
-This is the gate for plan 3 — do not bump any consumer pin until this command succeeds against
-the published package, not a local checkout.
+This is the gate for plan 3 — no consumer pin moves until this succeeds against the published
+package, not a local checkout.
 
 ---
 
 ## Self-Review
 
-**Spec coverage.** Design §3.1's three functions → Tasks 2, 3, 4; its id validation → Task 2;
-§3.2's cross-check → Task 5; §2.2's resolution order and fail-loud asymmetry → Task 4; §2.3's
-"no run id means legacy name" → Tasks 3 and 4. Design §3.3 (call sites), §4 (rollout), §5 (live
-E2E) are **out of scope here by design** — they are plans 2 and 3. §2.1's predict#40 comment and
-§7's roadmap entry belong to plan 3.
-
-**Deviation recorded.** §3.1's `resolve_run_manifest_path` became
-`resolve_run_manifest_name(pipeline_run_id, exists)` to preserve the library's no-filesystem-I/O
-invariant. Flagged at the top; gated on user agreement at Task 1 Step 7.
+**Review coverage.** B1 → Task 4's required `allow_legacy` + its two dedicated tests. B2 → design
+doc §2.5, corrected at `ab90185`; no code change needed. B3 → Task 7 Step 5 restores the full
+gate. B4 → Task 7 Steps 1-3. I1 → Task 4's open-don't-probe implementation and
+`test_read_propagates_a_permission_error_rather_than_advancing`. I2 → Task 3 ships the env reader
+and writer rule together, and design §3.2 records the bloomctl obligation. I3a → `is_per_run` plus
+the legacy no-op. I3b → `run_manifest_name_for_writing`. I3c → `PIPELINE_RUN_ID_ENV_VAR` exported
+and asserted. I4 → cap is now 237, derived rather than literal. Lens 1's MODIFIED-requirement
+point → Task 1R. Lens 2's boundary and non-str gaps → Task 2. Lens 5's rollback point → Task 8.
 
 **Placeholders.** None — every code step carries real code, every test step real assertions.
 
 **Type consistency.** `run_manifest_filename(str) -> str` is called by
-`resolve_run_manifest_name` in Task 4 exactly as defined in Task 2.
-`pipeline_run_id_from_env() -> str | None` feeds `resolve_run_manifest_name`'s first parameter,
-also `str | None`. `check_run_manifest_identity` takes `RunManifest`, matching the existing model.
-Exception names are identical across Tasks 4, 5 and the spec delta.
+`run_manifest_name_for_writing` (Task 3) and `read_run_manifest` (Task 4) exactly as defined in
+Task 2. `pipeline_run_id_from_env() -> str | None` feeds both of those, whose parameter is
+`str | None`. `read_run_manifest` returns `RunManifestRead | None`; `check_run_manifest_identity`
+takes that read's `.filename`. Exception names match across Tasks 4, 5 and the delta.
+
+**Known residual.** S2's TOCTOU is closed for the read itself, but a per-run file created between
+the two candidate opens still leaves the reader on the legacy file. That window shuts for good at
+design §4 step 6, when `allow_legacy` goes to `False`. Recorded rather than fixed.
