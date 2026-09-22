@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0a9] - 2026-09-22 (Pre-release)
+
 ### Added
 - Per-run run-manifest naming and resolution: `run_manifest_filename`,
   `pipeline_run_id_from_env`, `run_manifest_name_for_writing`, `read_run_manifest`,
@@ -339,7 +341,8 @@ sleap-roots ↔ Bloom pipeline integration. Pure, dependency-light, Bloom-agnost
 - CI (lint + drift guard + tests on Python 3.11/3.12) and a PyPI
   trusted-publishing workflow.
 
-[Unreleased]: https://github.com/talmolab/sleap-roots-contracts/compare/v0.1.0a8...HEAD
+[Unreleased]: https://github.com/talmolab/sleap-roots-contracts/compare/v0.1.0a9...HEAD
+[0.1.0a9]: https://github.com/talmolab/sleap-roots-contracts/compare/v0.1.0a8...v0.1.0a9
 [0.1.0a8]: https://github.com/talmolab/sleap-roots-contracts/compare/v0.1.0a7...v0.1.0a8
 [0.1.0a7]: https://github.com/talmolab/sleap-roots-contracts/compare/v0.1.0a6...v0.1.0a7
 [0.1.0a6]: https://github.com/talmolab/sleap-roots-contracts/compare/v0.1.0a5...v0.1.0a6
