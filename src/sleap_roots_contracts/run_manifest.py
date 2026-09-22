@@ -5,6 +5,14 @@ alongside the per-scan `{scan_key}.scan_metadata.json` sidecars it already write
 same shared staging directory. Read by `sleap-roots-predict` and `sleap-roots`-traits to scope
 processing to exactly the `scan_keys` a run was given, instead of directory-wide-scanning
 whatever sidecars happen to be present (see talmolab/sleap-roots-pipeline#37).
+
+Since 0.1.0a9 the manifest may also be named per run — ``run_manifest.<pipeline_run_id>.json``,
+built by :func:`run_manifest_filename` — so runs sharing an output directory no longer share a
+manifest. ``RUN_MANIFEST_FILENAME`` remains the name used when a stage has no run identity (no
+``ARGO_WORKFLOW_NAME``), which keeps local and ``local-WSL2-*`` runs on their previous
+behavior. :func:`read_run_manifest` is the single definition of how a reader chooses between
+the two, what a missing manifest means, and when the legacy name is still acceptable; see
+talmolab/sleap-roots-pipeline#71.
 """
 
 import errno
@@ -324,7 +332,9 @@ def check_run_manifest_identity(
     Args:
         manifest: The parsed manifest.
         pipeline_run_id: The reader's own run identity.
-        filename: The name it was read from.
+        filename: The name it was read from — a bare filename, as
+            :func:`read_run_manifest` returns. Passing a full path defeats the legacy-name
+            comparison below and produces a spurious mismatch.
 
     Returns:
         None.
