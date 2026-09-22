@@ -11,28 +11,41 @@ every run operates on the union of all runs. Measured four times on 2026-09-21 o
 
 Fix shape (a) from talmolab/sleap-roots-pipeline#71: give the manifest a per-run *identity*
 while artifacts stay shared, so dedup keeps working. That needs a filename convention, and it
-needs one shared definition of how a reader resolves and falls back — three consumers
+needs one shared definition of how a reader resolves, falls back, and fails — three consumers
 (`bloomctl`, `sleap-roots-predict`, `sleap-roots`) must agree exactly or the rollout skews.
 
 ## What Changes
 
-- **ADDED** `run_manifest_filename(pipeline_run_id)` — the per-run filename, with validation that
-  the id is safe to use as a path component.
-- **ADDED** `pipeline_run_id_from_env()` — one definition of "which run am I", read from
-  `ARGO_WORKFLOW_NAME`.
-- **ADDED** `resolve_run_manifest_name(pipeline_run_id, exists)` — the resolution policy: per-run
-  name, then the legacy name, then raise if the run id is known and neither is present, else
-  `None`. Pure: the caller supplies `exists`, so the library keeps doing no filesystem I/O.
+- **ADDED** `run_manifest_filename(pipeline_run_id)` — the per-run filename, validating that the
+  id is safe as a path component and short enough that the filename fits in `NAME_MAX`.
+- **ADDED** `PIPELINE_RUN_ID_ENV_VAR` and `pipeline_run_id_from_env(env=None)` — one definition
+  of "which run am I". Writers and readers must both use it; a writer that reads the environment
+  itself can disagree about whitespace and make the identity cross-check fail on every stage.
+- **ADDED** `run_manifest_name_for_writing(pipeline_run_id)` — the writer's rule: per-run name
+  when an identity is known, legacy name otherwise.
+- **ADDED** `read_run_manifest(directory, pipeline_run_id, *, allow_legacy)` and
+  `RunManifestRead` — the resolution policy, performed by *opening* each candidate rather than
+  probing, so an unreadable manifest cannot be mistaken for an absent one. Returns the bytes,
+  the name they came from, and whether that name was the per-run form.
 - **ADDED** `check_run_manifest_identity(...)` — the cross-check that a per-run-named manifest
-  names the run reading it. This is bloom#703's cross-check, possible for the first time.
+  names the run reading it; a no-op for the legacy name. This is bloom#703's cross-check,
+  possible for the first time.
 - **ADDED** `RunManifestMissingError`, `RunManifestIdentityError`.
+- **MODIFIED** the `Well-Known Filename Constant` requirement — `RUN_MANIFEST_FILENAME` keeps its
+  exact value, but it is no longer the only on-disk name, so describing it as "the single source
+  of truth for the manifest's on-disk filename" would become false.
 
-`RUN_MANIFEST_FILENAME` and `RunManifest` are unchanged. This release is additive; 0.1.0a8
-consumers are unaffected until they adopt the new names.
+`RunManifest` is unchanged. This release is additive in behavior; 0.1.0a8 consumers are
+unaffected until they adopt the new names.
 
 ## Impact
 
 - Affected specs: `run-manifest-contract`
 - Affected code: `src/sleap_roots_contracts/run_manifest.py`, `__init__.py`
+- Affected docs: `README.md`, `openspec/project.md`, `docs/CHANGELOG.md`. Two claims in
+  `project.md` are corrected in passing — both predate this change and were verified false during
+  review: that the library does no filesystem I/O (`schema.py:93-98`'s `emit_schema` writes
+  files), and that `sleap-roots-predict`/`sleap-roots`-traits have not yet landed their consuming
+  PRs (both have read the manifest since `0.1.0a7`).
 - Downstream (separate changes, not this one): `salk-bloom` bloomctl writer + ingest reader,
   `sleap-roots-predict`, `sleap-roots` traits, then template pin bumps in `sleap-roots-pipeline`.
