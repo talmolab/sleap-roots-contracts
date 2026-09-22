@@ -22,8 +22,10 @@ and (6), since `0.1.0a7`, the **run-manifest contract** — `RunManifest`, the r
 `sleap-roots-predict`/`sleap-roots`-traits (readers). Since `0.1.0a9` it also defines the per-run
 filename convention and the shared resolution policy — `run_manifest_filename`,
 `pipeline_run_id_from_env`, `run_manifest_name_for_writing`, `read_run_manifest`,
-`check_run_manifest_identity` — so the four consumer call sites agree on one definition rather
-than three (talmolab/sleap-roots-pipeline#71).
+`check_run_manifest_identity`, and `load_run_manifest` (the **recommended entry point**,
+composing the three read/parse/check primitives in one call; `LoadedRunManifest` is its
+result) — so the four consumer call sites agree on one definition rather than three
+(talmolab/sleap-roots-pipeline#71).
 Contracts (1) and (2) emit versioned JSON Schema artifacts (Bloom consumes them); contracts (3),
 (4), (5) and (6) are producer↔producer shapes that never cross the Bloom boundary and are **not**
 emitted to JSON Schema. The contract-owned `Mode` capture-mode vocabulary types `mode` on both

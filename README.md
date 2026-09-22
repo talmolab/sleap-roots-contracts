@@ -59,9 +59,11 @@ Since `0.1.0a7` it also defines the **run-manifest contract** — `RunManifest`/
 was given. Like `ModelCard`, it is a producer↔producer contract and is **not** emitted to the
 JSON Schema. Since `0.1.0a9` it also defines the per-run filename convention and the shared
 resolution policy — `run_manifest_filename`, `pipeline_run_id_from_env`,
-`run_manifest_name_for_writing`, `read_run_manifest`, `check_run_manifest_identity` — so the four
-consumer call sites agree on one definition rather than three
-(talmolab/sleap-roots-pipeline#71). Adopters must bump readers before the writer: once a writer
+`run_manifest_name_for_writing`, `read_run_manifest`, `check_run_manifest_identity`, and
+`load_run_manifest` (the **recommended entry point**, composing the three read/parse/check
+primitives in one call; `LoadedRunManifest` is its result) — so the four consumer call sites
+agree on one definition rather than three (talmolab/sleap-roots-pipeline#71). Adopters must
+bump readers before the writer: once a writer
 publishes `run_manifest.<pipeline_run_id>.json`, an un-adopted reader no longer finds
 `run_manifest.json` and falls back to its own whole-tree discovery, which is worse than the
 shared-manifest defect this release fixes.

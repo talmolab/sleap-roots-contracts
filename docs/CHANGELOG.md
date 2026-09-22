@@ -11,10 +11,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Per-run run-manifest naming and resolution: `run_manifest_filename`,
   `pipeline_run_id_from_env`, `run_manifest_name_for_writing`, `read_run_manifest`,
-  `check_run_manifest_identity`, `RunManifestRead`, `PIPELINE_RUN_ID_ENV_VAR`, and the
-  `RunManifestError` / `RunManifestMissingError` / `RunManifestIdentityError` exceptions
-  (talmolab/sleap-roots-pipeline#71). Additive — `RunManifest` and `RUN_MANIFEST_FILENAME` are
-  unchanged, so 0.1.0a8 consumers are unaffected until they adopt the new names.
+  `check_run_manifest_identity`, `RunManifestRead`, `PIPELINE_RUN_ID_ENV_VAR`, the
+  `RunManifestError` / `RunManifestMissingError` / `RunManifestIdentityError` exceptions, and
+  `load_run_manifest` / `LoadedRunManifest` — `load_run_manifest` is the **recommended entry
+  point**, composing `read_run_manifest`, `RunManifest.model_validate_json` and
+  `check_run_manifest_identity` in one call; the three primitives remain exported as an escape
+  hatch (talmolab/sleap-roots-pipeline#71). Additive — `RunManifest` and `RUN_MANIFEST_FILENAME`
+  are unchanged, so 0.1.0a8 consumers are unaffected until they adopt the new names.
 
 ## [0.1.0a8] - 2026-08-17 (Pre-release)
 

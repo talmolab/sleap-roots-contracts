@@ -538,18 +538,20 @@ def test_identity_check_is_a_noop_for_a_caller_with_no_run_identity():
 
 
 def test_identity_check_uses_the_flag_not_the_filename():
-    """A per-run read whose filename is a full path is still checked, and still passes.
+    """``is_per_run`` governs the decision; ``filename`` (always a bare filename) is used
+    only to compose the error message, never parsed or compared to decide anything.
 
-    The old string comparison made this exact call a spurious raise, which is the reason
-    the predicate is carried on the read rather than re-derived.
+    The filename here deliberately does not name either run, to show the check's outcome
+    turns on ``is_per_run`` and the two manifests' ``pipeline_run_id`` values alone.
     """
     manifest = make_manifest(pipeline_run_id="wf1")
-    read = make_read("/staging/out/run_manifest.wf1.json", is_per_run=True)
+    read = make_read("run_manifest.some-other-run.json", is_per_run=True)
     assert check_run_manifest_identity(manifest, "wf1", read) is None
 
     foreign = make_manifest(pipeline_run_id="wf2")
-    with pytest.raises(RunManifestIdentityError):
+    with pytest.raises(RunManifestIdentityError) as excinfo:
         check_run_manifest_identity(foreign, "wf1", read)
+    assert "run_manifest.some-other-run.json" in str(excinfo.value)
 
 
 def test_identity_check_raises_value_error_for_no_identity_with_a_per_run_read():

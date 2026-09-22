@@ -10,8 +10,12 @@ Since 0.1.0a9 the manifest may also be named per run — ``run_manifest.<pipelin
 built by :func:`run_manifest_filename` — so runs sharing an output directory no longer share a
 manifest. ``RUN_MANIFEST_FILENAME`` remains the name used when a stage has no run identity (no
 ``ARGO_WORKFLOW_NAME``), which keeps local and ``local-WSL2-*`` runs on their previous
-behavior. :func:`read_run_manifest` is the single definition of how a reader chooses between
-the two, what a missing manifest means, and when the legacy name is still acceptable; see
+behavior. :func:`load_run_manifest` is the **recommended entry point** for a reader: it
+composes, in the required order, the three primitives that otherwise decide between the two
+names, parse the bytes, and cross-check the result — :func:`read_run_manifest`,
+``RunManifest.model_validate_json``, and :func:`check_run_manifest_identity`. Those three
+remain exported as an escape hatch for a forwarding stage that never parses, or a consumer
+whose parsing is already wrapped in its own error handling; see
 talmolab/sleap-roots-pipeline#71.
 
 Adopters MUST bump readers before the writer during rollout. Once a writer starts publishing
@@ -192,7 +196,9 @@ class RunManifestRead(NamedTuple):
     appended without breaking them.
 
     Attributes:
-        filename: The name actually read, so a forwarding stage can republish under it.
+        filename: The bare filename actually read (one of ``RUN_MANIFEST_FILENAME`` or a
+            :func:`run_manifest_filename` result) — never a path — so a forwarding stage can
+            republish under it.
         data: The raw bytes, returned rather than a path so there is no window in which the
             file changes between being found and being read.
         mode: The source file's permission bits, taken by ``fstat`` on the descriptor already
@@ -214,8 +220,12 @@ class LoadedRunManifest(NamedTuple):
     """The result of :func:`load_run_manifest`: a parsed manifest plus its read.
 
     Attributes:
-        manifest: The parsed :class:`RunManifest`, already cross-checked against the caller's
-            run identity. A scope-only consumer needs only this field.
+        manifest: The parsed :class:`RunManifest`. Cross-checked against the caller's run
+            identity only when ``read.is_per_run`` is true (see
+            :func:`check_run_manifest_identity`). On a legacy read there is no run identity
+            in the name to check against, so this field is **deliberately unverified** in
+            that case and may name an older run. A scope-only consumer that cares about this
+            distinction must also consult ``read.is_per_run``, not this field alone.
         read: The :class:`RunManifestRead` the manifest was parsed from. A forwarding stage
             that must republish the manifest faithfully needs ``read.data``, ``read.mode`` and
             ``read.filename`` in addition to ``manifest`` — carrying both fields in one result
@@ -391,8 +401,10 @@ def check_run_manifest_identity(
 
     The decision is taken from ``read.is_per_run`` rather than re-derived by comparing
     ``read.filename`` — :func:`read_run_manifest` already knows which candidate it opened,
-    and a second derivation would be a second source of truth that disagrees the moment a
-    caller holds anything but a bare filename.
+    and a second derivation would be a second source of truth. ``read.filename`` is always a
+    bare filename (never a path), but this function does not rely on that: it never parses or
+    compares ``filename`` to decide anything, and uses it only to compose the error message
+    below.
 
     ``pipeline_run_id=None`` with a non-per-run read needs no branch of its own. A caller with
     no identity only ever gets ``is_per_run=False`` from :func:`read_run_manifest` — without an
@@ -443,16 +455,23 @@ def load_run_manifest(
     *,
     allow_legacy: bool,
 ) -> LoadedRunManifest | None:
-    """Read, parse and cross-check the run manifest this caller should use, in one call.
+    """Read, parse and conditionally cross-check the run manifest this caller should use.
 
-    Three primitives — :func:`read_run_manifest`, ``RunManifest.model_validate_json``, and
-    :func:`check_run_manifest_identity` — must be composed in exactly this order by every one
-    of the four consumer call sites. Omitting the third call is silent: it still returns a
-    parsed manifest, just possibly another run's, since a stale legacy file routinely names an
-    earlier run (see :func:`check_run_manifest_identity`). This function is the recommended
-    entry point precisely because it makes that safe sequence the short one; the three
-    primitives remain exported for a forwarding stage that never parses, or a consumer whose
-    parsing is already wrapped in its own error handling.
+    Composes three primitives in one call — :func:`read_run_manifest`,
+    ``RunManifest.model_validate_json``, and :func:`check_run_manifest_identity` — which must
+    otherwise be composed in exactly this order by every one of the four consumer call sites.
+    Omitting the third call is silent: it still returns a parsed manifest, just possibly
+    another run's, since a stale legacy file routinely names an earlier run (see
+    :func:`check_run_manifest_identity`). This function is the **recommended entry point**
+    precisely because it makes that safe sequence the short one; the three primitives remain
+    exported as an escape hatch — for a forwarding stage that never parses, or a consumer
+    whose parsing is already wrapped in its own error handling.
+
+    Calling this does not by itself guarantee the returned manifest names the caller's run:
+    :func:`check_run_manifest_identity` is a deliberate no-op when the read is not per-run (a
+    legacy ``RUN_MANIFEST_FILENAME`` read), so a stale legacy file can still come back naming
+    an earlier run. Consult the returned ``read.is_per_run`` when that distinction matters
+    (see :class:`LoadedRunManifest`).
 
     Args:
         directory: Directory to look in, forwarded to :func:`read_run_manifest` unchanged.
