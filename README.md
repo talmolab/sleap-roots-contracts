@@ -2,11 +2,14 @@
 
 Shared **result + provenance contract** for the sleap-roots ↔ Bloom pipeline.
 
-This is a small, dependency-light library — code-agnostic toward Bloom (no Bloom import, no
-DB/network/filesystem I/O) — that defines the shape of a per-scan pipeline result and its
-provenance (Pydantic v2 models), emits a versioned JSON Schema artifact, and ships a
-trait-definitions registry. The Python producers (`sleap-roots-predict`, `sleap-roots-traits`)
-import it; Bloom consumes the emitted schema.
+This is a small, dependency-light library — code-agnostic toward Bloom (no Bloom import; no DB
+or network I/O, and no ambient filesystem reads in the contract-model surface — the exceptions
+are deliberate and named: `emit_schema` writes the JSON Schema artifacts, `registry`/`examples`
+read packaged resources, and `read_run_manifest` reads one named file from a caller-supplied
+directory) — that defines the shape of a per-scan pipeline result and its provenance (Pydantic
+v2 models), emits a versioned JSON Schema artifact, and ships a trait-definitions registry. The
+Python producers (`sleap-roots-predict`, `sleap-roots-traits`) import it; Bloom consumes the
+emitted schema.
 
 It also defines the **analysis-input contract** — the canonical shape of the wide trait
 table that crosses the `sleap-roots-analyze` ↔ Bloom boundary.
