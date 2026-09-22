@@ -9,12 +9,14 @@ from pydantic import ValidationError
 from sleap_roots_contracts.run_manifest import (
     PIPELINE_RUN_ID_ENV_VAR,
     RUN_MANIFEST_FILENAME,
+    LoadedRunManifest,
     RunManifest,
     RunManifestError,
     RunManifestIdentityError,
     RunManifestMissingError,
     RunManifestRead,
     check_run_manifest_identity,
+    load_run_manifest,
     pipeline_run_id_from_env,
     read_run_manifest,
     run_manifest_filename,
@@ -593,11 +595,13 @@ def test_new_names_are_exported_from_the_package_root():
 
     for name in (
         "PIPELINE_RUN_ID_ENV_VAR",
+        "LoadedRunManifest",
         "RunManifestError",
         "RunManifestIdentityError",
         "RunManifestMissingError",
         "RunManifestRead",
         "check_run_manifest_identity",
+        "load_run_manifest",
         "pipeline_run_id_from_env",
         "read_run_manifest",
         "run_manifest_filename",
@@ -610,3 +614,54 @@ def test_new_names_are_exported_from_the_package_root():
 def test_legacy_filename_constant_is_unchanged():
     """This release is additive — the existing constant keeps its exact value."""
     assert RUN_MANIFEST_FILENAME == "run_manifest.json"
+
+
+def test_load_run_manifest_happy_path_returns_manifest_and_read(tmp_path):
+    """The composed call reads, parses and cross-checks in one step."""
+    (tmp_path / "run_manifest.wf1.json").write_bytes(
+        b'{"pipeline_run_id": "wf1", "scan_keys": ["scan_1"]}'
+    )
+    loaded = load_run_manifest(tmp_path, "wf1", allow_legacy=True)
+    assert isinstance(loaded, LoadedRunManifest)
+    assert loaded.manifest.pipeline_run_id == "wf1"
+    assert loaded.read.is_per_run is True
+    assert loaded.read.filename == "run_manifest.wf1.json"
+
+
+def test_load_run_manifest_raises_identity_error_for_a_foreign_manifest(tmp_path):
+    """A per-run manifest naming a different run raises through the composed call."""
+    (tmp_path / "run_manifest.wf1.json").write_bytes(
+        b'{"pipeline_run_id": "wf2", "scan_keys": ["scan_1"]}'
+    )
+    with pytest.raises(RunManifestIdentityError):
+        load_run_manifest(tmp_path, "wf1", allow_legacy=True)
+
+
+def test_load_run_manifest_skips_cross_check_for_the_legacy_manifest(tmp_path):
+    """A legacy manifest naming an earlier run loads without a cross-check."""
+    (tmp_path / RUN_MANIFEST_FILENAME).write_bytes(
+        b'{"pipeline_run_id": "some-older-run", "scan_keys": ["scan_1"]}'
+    )
+    loaded = load_run_manifest(tmp_path, "wf1", allow_legacy=True)
+    assert loaded.read.is_per_run is False
+    assert loaded.manifest.pipeline_run_id == "some-older-run"
+
+
+def test_load_run_manifest_returns_none_when_nothing_present_and_no_identity(tmp_path):
+    """Nothing found and no run identity returns None, matching read_run_manifest."""
+    assert load_run_manifest(tmp_path, None, allow_legacy=False) is None
+
+
+def test_load_run_manifest_raises_missing_when_nothing_present_with_an_identity(
+    tmp_path,
+):
+    """Nothing found with a run identity is RunManifestMissingError."""
+    with pytest.raises(RunManifestMissingError):
+        load_run_manifest(tmp_path, "wf1", allow_legacy=True)
+
+
+def test_load_run_manifest_raises_validation_error_for_a_malformed_manifest(tmp_path):
+    """A malformed manifest raises pydantic's ValidationError, unwrapped."""
+    (tmp_path / "run_manifest.wf1.json").write_bytes(b"not json")
+    with pytest.raises(ValidationError):
+        load_run_manifest(tmp_path, "wf1", allow_legacy=True)

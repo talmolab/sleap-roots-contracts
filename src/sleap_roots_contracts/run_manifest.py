@@ -193,6 +193,22 @@ class RunManifestRead(NamedTuple):
     is_per_run: bool
 
 
+class LoadedRunManifest(NamedTuple):
+    """The result of :func:`load_run_manifest`: a parsed manifest plus its read.
+
+    Attributes:
+        manifest: The parsed :class:`RunManifest`, already cross-checked against the caller's
+            run identity. A scope-only consumer needs only this field.
+        read: The :class:`RunManifestRead` the manifest was parsed from. A forwarding stage
+            that must republish the manifest faithfully needs ``read.data``, ``read.mode`` and
+            ``read.filename`` in addition to ``manifest`` — carrying both fields in one result
+            means it needs only the one call.
+    """
+
+    manifest: "RunManifest"
+    read: RunManifestRead
+
+
 def read_run_manifest(
     directory: str | Path,
     pipeline_run_id: str | None,
@@ -402,3 +418,54 @@ def check_run_manifest_identity(
             f"{read.filename} was read as run {pipeline_run_id!r}'s manifest but names run "
             f"{manifest.pipeline_run_id!r}"
         )
+
+
+def load_run_manifest(
+    directory: str | Path,
+    pipeline_run_id: str | None,
+    *,
+    allow_legacy: bool,
+) -> LoadedRunManifest | None:
+    """Read, parse and cross-check the run manifest this caller should use, in one call.
+
+    Three primitives — :func:`read_run_manifest`, ``RunManifest.model_validate_json``, and
+    :func:`check_run_manifest_identity` — must be composed in exactly this order by every one
+    of the four consumer call sites. Omitting the third call is silent: it still returns a
+    parsed manifest, just possibly another run's, since a stale legacy file routinely names an
+    earlier run (see :func:`check_run_manifest_identity`). This function is the recommended
+    entry point precisely because it makes that safe sequence the short one; the three
+    primitives remain exported for a forwarding stage that never parses, or a consumer whose
+    parsing is already wrapped in its own error handling.
+
+    Args:
+        directory: Directory to look in, forwarded to :func:`read_run_manifest` unchanged.
+        pipeline_run_id: This run's identity, or ``None`` (see
+            :func:`pipeline_run_id_from_env`), forwarded unchanged to both
+            :func:`read_run_manifest` and :func:`check_run_manifest_identity`.
+        allow_legacy: Forwarded unchanged to :func:`read_run_manifest`. Required and
+            keyword-only, with no default, matching that function.
+
+    Returns:
+        A :class:`LoadedRunManifest` combining the parsed manifest and the
+        :class:`RunManifestRead` it was parsed from — so a consumer that both forwards and
+        scopes needs only this one call. ``None`` exactly when :func:`read_run_manifest`
+        returns ``None``: nothing found and no run identity.
+
+    Raises:
+        RunManifestMissingError: If ``pipeline_run_id`` is not ``None`` and no candidate was
+            found. Raised by :func:`read_run_manifest`.
+        ValueError: If ``pipeline_run_id`` is not usable as a filename component, or if
+            ``pipeline_run_id`` is ``None`` while a per-run manifest was somehow read (a
+            caller bug — see :func:`check_run_manifest_identity`).
+        ValidationError: Pydantic's error, if ``read.data`` is not a valid ``RunManifest``.
+        RunManifestIdentityError: If a per-run-named manifest names a different run.
+        OSError: Any failure other than the candidate being genuinely absent — notably
+            ``PermissionError`` and a dangling-symlink candidate. Raised by
+            :func:`read_run_manifest`.
+    """
+    read = read_run_manifest(directory, pipeline_run_id, allow_legacy=allow_legacy)
+    if read is None:
+        return None
+    manifest = RunManifest.model_validate_json(read.data)
+    check_run_manifest_identity(manifest, pipeline_run_id, read)
+    return LoadedRunManifest(manifest=manifest, read=read)
