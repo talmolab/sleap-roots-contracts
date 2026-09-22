@@ -29,15 +29,22 @@ needs one shared definition of how a reader resolves, falls back, and fails — 
   the name they came from, the source's permission bits, and whether that name was the per-run
   form. `allow_legacy` governs only a caller that knows its own identity; without one,
   `RUN_MANIFEST_FILENAME` is the correct name and is always read.
-- **ADDED** `check_run_manifest_identity(...)` — the cross-check that a per-run-named manifest
-  names the run reading it; a no-op for the legacy name. This is bloom#703's cross-check,
-  possible for the first time.
+- **ADDED** `check_run_manifest_identity(manifest, pipeline_run_id, read)` — the cross-check that
+  a per-run-named manifest names the run reading it; a no-op whenever the `RunManifestRead` it is
+  handed is not the per-run form. It takes the read itself, rather than a filename, so the
+  per-run predicate has exactly one definition — `read_run_manifest` already recorded which
+  candidate it opened. This is bloom#703's cross-check, possible for the first time.
 - **ADDED** `RunManifestError` and its subclasses `RunManifestMissingError` (also a
   `LookupError`) and `RunManifestIdentityError` — deliberately not a `ValueError`, so a handler
-  catching pydantic's `ValidationError` cannot swallow a foreign-manifest signal.
+  catching pydantic's `ValidationError` cannot swallow a foreign-manifest signal. It is the base
+  of those two *resolution and identity* failures only: an unusable id raises a bare `ValueError`
+  and a missing directory raises `FileNotFoundError`, and neither derives from it.
 - **MODIFIED** the `Well-Known Filename Constant` requirement — `RUN_MANIFEST_FILENAME` keeps its
   exact value, but it is no longer the only on-disk name, so describing it as "the single source
   of truth for the manifest's on-disk filename" would become false.
+- **MODIFIED** the `Package Export` requirement — restated to list all twelve exported names, the
+  two pre-existing plus the ten added here, rather than adding a second, overlapping export
+  requirement the capability would then carry forever.
 
 `RunManifest` is unchanged. This release is additive in behavior; 0.1.0a8 consumers are
 unaffected until they adopt the new names.

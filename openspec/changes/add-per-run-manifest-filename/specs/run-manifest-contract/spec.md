@@ -191,34 +191,57 @@ locally, where unscoped discovery is the established behavior.
 
 ### Requirement: Run Identity Cross-Check
 
-The library SHALL export `check_run_manifest_identity(manifest, pipeline_run_id, filename)`,
-raising `RunManifestIdentityError` when `filename` is not `RUN_MANIFEST_FILENAME` and
-`manifest.pipeline_run_id` differs from `pipeline_run_id`, and returning `None` otherwise. It
-SHALL be a no-op when `filename` is `RUN_MANIFEST_FILENAME`, because the legacy name carries no
+The library SHALL export
+`check_run_manifest_identity(manifest, pipeline_run_id: str | None, read: RunManifestRead)`,
+raising `RunManifestIdentityError` when `read.is_per_run` is true and
+`manifest.pipeline_run_id` differs from `pipeline_run_id`, and returning `None` otherwise.
+
+The decision SHALL be taken from `read.is_per_run` and SHALL NOT be re-derived by comparing
+`read.filename` against `RUN_MANIFEST_FILENAME`. `read_run_manifest` already recorded which
+candidate it opened; a second derivation would be a second source of truth, and would disagree
+with the first for any caller holding something other than a bare filename. `read.filename`
+SHALL be used only to name the file in the error message.
+
+The check SHALL be a no-op when `read.is_per_run` is false, because the legacy name carries no
 run identity and routinely names an earlier run; callers can therefore pass whatever
-`read_run_manifest` returned without testing the name themselves.
+`read_run_manifest` returned without testing it themselves.
+
+`pipeline_run_id` SHALL accept `None`, so the natural read → parse → check call chain can pass
+the `str | None` identity straight through. No separate `None` branch is required: a caller with
+no identity only ever receives `is_per_run` false, which already no-ops the check.
 
 #### Scenario: A matching identity passes
-- **WHEN** a manifest with `pipeline_run_id="wf1"` is checked against `"wf1"` under
-  `run_manifest.wf1.json`
+- **WHEN** a manifest with `pipeline_run_id="wf1"` is checked against `"wf1"` under a read with
+  `is_per_run` true and `filename="run_manifest.wf1.json"`
 - **THEN** no exception is raised
 
 #### Scenario: A foreign manifest is rejected
-- **WHEN** a manifest with `pipeline_run_id="wf2"` is checked against `"wf1"` under
-  `run_manifest.wf1.json`
+- **WHEN** a manifest with `pipeline_run_id="wf2"` is checked against `"wf1"` under a read with
+  `is_per_run` true and `filename="run_manifest.wf1.json"`
 - **THEN** `RunManifestIdentityError` is raised, and its message names both ids and the filename
 
-#### Scenario: The legacy filename is exempt
-- **WHEN** a manifest with `pipeline_run_id="some-older-run"` is checked against `"wf1"` under
-  `RUN_MANIFEST_FILENAME`
+#### Scenario: A read that is not the per-run form is exempt
+- **WHEN** a manifest with `pipeline_run_id="some-older-run"` is checked against `"wf1"` under a
+  read with `is_per_run` false
+- **THEN** no exception is raised
+
+#### Scenario: A caller with no run identity is exempt
+- **WHEN** a manifest is checked with `pipeline_run_id=None` under a read with `is_per_run` false
 - **THEN** no exception is raised
 
 ### Requirement: Error Taxonomy
 
-The library SHALL export `RunManifestError` as the common base of every run-manifest failure it
-raises. `RunManifestMissingError` SHALL derive from both `RunManifestError` and `LookupError`.
+The library SHALL export `RunManifestError` as the common base of the run-manifest *resolution
+and identity* failures — exactly `RunManifestMissingError` and `RunManifestIdentityError`.
+`RunManifestMissingError` SHALL derive from both `RunManifestError` and `LookupError`.
 `RunManifestIdentityError` SHALL derive from `RunManifestError` and SHALL NOT derive from
 `ValueError`.
+
+`RunManifestError` is NOT the base of every failure these functions raise. An unusable
+`pipeline_run_id` SHALL raise a bare `ValueError` (see "Per-Run Manifest Filename") and a missing
+`directory` SHALL raise `FileNotFoundError` (see "Manifest Resolution And Reading"); neither SHALL
+derive from `RunManifestError`. A consumer that must catch everything therefore catches
+`RunManifestError`, `ValueError` and `OSError`.
 
 The exclusion is deliberate. Pydantic's `ValidationError` is a `ValueError`, and consumers wrap
 manifest parsing in handlers that catch it; a manifest belonging to another run is a different
@@ -236,17 +259,13 @@ and stronger signal than a malformed one, and must not be swallowed by the same 
 - **WHEN** `RunManifestIdentityError` is inspected
 - **THEN** it is not a subclass of `ValueError`
 
-### Requirement: New Names Are Exported From The Package Root
+#### Scenario: An invalid run id is not a RunManifestError
+- **WHEN** `run_manifest_filename("../escape")` raises
+- **THEN** the raised error is a `ValueError` and is not a `RunManifestError`
 
-The library SHALL export `run_manifest_filename`, `pipeline_run_id_from_env`,
-`PIPELINE_RUN_ID_ENV_VAR`, `run_manifest_name_for_writing`, `read_run_manifest`,
-`RunManifestRead`, `check_run_manifest_identity`, `RunManifestError`,
-`RunManifestMissingError` and `RunManifestIdentityError` from the package root, and list them in
-`__all__`.
-
-#### Scenario: Names importable from the package root
-- **WHEN** a consumer imports all ten names from `sleap_roots_contracts`
-- **THEN** the import succeeds and each name appears in `sleap_roots_contracts.__all__`
+#### Scenario: A missing directory is not a RunManifestError
+- **WHEN** `read_run_manifest` is called on a directory that does not exist
+- **THEN** the raised error is a `FileNotFoundError` and is not a `RunManifestError`
 
 ## MODIFIED Requirements
 
@@ -265,3 +284,26 @@ form and "Manifest Resolution And Reading" for how a reader chooses between them
 #### Scenario: It is the name a writer uses without a run identity
 - **WHEN** `run_manifest_name_for_writing(None)` is called
 - **THEN** it returns `RUN_MANIFEST_FILENAME`
+
+### Requirement: Package Export
+
+The library SHALL export the following twelve names from the package root and list each of them
+in `__all__`:
+
+- `RunManifest` and `RUN_MANIFEST_FILENAME` — the two pre-existing names, unchanged.
+- `PIPELINE_RUN_ID_ENV_VAR`, `RunManifestError`, `RunManifestIdentityError`,
+  `RunManifestMissingError`, `RunManifestRead`, `check_run_manifest_identity`,
+  `pipeline_run_id_from_env`, `read_run_manifest`, `run_manifest_filename` and
+  `run_manifest_name_for_writing` — the ten names this change adds.
+
+One export requirement covers the whole capability: consumers import the run-manifest contract
+from the package root, not from `sleap_roots_contracts.run_manifest`, so the root is the surface
+that must be stated in one place rather than split across a per-release list.
+
+#### Scenario: Names importable from package root
+- **WHEN** a consumer does `from sleap_roots_contracts import RunManifest, RUN_MANIFEST_FILENAME`
+- **THEN** the import succeeds and both names appear in `sleap_roots_contracts.__all__`
+
+#### Scenario: The new names are importable from the package root too
+- **WHEN** a consumer imports the other ten names from `sleap_roots_contracts`
+- **THEN** the import succeeds and each name appears in `sleap_roots_contracts.__all__`

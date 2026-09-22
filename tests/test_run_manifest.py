@@ -12,6 +12,7 @@ from sleap_roots_contracts.run_manifest import (
     RunManifestError,
     RunManifestIdentityError,
     RunManifestMissingError,
+    RunManifestRead,
     check_run_manifest_identity,
     pipeline_run_id_from_env,
     read_run_manifest,
@@ -304,11 +305,29 @@ def test_read_returns_none_without_an_identity_when_nothing_is_present_and_fallb
     assert read_run_manifest(tmp_path, None, allow_legacy=False) is None
 
 
-def test_read_rejects_a_blank_run_id(tmp_path):
+def test_read_rejects_a_blank_run_id(tmp_path, monkeypatch):
     """A blank-but-not-None id is invalid, not 'no identity' — it must not silently
-    become the legacy path."""
+    become the legacy path.
+
+    A readable legacy manifest is present, so were the blank id treated as "no identity"
+    the call would return it instead of raising. The recorded `Path.open` pins the rest of
+    the spec clause — "and the legacy name is not read": the id is validated while the
+    candidate list is built, before any file is opened.
+    """
+    (tmp_path / RUN_MANIFEST_FILENAME).write_bytes(b'{"legacy": true}')
+
+    opened: list[Path] = []
+    real_open = Path.open
+
+    def recording_open(self, *args, **kwargs):
+        opened.append(self)
+        return real_open(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", recording_open)
+
     with pytest.raises(ValueError):
         read_run_manifest(tmp_path, "", allow_legacy=True)
+    assert opened == []
 
 
 def test_read_reports_a_missing_directory_as_such(tmp_path):
@@ -402,31 +421,70 @@ def test_read_rejects_allow_legacy_positionally(tmp_path):
         read_run_manifest(tmp_path, "wf1", True)
 
 
+def make_read(filename, *, is_per_run):
+    """Build a RunManifestRead standing in for what read_run_manifest returned."""
+    return RunManifestRead(
+        filename=filename, data=b"{}", mode=0o644, is_per_run=is_per_run
+    )
+
+
 def test_identity_check_passes_for_the_owning_run():
     """The ordinary case: the file this run wrote names this run."""
     manifest = make_manifest(pipeline_run_id="wf1")
-    assert check_run_manifest_identity(manifest, "wf1", "run_manifest.wf1.json") is None
+    read = make_read("run_manifest.wf1.json", is_per_run=True)
+    assert check_run_manifest_identity(manifest, "wf1", read) is None
 
 
 def test_identity_check_rejects_a_foreign_manifest():
     """A per-run-named file naming a different run means the tree is not what we think."""
     manifest = make_manifest(pipeline_run_id="wf2")
+    read = make_read("run_manifest.wf1.json", is_per_run=True)
     with pytest.raises(RunManifestIdentityError) as excinfo:
-        check_run_manifest_identity(manifest, "wf1", "run_manifest.wf1.json")
+        check_run_manifest_identity(manifest, "wf1", read)
     message = str(excinfo.value)
     assert "wf1" in message
     assert "wf2" in message
     assert "run_manifest.wf1.json" in message
 
 
-def test_identity_check_is_a_noop_for_the_legacy_filename():
-    """The legacy name carries no identity, so a mismatch there is expected, not an error.
+def test_identity_check_is_a_noop_for_a_read_that_is_not_per_run():
+    """`is_per_run` false carries no identity, so a mismatch there is expected, not an error.
 
-    Without this, all four call sites would write the same
-    `if filename != RUN_MANIFEST_FILENAME` guard themselves.
+    Named for the predicate rather than the filename because that is what the function now
+    reads: `read_run_manifest` already recorded which candidate it opened, and the check
+    trusts that flag instead of re-deriving it from the name. Without this, all four call
+    sites would write the same `if filename != RUN_MANIFEST_FILENAME` guard themselves —
+    and would get it wrong for any read whose filename is not bare.
     """
     manifest = make_manifest(pipeline_run_id="some-older-run")
-    assert check_run_manifest_identity(manifest, "wf1", RUN_MANIFEST_FILENAME) is None
+    read = make_read(RUN_MANIFEST_FILENAME, is_per_run=False)
+    assert check_run_manifest_identity(manifest, "wf1", read) is None
+
+
+def test_identity_check_is_a_noop_for_a_caller_with_no_run_identity():
+    """`pipeline_run_id=None` needs no branch: such a caller only ever gets is_per_run false.
+
+    This is what lets the natural read -> parse -> check chain pass its `str | None` id
+    straight through without a guard at the call site.
+    """
+    manifest = make_manifest(pipeline_run_id="some-older-run")
+    read = make_read(RUN_MANIFEST_FILENAME, is_per_run=False)
+    assert check_run_manifest_identity(manifest, None, read) is None
+
+
+def test_identity_check_uses_the_flag_not_the_filename():
+    """A per-run read whose filename is a full path is still checked, and still passes.
+
+    The old string comparison made this exact call a spurious raise, which is the reason
+    the predicate is carried on the read rather than re-derived.
+    """
+    manifest = make_manifest(pipeline_run_id="wf1")
+    read = make_read("/staging/out/run_manifest.wf1.json", is_per_run=True)
+    assert check_run_manifest_identity(manifest, "wf1", read) is None
+
+    foreign = make_manifest(pipeline_run_id="wf2")
+    with pytest.raises(RunManifestIdentityError):
+        check_run_manifest_identity(foreign, "wf1", read)
 
 
 def test_identity_error_is_not_swallowed_by_a_generic_parse_handler():
@@ -444,6 +502,24 @@ def test_both_errors_share_one_catchable_base():
     assert issubclass(RunManifestIdentityError, RunManifestError)
     assert issubclass(RunManifestMissingError, RunManifestError)
     assert issubclass(RunManifestMissingError, LookupError)
+
+
+def test_an_invalid_run_id_is_not_a_run_manifest_error():
+    """RunManifestError is the base of resolution/identity failures only, not of every one.
+
+    An unusable id is a plain ValueError, so a consumer catching RunManifestError alone
+    does not catch it. Pinned so the class's stated scope stays true.
+    """
+    with pytest.raises(ValueError) as excinfo:
+        run_manifest_filename("../escape")
+    assert not isinstance(excinfo.value, RunManifestError)
+
+
+def test_a_missing_directory_is_not_a_run_manifest_error(tmp_path):
+    """The other failure outside the base class: a mis-mounted directory is an OSError."""
+    with pytest.raises(FileNotFoundError) as excinfo:
+        read_run_manifest(tmp_path / "nope", "wf1", allow_legacy=True)
+    assert not isinstance(excinfo.value, RunManifestError)
 
 
 def test_new_names_are_exported_from_the_package_root():

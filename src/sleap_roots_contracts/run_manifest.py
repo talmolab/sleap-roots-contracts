@@ -134,7 +134,13 @@ def run_manifest_name_for_writing(pipeline_run_id: str | None) -> str:
 
 
 class RunManifestError(Exception):
-    """Base for every run-manifest failure this module raises.
+    """Base for this module's *resolution and identity* failures.
+
+    Exactly two: :class:`RunManifestMissingError` and :class:`RunManifestIdentityError`.
+    It is **not** the base of every failure this module raises — an unusable
+    ``pipeline_run_id`` raises a bare ``ValueError`` and a missing directory raises
+    ``FileNotFoundError``, and neither derives from this class. A consumer that must catch
+    everything therefore catches ``RunManifestError``, ``ValueError`` and ``OSError``.
 
     Deliberately not a ``ValueError``. Pydantic's ``ValidationError`` is one, and consumers
     already wrap manifest parsing in ``except ValueError`` — inheriting from it would let a
@@ -257,7 +263,13 @@ def read_run_manifest(
             # both are FileNotFoundError, and only the first should advance.
             if not base.is_dir():
                 raise FileNotFoundError(
-                    errno.ENOENT, "run manifest directory does not exist", str(base)
+                    errno.ENOENT,
+                    "run manifest directory does not exist",
+                    # `as_posix()` here and in the missing-manifest message below, so the two
+                    # render the same path the same way. It is a plain `str`, which is what
+                    # the three-arg form's filename slot wants, and on the POSIX filesystems
+                    # this runs on it is identical to `str(base)`.
+                    base.as_posix(),
                 ) from exc
             continue
         return RunManifestRead(
@@ -316,25 +328,35 @@ class RunManifest(BaseModel):
 
 def check_run_manifest_identity(
     manifest: RunManifest,
-    pipeline_run_id: str,
-    filename: str,
+    pipeline_run_id: str | None,
+    read: RunManifestRead,
 ) -> None:
     """Verify a per-run-named manifest names the run that is reading it.
 
-    A no-op when ``filename`` is ``RUN_MANIFEST_FILENAME``: the legacy name carries no run
-    identity, and before per-run naming the producer overwrote ``pipeline_run_id`` on every
-    merge, so a legacy file routinely names some earlier run. Callers may therefore pass
-    whatever :func:`read_run_manifest` returned without testing the name themselves.
+    A no-op unless ``read.is_per_run``: the legacy name carries no run identity, and before
+    per-run naming the producer overwrote ``pipeline_run_id`` on every merge, so a legacy
+    file routinely names some earlier run. Callers may therefore pass whatever
+    :func:`read_run_manifest` returned without testing the name themselves.
+
+    The decision is taken from ``read.is_per_run`` rather than re-derived by comparing
+    ``read.filename`` — :func:`read_run_manifest` already knows which candidate it opened,
+    and a second derivation would be a second source of truth that disagrees the moment a
+    caller holds anything but a bare filename.
+
+    ``pipeline_run_id=None`` needs no branch of its own. A caller with no identity only ever
+    gets ``is_per_run=False`` from :func:`read_run_manifest`, which no-ops the check, so the
+    natural read → parse → check call chain can pass its ``str | None`` id straight through.
 
     For a per-run-named file this is the cross-check bloom#703 asked for, possible for the
     first time.
 
     Args:
         manifest: The parsed manifest.
-        pipeline_run_id: The reader's own run identity.
-        filename: The name it was read from — a bare filename, as
-            :func:`read_run_manifest` returns. Passing a full path defeats the legacy-name
-            comparison below and produces a spurious mismatch.
+        pipeline_run_id: The reader's own run identity, or ``None`` when it has none (see
+            :func:`pipeline_run_id_from_env`).
+        read: The :class:`RunManifestRead` the manifest was parsed from. ``is_per_run``
+            decides whether the check applies; ``filename`` is used only in the error
+            message.
 
     Returns:
         None.
@@ -342,10 +364,10 @@ def check_run_manifest_identity(
     Raises:
         RunManifestIdentityError: If a per-run-named manifest names a different run.
     """
-    if filename == RUN_MANIFEST_FILENAME:
+    if not read.is_per_run:
         return
     if manifest.pipeline_run_id != pipeline_run_id:
         raise RunManifestIdentityError(
-            f"{filename} was read as run {pipeline_run_id!r}'s manifest but names run "
+            f"{read.filename} was read as run {pipeline_run_id!r}'s manifest but names run "
             f"{manifest.pipeline_run_id!r}"
         )
