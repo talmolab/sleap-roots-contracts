@@ -36,11 +36,11 @@
 > (talmolab/sleap-roots-pipeline#71) — `run_manifest.<pipeline_run_id>.json`, so runs sharing an
 > output directory no longer share a manifest; `RUN_MANIFEST_FILENAME` remains the name used when
 > a stage has no run identity, which leaves local and `local-WSL2-*` runs on their previous
-> behavior. With it came the resolution and identity API the four consumer call sites now share
-> rather than each reimplementing: `run_manifest_filename`, `PIPELINE_RUN_ID_ENV_VAR`,
-> `pipeline_run_id_from_env`, `run_manifest_name_for_writing`, `read_run_manifest` +
-> `RunManifestRead`, `check_run_manifest_identity`, and the `RunManifestError` /
-> `RunManifestMissingError` / `RunManifestIdentityError` taxonomy. The body is
+> behavior. With it came the resolution and identity API the four consumer call sites are to
+> share, so they agree on one definition rather than three: `run_manifest_filename`,
+> `PIPELINE_RUN_ID_ENV_VAR`, `pipeline_run_id_from_env`, `run_manifest_name_for_writing`,
+> `read_run_manifest` + `RunManifestRead`, `check_run_manifest_identity`, and the
+> `RunManifestError` / `RunManifestMissingError` / `RunManifestIdentityError` taxonomy. The body is
 > otherwise left as written.
 
 ---
