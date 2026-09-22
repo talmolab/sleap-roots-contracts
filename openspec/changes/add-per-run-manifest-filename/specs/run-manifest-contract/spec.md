@@ -95,17 +95,28 @@ orchestration on exactly their previous behavior.
 ### Requirement: Manifest Resolution And Reading
 
 The library SHALL export `read_run_manifest(directory, pipeline_run_id, *, allow_legacy)`,
-returning a `RunManifestRead` carrying the filename read, its raw bytes, and whether that
-filename was the per-run form; or `None`. `allow_legacy` SHALL be keyword-only and SHALL have no
-default, so that every call site states its position and the fleet's migration state is
-discoverable by search.
+returning a `RunManifestRead` carrying the filename read, its raw bytes, the source file's
+permission bits, and whether that filename was the per-run form; or `None`. `allow_legacy` SHALL
+be keyword-only and SHALL have no default, so that every call site states its position and the
+fleet's migration state is discoverable by search.
 
-Candidates SHALL be tried in order: the per-run filename, only when `pipeline_run_id` is not
-`None`; then `RUN_MANIFEST_FILENAME`, only when `allow_legacy` is true. Each candidate SHALL be
-opened rather than tested for existence. Only `FileNotFoundError` SHALL advance to the next
-candidate; every other error, notably `PermissionError`, SHALL propagate. Returning the bytes
-rather than a path SHALL leave no window in which the file changes between being found and being
-read.
+The candidate list SHALL depend on whether a run identity exists. When `pipeline_run_id` is not
+`None`, it SHALL be the per-run filename followed by `RUN_MANIFEST_FILENAME`, the latter only
+when `allow_legacy` is true. When `pipeline_run_id` is `None`, it SHALL be
+`RUN_MANIFEST_FILENAME` alone, **regardless of `allow_legacy`**: with no run identity that name
+is not a legacy fallback but the correct and only name, so gating it would leave no candidate at
+all and silently return an unscoped result to every caller outside orchestration.
+
+Each candidate SHALL be opened rather than tested for existence. Only `FileNotFoundError` SHALL
+advance to the next candidate; every other error, notably `PermissionError`, SHALL propagate.
+Returning the bytes rather than a path SHALL leave no window in which the file changes between
+being found and being read. The permission bits SHALL be taken from the already-open descriptor,
+not by a second lookup by name, so that they describe the bytes returned; a forwarding consumer
+needs them to reproduce the source's mode for a downstream container running as another user.
+
+If `directory` itself does not exist, the function SHALL raise `FileNotFoundError` naming the
+directory, rather than reporting a missing manifest — under orchestration a mis-mounted input is
+the likelier cause and the two need different responses.
 
 When no candidate is found, the function SHALL raise `RunManifestMissingError` if
 `pipeline_run_id` is not `None`, and SHALL return `None` otherwise.
@@ -128,6 +139,30 @@ locally, where unscoped discovery is the established behavior.
 - **GIVEN** only `run_manifest.json` is present
 - **WHEN** `read_run_manifest(directory, "wf1", allow_legacy=False)` is called
 - **THEN** `RunManifestMissingError` is raised
+
+#### Scenario: Without a run identity the legacy name is used even when the fallback is disabled
+- **GIVEN** only `run_manifest.json` is present
+- **WHEN** `read_run_manifest(directory, None, allow_legacy=False)` is called
+- **THEN** it returns that file's bytes, with `is_per_run` false
+
+#### Scenario: Without a run identity and with nothing present the result is still not an error
+- **GIVEN** neither candidate is present
+- **WHEN** `read_run_manifest(directory, None, allow_legacy=False)` is called
+- **THEN** it returns `None`
+
+#### Scenario: A blank run id is invalid, not an absent identity
+- **WHEN** `read_run_manifest(directory, "", allow_legacy=True)` is called
+- **THEN** `ValueError` is raised, and the legacy name is not read
+
+#### Scenario: A missing directory is reported as such
+- **GIVEN** `directory` does not exist
+- **WHEN** `read_run_manifest(directory, "wf1", allow_legacy=True)` is called
+- **THEN** `FileNotFoundError` naming the directory is raised, not `RunManifestMissingError`
+
+#### Scenario: The source file's mode is returned
+- **GIVEN** a readable manifest is present
+- **WHEN** `read_run_manifest` reads it
+- **THEN** the returned permission bits equal the source file's
 
 #### Scenario: A known run id with no manifest is an error
 - **GIVEN** neither candidate is present
@@ -178,15 +213,39 @@ run identity and routinely names an earlier run; callers can therefore pass what
   `RUN_MANIFEST_FILENAME`
 - **THEN** no exception is raised
 
+### Requirement: Error Taxonomy
+
+The library SHALL export `RunManifestError` as the common base of every run-manifest failure it
+raises. `RunManifestMissingError` SHALL derive from both `RunManifestError` and `LookupError`.
+`RunManifestIdentityError` SHALL derive from `RunManifestError` and SHALL NOT derive from
+`ValueError`.
+
+The exclusion is deliberate. Pydantic's `ValidationError` is a `ValueError`, and consumers wrap
+manifest parsing in handlers that catch it; a manifest belonging to another run is a different
+and stronger signal than a malformed one, and must not be swallowed by the same handler.
+
+#### Scenario: Both errors share one catchable base
+- **WHEN** `RunManifestMissingError` and `RunManifestIdentityError` are inspected
+- **THEN** both are subclasses of `RunManifestError`
+
+#### Scenario: A missing manifest is also a LookupError
+- **WHEN** `RunManifestMissingError` is inspected
+- **THEN** it is a subclass of `LookupError`
+
+#### Scenario: An identity mismatch is not a ValueError
+- **WHEN** `RunManifestIdentityError` is inspected
+- **THEN** it is not a subclass of `ValueError`
+
 ### Requirement: New Names Are Exported From The Package Root
 
 The library SHALL export `run_manifest_filename`, `pipeline_run_id_from_env`,
 `PIPELINE_RUN_ID_ENV_VAR`, `run_manifest_name_for_writing`, `read_run_manifest`,
-`RunManifestRead`, `check_run_manifest_identity`, `RunManifestMissingError` and
-`RunManifestIdentityError` from the package root, and list them in `__all__`.
+`RunManifestRead`, `check_run_manifest_identity`, `RunManifestError`,
+`RunManifestMissingError` and `RunManifestIdentityError` from the package root, and list them in
+`__all__`.
 
 #### Scenario: Names importable from the package root
-- **WHEN** a consumer imports all nine names from `sleap_roots_contracts`
+- **WHEN** a consumer imports all ten names from `sleap_roots_contracts`
 - **THEN** the import succeeds and each name appears in `sleap_roots_contracts.__all__`
 
 ## MODIFIED Requirements

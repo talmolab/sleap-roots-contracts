@@ -26,11 +26,15 @@ needs one shared definition of how a reader resolves, falls back, and fails — 
 - **ADDED** `read_run_manifest(directory, pipeline_run_id, *, allow_legacy)` and
   `RunManifestRead` — the resolution policy, performed by *opening* each candidate rather than
   probing, so an unreadable manifest cannot be mistaken for an absent one. Returns the bytes,
-  the name they came from, and whether that name was the per-run form.
+  the name they came from, the source's permission bits, and whether that name was the per-run
+  form. `allow_legacy` governs only a caller that knows its own identity; without one,
+  `RUN_MANIFEST_FILENAME` is the correct name and is always read.
 - **ADDED** `check_run_manifest_identity(...)` — the cross-check that a per-run-named manifest
   names the run reading it; a no-op for the legacy name. This is bloom#703's cross-check,
   possible for the first time.
-- **ADDED** `RunManifestMissingError`, `RunManifestIdentityError`.
+- **ADDED** `RunManifestError` and its subclasses `RunManifestMissingError` (also a
+  `LookupError`) and `RunManifestIdentityError` — deliberately not a `ValueError`, so a handler
+  catching pydantic's `ValidationError` cannot swallow a foreign-manifest signal.
 - **MODIFIED** the `Well-Known Filename Constant` requirement — `RUN_MANIFEST_FILENAME` keeps its
   exact value, but it is no longer the only on-disk name, so describing it as "the single source
   of truth for the manifest's on-disk filename" would become false.
