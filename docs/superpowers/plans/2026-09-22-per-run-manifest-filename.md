@@ -230,7 +230,8 @@ the spec and `_RUN_ID_PATTERN` are the two places the literal lives.
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `uv run pytest tests/test_run_manifest.py -k run_manifest_filename -v`
-Expected: PASS (16 tests — 4 explicit + 12 parametrized)
+Expected: PASS (17 tests — 4 explicit + 12 parametrized, plus the pre-existing
+`test_run_manifest_filename_literal_value`, which this selector also matches)
 
 - [ ] **Step 5: Commit**
 
@@ -685,7 +686,7 @@ git commit -m "feat(run-manifest): add read_run_manifest with an explicit legacy
 
 **Interfaces:**
 - Consumes: `RunManifest` (existing), `RUN_MANIFEST_FILENAME`.
-- Produces: `RunManifestIdentityError(ValueError)` and
+- Produces: `RunManifestError(Exception)` (Task 4), `RunManifestIdentityError(RunManifestError)` and
   `check_run_manifest_identity(manifest, pipeline_run_id, filename) -> None`. Plus all nine new
   names re-exported from the package root.
 
@@ -763,7 +764,7 @@ def test_legacy_filename_constant_is_unchanged():
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `uv run pytest tests/test_run_manifest.py -k "identity or exported or legacy_filename" -v`
+Run: `uv run pytest tests/test_run_manifest.py -k "identity or exported or legacy_filename or catchable_base" -v`
 Expected: FAIL — `ImportError: cannot import name 'check_run_manifest_identity'`
 
 - [ ] **Step 3: Write the implementation**
@@ -817,15 +818,18 @@ def check_run_manifest_identity(
         )
 ```
 
-In `__init__.py`, extend the run_manifest import and `__all__` with all nine names:
-`PIPELINE_RUN_ID_ENV_VAR`, `RunManifestIdentityError`, `RunManifestMissingError`,
-`RunManifestRead`, `check_run_manifest_identity`, `pipeline_run_id_from_env`,
-`read_run_manifest`, `run_manifest_filename`, `run_manifest_name_for_writing`.
+In `__init__.py`, extend the run_manifest import and `__all__` with all **ten** names:
+`PIPELINE_RUN_ID_ENV_VAR`, `RunManifestError`, `RunManifestIdentityError`,
+`RunManifestMissingError`, `RunManifestRead`, `check_run_manifest_identity`,
+`pipeline_run_id_from_env`, `read_run_manifest`, `run_manifest_filename`,
+`run_manifest_name_for_writing`. Missing `RunManifestError` here leaves this task's own
+export test red.
 
 - [ ] **Step 4: Run the full suite plus linters**
 
 Run: `uv run pytest -q && uv run black --check src tests && uv run ruff check src tests`
-Expected: all pass. Baseline was 460 tests; expect 460 + 46 (16 + 9 + 14 + 7).
+Expected: all pass. Baseline was 460; expect 506 — 46 new (16 + 9 + 14 + 7), since the 17th
+in Task 2's gate is a pre-existing test that selector also matches.
 
 - [ ] **Step 5: Commit**
 
@@ -864,7 +868,7 @@ Under `## [Unreleased]` in `docs/CHANGELOG.md`:
 - Per-run run-manifest naming and resolution: `run_manifest_filename`,
   `pipeline_run_id_from_env`, `run_manifest_name_for_writing`, `read_run_manifest`,
   `check_run_manifest_identity`, `RunManifestRead`, `PIPELINE_RUN_ID_ENV_VAR`, and the
-  `RunManifestMissingError` / `RunManifestIdentityError` exceptions
+  `RunManifestError` / `RunManifestMissingError` / `RunManifestIdentityError` exceptions
   (talmolab/sleap-roots-pipeline#71). Additive — `RunManifest` and `RUN_MANIFEST_FILENAME` are
   unchanged, so 0.1.0a8 consumers are unaffected until they adopt the new names.
 ```
