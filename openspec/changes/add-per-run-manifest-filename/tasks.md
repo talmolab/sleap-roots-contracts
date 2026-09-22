@@ -13,3 +13,12 @@
 - [x] 1.6 Correct two false claims in `openspec/project.md`; describe the new API there and in
       `README.md`; tick these tasks —
       `openspec validate add-per-run-manifest-filename --strict && uv run pytest -q && uv run black --check src tests && uv run ruff check src tests`
+- [ ] 1.7 Resolution hardening: a dangling-symlink candidate raises rather than advancing, and a
+      `None` identity with a per-run read raises `ValueError` rather than
+      `RunManifestIdentityError` —
+      `uv run pytest tests/test_run_manifest.py -k "symlink or identity" -v`
+- [ ] 1.8 `load_run_manifest` + `LoadedRunManifest`, exported from the package root —
+      `uv run pytest -q && uv run black --check src tests && uv run ruff check src tests`
+- [ ] 1.9 Document `load_run_manifest` as the recommended entry point in the module docstring,
+      `README.md` and `docs/CHANGELOG.md`; pin `RunManifestRead.filename` as a bare filename —
+      `openspec validate add-per-run-manifest-filename --strict && uv run pytest -q && uv run black --check src tests && uv run ruff check src tests`

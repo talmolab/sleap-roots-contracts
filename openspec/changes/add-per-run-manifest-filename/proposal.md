@@ -26,14 +26,27 @@ needs one shared definition of how a reader resolves, falls back, and fails — 
 - **ADDED** `read_run_manifest(directory, pipeline_run_id, *, allow_legacy)` and
   `RunManifestRead` — the resolution policy, performed by *opening* each candidate rather than
   probing, so an unreadable manifest cannot be mistaken for an absent one. Returns the bytes,
-  the name they came from, the source's permission bits, and whether that name was the per-run
-  form. `allow_legacy` governs only a caller that knows its own identity; without one,
-  `RUN_MANIFEST_FILENAME` is the correct name and is always read.
+  the bare filename they came from, the source's permission bits, and whether that name was the
+  per-run form. `allow_legacy` governs only a caller that knows its own identity; without one,
+  `RUN_MANIFEST_FILENAME` is the correct name and is always read. Only a candidate that is
+  *genuinely absent* advances to the next: a path that exists as a dangling symlink raises,
+  because `open()` reports it as `FileNotFoundError` too and falling through would hand this run
+  an older run's scope.
 - **ADDED** `check_run_manifest_identity(manifest, pipeline_run_id, read)` — the cross-check that
   a per-run-named manifest names the run reading it; a no-op whenever the `RunManifestRead` it is
   handed is not the per-run form. It takes the read itself, rather than a filename, so the
   per-run predicate has exactly one definition — `read_run_manifest` already recorded which
-  candidate it opened. This is bloom#703's cross-check, possible for the first time.
+  candidate it opened. A `None` identity is a no-op for a non-per-run read and a `ValueError`
+  for a per-run one: that combination cannot come out of `read_run_manifest`, so it is a caller
+  error rather than a foreign manifest, and must not be reported as one. This is bloom#703's
+  cross-check, possible for the first time.
+- **ADDED** `load_run_manifest(directory, pipeline_run_id, *, allow_legacy)` and
+  `LoadedRunManifest` — the composed entry point, performing read → parse → cross-check in that
+  order and returning both the parsed manifest and the read it came from. It is the recommended
+  way in, and the three primitives stay exported for forwarding stages and for callers that must
+  handle the steps separately. Three primitives that four repositories must compose in the right
+  order, where omitting the third fails silently, is the divergence this library exists to
+  prevent.
 - **ADDED** `RunManifestError` and its subclasses `RunManifestMissingError` (also a
   `LookupError`) and `RunManifestIdentityError` — deliberately not a `ValueError`, so a handler
   catching pydantic's `ValidationError` cannot swallow a foreign-manifest signal. It is the base
@@ -42,9 +55,9 @@ needs one shared definition of how a reader resolves, falls back, and fails — 
 - **MODIFIED** the `Well-Known Filename Constant` requirement — `RUN_MANIFEST_FILENAME` keeps its
   exact value, but it is no longer the only on-disk name, so describing it as "the single source
   of truth for the manifest's on-disk filename" would become false.
-- **MODIFIED** the `Package Export` requirement — restated to list all twelve exported names, the
-  two pre-existing plus the ten added here, rather than adding a second, overlapping export
-  requirement the capability would then carry forever.
+- **MODIFIED** the `Package Export` requirement — restated to list all fourteen exported names,
+  the two pre-existing plus the twelve added here, rather than adding a second, overlapping
+  export requirement the capability would then carry forever.
 
 `RunManifest` is unchanged. This release is additive in behavior; 0.1.0a8 consumers are
 unaffected until they adopt the new names.
@@ -53,7 +66,9 @@ unaffected until they adopt the new names.
 
 - Affected specs: `run-manifest-contract`
 - Affected code: `src/sleap_roots_contracts/run_manifest.py`, `__init__.py`
-- Affected docs: `README.md`, `openspec/project.md`, `docs/CHANGELOG.md`. Two claims in
+- Affected docs: `README.md`, `openspec/project.md`, `docs/CHANGELOG.md`. `README.md` and the
+  module docstring present `load_run_manifest` as the recommended entry point and keep the three
+  primitives as the documented escape hatch. Two claims in
   `project.md` are corrected in passing — both predate this change and were verified false during
   review: that the library does no filesystem I/O (`schema.py:93-98`'s `emit_schema` writes
   files), and that `sleap-roots-predict`/`sleap-roots`-traits have not yet landed their consuming
