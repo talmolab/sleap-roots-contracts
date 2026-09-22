@@ -687,23 +687,36 @@ git commit -m "feat(run-manifest): add read_run_manifest with an explicit legacy
 **Interfaces:**
 - Consumes: `RunManifest` (existing), `RUN_MANIFEST_FILENAME`.
 - Produces: `RunManifestError(Exception)` (Task 4), `RunManifestIdentityError(RunManifestError)` and
-  `check_run_manifest_identity(manifest, pipeline_run_id, filename) -> None`. Plus all nine new
-  names re-exported from the package root.
+  `check_run_manifest_identity(manifest, pipeline_run_id, read: RunManifestRead) -> None`. Plus
+  all nine new names re-exported from the package root.
+
+  Note (added when Task 12 corrected this section): the shipped signature takes
+  `read: RunManifestRead`, not a bare `filename: str` — see `RunManifestRead.is_per_run` in
+  Task 4. The samples below are updated to match.
 
 - [ ] **Step 1: Write the failing tests**
 
 ```python
+def make_read(filename, *, is_per_run):
+    """Build a RunManifestRead standing in for what read_run_manifest returned."""
+    return RunManifestRead(
+        filename=filename, data=b"{}", mode=0o644, is_per_run=is_per_run
+    )
+
+
 def test_identity_check_passes_for_the_owning_run():
     """The ordinary case: the file this run wrote names this run."""
     manifest = make_manifest(pipeline_run_id="wf1")
-    assert check_run_manifest_identity(manifest, "wf1", "run_manifest.wf1.json") is None
+    read = make_read("run_manifest.wf1.json", is_per_run=True)
+    assert check_run_manifest_identity(manifest, "wf1", read) is None
 
 
 def test_identity_check_rejects_a_foreign_manifest():
     """A per-run-named file naming a different run means the tree is not what we think."""
     manifest = make_manifest(pipeline_run_id="wf2")
+    read = make_read("run_manifest.wf1.json", is_per_run=True)
     with pytest.raises(RunManifestIdentityError) as excinfo:
-        check_run_manifest_identity(manifest, "wf1", "run_manifest.wf1.json")
+        check_run_manifest_identity(manifest, "wf1", read)
     message = str(excinfo.value)
     assert "wf1" in message
     assert "wf2" in message
@@ -717,7 +730,8 @@ def test_identity_check_is_a_noop_for_the_legacy_filename():
     `if filename != RUN_MANIFEST_FILENAME` guard themselves.
     """
     manifest = make_manifest(pipeline_run_id="some-older-run")
-    assert check_run_manifest_identity(manifest, "wf1", RUN_MANIFEST_FILENAME) is None
+    read = make_read(RUN_MANIFEST_FILENAME, is_per_run=False)
+    assert check_run_manifest_identity(manifest, "wf1", read) is None
 
 
 def test_identity_error_is_not_swallowed_by_a_generic_parse_handler():
@@ -786,14 +800,14 @@ class RunManifestIdentityError(RunManifestError):
 def check_run_manifest_identity(
     manifest: RunManifest,
     pipeline_run_id: str,
-    filename: str,
+    read: RunManifestRead,
 ) -> None:
     """Verify a per-run-named manifest names the run that is reading it.
 
-    A no-op when ``filename`` is ``RUN_MANIFEST_FILENAME``: the legacy name carries no run
-    identity, and before per-run naming the producer overwrote ``pipeline_run_id`` on every
-    merge, so a legacy file routinely names some earlier run. Callers may therefore pass
-    whatever :func:`read_run_manifest` returned without testing the name themselves.
+    A no-op when ``read.is_per_run`` is false: the legacy name carries no run identity, and
+    before per-run naming the producer overwrote ``pipeline_run_id`` on every merge, so a
+    legacy file routinely names some earlier run. Callers may therefore pass whatever
+    :func:`read_run_manifest` returned without testing the name themselves.
 
     For a per-run-named file this is the cross-check bloom#703 asked for, possible for the
     first time.
@@ -801,7 +815,9 @@ def check_run_manifest_identity(
     Args:
         manifest: The parsed manifest.
         pipeline_run_id: The reader's own run identity.
-        filename: The name it was read from.
+        read: The :class:`RunManifestRead` the manifest was parsed from. ``is_per_run``
+            decides whether the check applies; ``filename`` is used only in the error
+            message.
 
     Returns:
         None.
@@ -809,14 +825,19 @@ def check_run_manifest_identity(
     Raises:
         RunManifestIdentityError: If a per-run-named manifest names a different run.
     """
-    if filename == RUN_MANIFEST_FILENAME:
+    if not read.is_per_run:
         return
     if manifest.pipeline_run_id != pipeline_run_id:
         raise RunManifestIdentityError(
-            f"{filename} was read as run {pipeline_run_id!r}'s manifest but names run "
+            f"{read.filename} was read as run {pipeline_run_id!r}'s manifest but names run "
             f"{manifest.pipeline_run_id!r}"
         )
 ```
+
+(This sample was corrected by Task 12 — revision 4 later changed the signature again to accept
+`pipeline_run_id: str | None` with a `ValueError` branch for a `None` identity paired with a
+per-run read; see Task 10's design D2. This Task 5 sample is left matching only what Task 5
+itself shipped, not that later revision.)
 
 In `__init__.py`, extend the run_manifest import and `__all__` with all **ten** names:
 `PIPELINE_RUN_ID_ENV_VAR`, `RunManifestError`, `RunManifestIdentityError`,

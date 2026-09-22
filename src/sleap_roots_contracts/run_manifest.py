@@ -13,6 +13,13 @@ manifest. ``RUN_MANIFEST_FILENAME`` remains the name used when a stage has no ru
 behavior. :func:`read_run_manifest` is the single definition of how a reader chooses between
 the two, what a missing manifest means, and when the legacy name is still acceptable; see
 talmolab/sleap-roots-pipeline#71.
+
+Adopters MUST bump readers before the writer during rollout. Once a writer starts publishing
+``run_manifest.<pipeline_run_id>.json``, a reader still on the pre-``0.1.0a9`` behavior no
+longer finds ``run_manifest.json`` at all and falls back to its own whole-tree discovery —
+scoping to every scan in the shared directory rather than just this run's. That is worse than
+the shared-manifest defect this release exists to fix, so the writer-side change must be the
+last one adopted, not the first.
 """
 
 import errno
@@ -26,12 +33,15 @@ from pydantic import BaseModel, ConfigDict, model_validator
 
 _FROZEN = ConfigDict(frozen=True)
 
-# Single source of truth for the manifest's on-disk filename, so bloomctl/predict/traits agree
-# on it via import rather than each hardcoding the string.
+# The filename used when a stage has no run identity (no ARGO_WORKFLOW_NAME) — not the sole
+# on-disk name any more, since the per-run form below also exists. bloomctl/predict/traits agree
+# on this value via import rather than each hardcoding the string. See `run_manifest_filename`
+# for the per-run form and `read_run_manifest` for how a reader chooses between the two.
 RUN_MANIFEST_FILENAME = "run_manifest.json"
 
 # The per-run filename's fixed parts. `RUN_MANIFEST_FILENAME` stays the legacy/local name; the
-# two forms can never collide, because a valid run id is non-empty and may not begin with a dot.
+# two forms can never collide, because a valid run id is non-empty, which makes the per-run name
+# strictly longer than the legacy one.
 _FILENAME_PREFIX = "run_manifest."
 _FILENAME_SUFFIX = ".json"
 
@@ -51,6 +61,13 @@ _RUN_ID_MAX_LENGTH = 255 - len(_FILENAME_PREFIX) - len(_FILENAME_SUFFIX)
 
 def run_manifest_filename(pipeline_run_id: str) -> str:
     """Return the per-run manifest filename for ``pipeline_run_id``.
+
+    A maximum-length id (``_RUN_ID_MAX_LENGTH``, 237 characters) yields a 255-character
+    filename — exactly ``NAME_MAX`` on the filesystems this runs on — leaving no headroom for
+    anything appended to it. A forwarding stage that publishes atomically, e.g. via
+    ``mkstemp(dir=..., prefix=filename + ".")``, will exceed ``NAME_MAX`` and fail with
+    ``ENAMETOOLONG`` at write time for such an id. This function does not reserve room for a
+    temp name; a writer that needs one must size it itself.
 
     Args:
         pipeline_run_id: The run identity, e.g. an Argo ``{{workflow.name}}``.

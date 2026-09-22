@@ -1,5 +1,6 @@
 """Tests for the run-manifest contract (RunManifest)."""
 
+import os
 import sys
 from pathlib import Path
 
@@ -345,12 +346,20 @@ def test_read_reports_a_missing_directory_as_such(tmp_path):
     assert "nope" in str(excinfo.value)
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="Windows ignores POSIX permission bits"
+)
 def test_read_returns_the_source_file_mode(tmp_path):
-    """predict forwards the manifest and must reproduce its mode without a second stat."""
+    """predict forwards the manifest and must reproduce its mode without a second stat.
+
+    Chmod the source to a mode nothing else in this test would produce, so the assertion can
+    distinguish `fstat(fd)` from a naive `base.stat()` rather than passing for either.
+    """
     target = tmp_path / RUN_MANIFEST_FILENAME
     target.write_bytes(b"{}")
+    os.chmod(target, 0o600)
     result = read_run_manifest(tmp_path, None, allow_legacy=True)
-    assert result.mode == (target.stat().st_mode & 0o777)
+    assert result.mode == 0o600
 
 
 def test_read_raises_when_the_run_id_is_known_and_nothing_is_present(tmp_path):
@@ -384,22 +393,28 @@ def test_read_propagates_a_permission_error_rather_than_advancing(
 
     This is the reason the function opens rather than probing: a boolean predicate collapses
     EACCES into "absent", which would fall through to a stale legacy manifest. bloomctl's
-    ingest.py avoids .is_file() for exactly this reason.
+    ingest.py avoids .is_file() for exactly this reason. The recorded `Path.open` calls pin
+    the "and the legacy file is not read" half of the scenario, which otherwise holds only
+    because the raise happens to escape the loop before a second candidate is tried.
     """
     target = tmp_path / "run_manifest.wf1.json"
     target.write_bytes(b"{}")
-    (tmp_path / RUN_MANIFEST_FILENAME).write_bytes(b'{"legacy": true}')
+    legacy = tmp_path / RUN_MANIFEST_FILENAME
+    legacy.write_bytes(b'{"legacy": true}')
 
+    opened: list[Path] = []
     real_open = Path.open
 
     def deny(self, *args, **kwargs):
-        if self.name == "run_manifest.wf1.json":
+        opened.append(self)
+        if self == target:
             raise PermissionError(13, "Permission denied")
         return real_open(self, *args, **kwargs)
 
     monkeypatch.setattr(Path, "open", deny)
     with pytest.raises(PermissionError):
         read_run_manifest(tmp_path, "wf1", allow_legacy=True)
+    assert legacy not in opened
 
 
 def test_read_accepts_a_string_directory(tmp_path):
