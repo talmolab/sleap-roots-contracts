@@ -54,7 +54,11 @@ Since `0.1.0a7` it also defines the **run-manifest contract** — `RunManifest`/
 `RUN_MANIFEST_FILENAME`, the run-scoping shape written by `bloomctl` and read by
 `sleap-roots-predict`/`sleap-roots-traits` to scope processing to exactly the `scan_key`s a run
 was given. Like `ModelCard`, it is a producer↔producer contract and is **not** emitted to the
-JSON Schema.
+JSON Schema. Since `0.1.0a9` it also defines the per-run filename convention and the shared
+resolution policy — `run_manifest_filename`, `pipeline_run_id_from_env`,
+`run_manifest_name_for_writing`, `read_run_manifest`, `check_run_manifest_identity` — so the four
+consumer call sites agree on one definition rather than three
+(talmolab/sleap-roots-pipeline#71).
 
 Since `0.1.0a4` it also ships the **param-resolution oracle** —
 `resolve_params(metadata, overrides=None) -> ResolvedParams` maps a single Bloom
