@@ -63,10 +63,12 @@ resolution policy — `run_manifest_filename`, `pipeline_run_id_from_env`,
 `load_run_manifest` (the **recommended entry point**, composing the three read/parse/check
 primitives in one call; `LoadedRunManifest` is its result) — so the four consumer call sites
 agree on one definition rather than three (talmolab/sleap-roots-pipeline#71). Adopters must
-bump readers before the writer: once a writer
-publishes `run_manifest.<pipeline_run_id>.json`, an un-adopted reader no longer finds
-`run_manifest.json` and falls back to its own whole-tree discovery, which is worse than the
-shared-manifest defect this release fixes.
+bump readers before the writer. A writer that publishes
+`run_manifest.<pipeline_run_id>.json` stops maintaining `run_manifest.json`, so an un-adopted
+reader either keeps scoping to a now-frozen stale manifest — fixing nothing — or, in a tree
+with no legacy manifest, finds none and falls back to whole-tree discovery. Either way the
+per-run manifest is dropped at the first un-adopted hop and never reaches write-back, so the
+rollout produces no signal that it is working.
 
 Since `0.1.0a4` it also ships the **param-resolution oracle** —
 `resolve_params(metadata, overrides=None) -> ResolvedParams` maps a single Bloom
