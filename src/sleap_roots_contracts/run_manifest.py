@@ -18,12 +18,14 @@ remain exported as an escape hatch for a forwarding stage that never parses, or 
 whose parsing is already wrapped in its own error handling; see
 talmolab/sleap-roots-pipeline#71.
 
-Adopters MUST bump readers before the writer during rollout. Once a writer starts publishing
-``run_manifest.<pipeline_run_id>.json``, a reader still on the pre-``0.1.0a9`` behavior no
-longer finds ``run_manifest.json`` at all and falls back to its own whole-tree discovery —
-scoping to every scan in the shared directory rather than just this run's. That is worse than
-the shared-manifest defect this release exists to fix, so the writer-side change must be the
-last one adopted, not the first.
+Adopters MUST bump readers before the writer during rollout, and the writer-side change must
+be the last one adopted rather than the first. A writer publishing
+``run_manifest.<pipeline_run_id>.json`` stops maintaining ``run_manifest.json``, and a reader
+still on the pre-``0.1.0a9`` behavior then does one of two things: in a tree that already holds
+a legacy manifest it keeps scoping to that now-frozen file, fixing nothing; in a tree without
+one it finds no manifest and falls back to whole-tree discovery, scoping to every scan present.
+In both cases the per-run manifest is dropped at the first un-adopted hop and never propagates
+to write-back, so nothing downstream can tell a working rollout from a broken one.
 """
 
 import errno
